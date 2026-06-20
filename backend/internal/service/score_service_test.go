@@ -1,0 +1,176 @@
+package service
+
+import (
+	"growpocket/internal/model"
+	"testing"
+)
+
+func TestGetBalance(t *testing.T) {
+	_, family, _, child := setupTestDB(t)
+	service := NewScoreService()
+
+	balance, nickname, err := service.GetBalance(child.ID, family.ID)
+	if err != nil {
+		t.Fatalf("GetBalance 失败: %v", err)
+	}
+	if balance != 0 {
+		t.Errorf("Balance got %d want 0", balance)
+	}
+	if nickname != "小明" {
+		t.Errorf("Nickname got %s want 小明", nickname)
+	}
+}
+
+func TestAdjust_AddPoints(t *testing.T) {
+	_, family, parent, child := setupTestDB(t)
+	service := NewScoreService()
+
+	newBalance, err := service.Adjust(child.ID, family.ID, parent.ID, 100, "认真学习", "完成作业", "")
+	if err != nil {
+		t.Fatalf("Adjust 失败: %v", err)
+	}
+	if newBalance != 100 {
+		t.Errorf("newBalance got %d want 100", newBalance)
+	}
+
+	// 检查余额
+	balance, _, err := service.GetBalance(child.ID, family.ID)
+	if err != nil {
+		t.Fatalf("GetBalance 失败: %v", err)
+	}
+	if balance != 100 {
+		t.Errorf("Balance got %d want 100", balance)
+	}
+
+	// 应该有一条 transaction
+	history, total, err := service.GetHistory(child.ID, family.ID, 1, 20)
+	if err != nil {
+		t.Fatalf("GetHistory 失败: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("total got %d want 1", total)
+	}
+	if len(history) != 1 {
+		t.Errorf("history 长度 got %d want 1", len(history))
+	}
+	if history[0].Type != model.TransactionTypeIncome {
+		t.Errorf("Type got %d want %d", history[0].Type, model.TransactionTypeIncome)
+	}
+	if history[0].Amount != 100 {
+		t.Errorf("Amount got %d want 100", history[0].Amount)
+	}
+	if history[0].BalanceAfter != 100 {
+		t.Errorf("BalanceAfter got %d want 100", history[0].BalanceAfter)
+	}
+}
+
+func TestAdjust_DeductWithInsufficient(t *testing.T) {
+	db, family, parent, child := setupTestDB(t)
+	service := NewScoreService()
+
+	// 余额为 0 时扣 50 分应该失败
+	_, err := service.Adjust(child.ID, family.ID, parent.ID, -50, "罚款", "违反规则", "")
+	if err == nil {
+		t.Fatal("余额不足时 Adjust 应该返回错误")
+	}
+
+	// 余额仍为 0
+	var u model.User
+	db.First(&u, child.ID)
+	if u.Balance != 0 {
+		t.Errorf("Balance got %d want 0", u.Balance)
+	}
+}
+
+func TestAdjust_EmptyTitle(t *testing.T) {
+	_, family, parent, child := setupTestDB(t)
+	service := NewScoreService()
+
+	_, err := service.Adjust(child.ID, family.ID, parent.ID, 10, "", "描述", "")
+	if err == nil {
+		t.Fatal("空标题应该返回错误")
+	}
+}
+
+func TestAdjust_ZeroDelta(t *testing.T) {
+	_, family, parent, child := setupTestDB(t)
+	service := NewScoreService()
+
+	_, err := service.Adjust(child.ID, family.ID, parent.ID, 0, "测试", "描述", "")
+	if err == nil {
+		t.Fatal("delta=0 应该返回错误")
+	}
+}
+
+func TestGetHistory(t *testing.T) {
+	_, family, parent, child := setupTestDB(t)
+	service := NewScoreService()
+
+	// 创建 3 条变动
+	_, err := service.Adjust(child.ID, family.ID, parent.ID, 10, "第一条", "", "")
+	if err != nil {
+		t.Fatalf("Adjust 失败: %v", err)
+	}
+	_, err = service.Adjust(child.ID, family.ID, parent.ID, 20, "第二条", "", "")
+	if err != nil {
+		t.Fatalf("Adjust 失败: %v", err)
+	}
+	_, err = service.Adjust(child.ID, family.ID, parent.ID, 30, "第三条", "", "")
+	if err != nil {
+		t.Fatalf("Adjust 失败: %v", err)
+	}
+
+	history, total, err := service.GetHistory(child.ID, family.ID, 1, 20)
+	if err != nil {
+		t.Fatalf("GetHistory 失败: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("total got %d want 3", total)
+	}
+	if len(history) != 3 {
+		t.Errorf("history 长度 got %d want 3", len(history))
+	}
+	// 按时间倒序：最新一条 BalanceAfter=60
+	if history[0].BalanceAfter != 60 {
+		t.Errorf("history[0].BalanceAfter got %d want 60", history[0].BalanceAfter)
+	}
+	if history[2].BalanceAfter != 10 {
+		t.Errorf("history[2].BalanceAfter got %d want 10", history[2].BalanceAfter)
+	}
+}
+
+func TestGetTrend(t *testing.T) {
+	_, family, parent, child := setupTestDB(t)
+	service := NewScoreService()
+
+	// 先加一点积分让数据有变化
+	_, err := service.Adjust(child.ID, family.ID, parent.ID, 50, "测试趋势", "", "")
+	if err != nil {
+		t.Fatalf("Adjust 失败: %v", err)
+	}
+
+	trend, err := service.GetTrend(child.ID, family.ID, 7)
+	if err != nil {
+		t.Fatalf("GetTrend 失败: %v", err)
+	}
+	if len(trend) != 7 {
+		t.Errorf("trend 长度 got %d want 7", len(trend))
+	}
+
+	// 今天（最后一条）余额应为 50
+	lastDay := trend[len(trend)-1]
+	balance, ok := lastDay["balance"].(int)
+	if !ok {
+		t.Fatalf("balance 不是 int 类型")
+	}
+	if balance != 50 {
+		t.Errorf("今天 balance got %d want 50", balance)
+	}
+
+	// 每天 date 字段应该存在
+	for i, d := range trend {
+		if _, ok := d["date"]; !ok {
+			t.Errorf("trend[%d] 缺少 date 字段", i)
+		}
+	}
+}

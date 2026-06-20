@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* 主色调 - 阳光橙 */
+  --color-primary: #FF9500;
+  --color-primary-light: #FFB84D;
+  --color-primary-dark: #E68600;
+  
+  /* 辅助色 - 成长绿 */
+  --color-success: #34C759;
+  --color-success-light: #5DD579;
+  --color-success-dark: #2AAF47;
+  
+  /* 强调色 - 天空蓝 */
+  --color-accent: #007AFF;
+  --color-accent-light: #4DA3FF;
+  --color-accent-dark: #0062CC;
+  
+  /* 安全色 - 薰衣草紫 */
+  --color-purple: #AF52DE;
+  --color-purple-light: #C47AE8;
+  --color-purple-dark: #9A3FC9;
+  
+  /* 警示色 - 珊瑚红 */
+  --color-danger: #FF3B30;
+  --color-danger-light: #FF6B63;
+  --color-danger-dark: #E63329;
+  
+  /* 背景色 */
+  --color-bg: #FFF8F0;
+  --color-bg-secondary: #FFF1E6;
+  --color-card: #FFFFFF;
+  
+  /* 文字色 */
+  --color-text-primary: #1C1C1E;
+  --color-text-secondary: #636366;
+  --color-text-tertiary: #8E8E93;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}

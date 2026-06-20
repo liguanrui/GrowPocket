@@ -1,0 +1,104 @@
+import { create } from 'zustand';
+import * as childrenService from '../services/children';
+
+export interface Child {
+  id: number;
+  familyId: number;
+  role: 'child';
+  nickname: string;
+  avatar?: string;
+  gender?: 0 | 1;
+  birthday?: string;
+  balance: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface ChildState {
+  children: Child[];
+  currentChildId: number | null;
+  loading: boolean;
+  fetchChildren: () => Promise<void>;
+  addChild: (input: { nickname: string; gender?: 0 | 1; birthday?: string }) => Promise<Child>;
+  updateChild: (id: number, input: Partial<{ nickname: string; gender?: 0 | 1; birthday?: string; avatar?: string }>) => Promise<void>;
+  removeChild: (id: number) => Promise<void>;
+  setCurrentChildId: (id: number | null) => void;
+  getCurrentChild: () => Child | null;
+  updateBalance: (childId: number, newBalance: number) => void;
+}
+
+function getInitialChildId(): number | null {
+  const raw = localStorage.getItem('currentChildId');
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (!isNaN(n)) return n;
+  }
+  return null;
+}
+
+export const useChildStore = create<ChildState>((set, get) => ({
+  children: [],
+  currentChildId: getInitialChildId(),
+  loading: false,
+
+  async fetchChildren() {
+    set({ loading: true });
+    try {
+      const list = await childrenService.getChildren();
+      set({ children: list, loading: false });
+      const state = get();
+      const selectedExists = state.currentChildId !== null && list.some((c) => c.id === state.currentChildId);
+      if (!selectedExists && list.length > 0) {
+        get().setCurrentChildId(list[0].id);
+      }
+    } catch (e) {
+      set({ loading: false });
+      throw e;
+    }
+  },
+
+  async addChild(input) {
+    const child = await childrenService.addChild(input);
+    set((state) => ({ children: [...state.children, child] }));
+    if (get().currentChildId === null) {
+      get().setCurrentChildId(child.id);
+    }
+    return child;
+  },
+
+  async updateChild(id, input) {
+    await childrenService.updateChild(id, input);
+    set((state) => ({
+      children: state.children.map((c) => (c.id === id ? { ...c, ...input } : c)),
+    }));
+  },
+
+  async removeChild(id) {
+    await childrenService.deleteChild(id);
+    set((state) => ({ children: state.children.filter((c) => c.id !== id) }));
+    if (get().currentChildId === id) {
+      const remaining = get().children;
+      get().setCurrentChildId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  },
+
+  setCurrentChildId(id) {
+    if (id !== null) {
+      localStorage.setItem('currentChildId', String(id));
+    } else {
+      localStorage.removeItem('currentChildId');
+    }
+    set({ currentChildId: id });
+  },
+
+  getCurrentChild() {
+    const state = get();
+    return state.children.find((c) => c.id === state.currentChildId) || state.children[0] || null;
+  },
+
+  updateBalance(childId, newBalance) {
+    set((state) => ({
+      children: state.children.map((c) => (c.id === childId ? { ...c, balance: newBalance } : c)),
+    }));
+  },
+}));
