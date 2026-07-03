@@ -5,14 +5,14 @@ export type TaskStatus = 1 | 2 | 3 | 4;
 
 export interface Task {
   id: number;
-  familyId: number;
+  family_id: number;
   title: string;
   description?: string;
   points: number;
   status: TaskStatus;
-  childId: number;
-  childName?: string;
-  createdBy: number;
+  child_id: number;
+  child_name?: string;
+  created_by: number;
   photo?: string;
   deadline?: string;
   created_at: string;

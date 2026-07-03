@@ -35,6 +35,33 @@ func (s *ScoreService) GetHistory(childID, familyID uint, page, pageSize int) ([
 	return records, total, err
 }
 
+type MonthlyStats struct {
+	Month      string `json:"month"`
+	Income     int    `json:"income"`
+	Expense    int    `json:"expense"`
+	Balance    int    `json:"balance"`
+}
+
+func (s *ScoreService) GetMonthlyStats(childID, familyID uint) ([]MonthlyStats, error) {
+	if _, err := NewChildService().GetChild(childID, familyID); err != nil {
+		return nil, err
+	}
+
+	var stats []MonthlyStats
+	err := database.DB.Model(&model.Transaction{}).
+		Select(`
+			strftime('%Y-%m', created_at) as month,
+			SUM(CASE WHEN type = 0 THEN amount ELSE 0 END) as income,
+			SUM(CASE WHEN type = 1 THEN amount ELSE 0 END) as expense,
+			MAX(balance_after) as balance
+		`).
+		Where("child_id = ?", childID).
+		Group("month").
+		Order("month DESC").
+		Scan(&stats).Error
+	return stats, err
+}
+
 // Adjust 调整积分：delta 正数为加，负数为减。创建一条 status=3 的任务记录 + 一条 transaction。
 func (s *ScoreService) Adjust(childID, familyID, createdBy uint, delta int, title, description, photo string) (int, error) {
 	if title == "" {
@@ -131,26 +158,24 @@ func (s *ScoreService) GetTrend(childID, familyID uint, days int) ([]map[string]
 		return nil, err
 	}
 
-	// 按日期记录每最后一笔的 balance_after
-	daily := make(map[string]int)
+	// 按日期记录每天的收入（获得的积分）
+	dailyIncome := make(map[string]int)
 	for _, t := range transactions {
 		day := t.CreatedAt.Format("2006-01-02")
-		daily[day] = t.BalanceAfter
+		if t.Type == 0 { // 收入
+			dailyIncome[day] += t.Amount
+		}
 	}
 
 	result := make([]map[string]interface{}, 0, days)
 	now := time.Now()
-	var lastKnown int
 
 	// 从最早（days-1 天前）到今天，依次填充
 	for i := days - 1; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i).Format("2006-01-02")
-		if v, ok := daily[day]; ok {
-			lastKnown = v
-		}
 		result = append(result, map[string]interface{}{
 			"date":    day,
-			"balance": lastKnown,
+			"balance": dailyIncome[day], // 每天获得的积分
 		})
 	}
 

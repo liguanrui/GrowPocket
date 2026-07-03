@@ -1,9 +1,76 @@
-import { useState, useEffect } from 'react';
-import { Plus, Gift, CheckCircle2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Gift, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import type { Child } from '../stores/childStore';
 import * as redeemService from '../services/redeem';
 import type { RedeemItem } from '../services/redeem';
+
+function ChildTabs({
+  children,
+  selectedId,
+  onSelect,
+}: {
+  children: Child[];
+  selectedId: number;
+  onSelect: (id: number) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (direction: 'left' | 'right') => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: direction === 'left' ? -150 : 150, behavior: 'smooth' });
+    }
+  };
+
+  return (
+    <div className="relative">
+      {children.length > 4 && (
+        <button
+          onClick={() => scroll('left')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30"
+        >
+          <ChevronLeft size={18} />
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        className="flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-hide"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {children.map((child) => {
+          const isActive = child.id === selectedId;
+          return (
+            <button
+              key={child.id}
+              onClick={() => onSelect(child.id)}
+              className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                isActive ? 'bg-white text-primary shadow-lg' : 'bg-white/15 text-white hover:bg-white/25'
+              }`}
+            >
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                  isActive ? 'bg-primary/10 text-primary' : 'bg-white/20 text-white'
+                }`}
+              >
+                {child.nickname.charAt(0)}
+              </div>
+              <span>{child.nickname}</span>
+            </button>
+          );
+        })}
+      </div>
+      {children.length > 4 && (
+        <button
+          onClick={() => scroll('right')}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30"
+        >
+          <ChevronRight size={18} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 function ItemCard({ item, child, onExchange }: { item: RedeemItem; child: { nickname: string; balance: number; id: number }; onExchange: () => void }) {
   const enough = child.balance >= item.points;
@@ -130,6 +197,7 @@ function ExchangeModal({
 
 export function MallPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const childStore = useChildStore();
   const [items, setItems] = useState<RedeemItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,13 +205,32 @@ export function MallPage() {
   const [exchangingItem, setExchangingItem] = useState<RedeemItem | null>(null);
   const [activeCategory, setActiveCategory] = useState<number | 'all'>('all');
 
+  const children = childStore.children;
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(() => {
+    const id = searchParams.get('child_id');
+    return id ? Number(id) : (childStore.currentChildId || (children[0]?.id ?? null));
+  });
+
+  const selectedChild = children.find((c) => c.id === selectedChildId) || children[0] || null;
+
+  useEffect(() => {
+    if (children.length > 0 && !selectedChildId) {
+      setSelectedChildId(children[0].id);
+    }
+  }, [children, selectedChildId]);
+
+  useEffect(() => {
+    if (selectedChildId) {
+      setSearchParams({ child_id: String(selectedChildId) }, { replace: true });
+    }
+  }, [selectedChildId, setSearchParams]);
+
   useEffect(() => {
     let mounted = true;
     async function loadData() {
       setLoading(true);
       setError(null);
       try {
-        await childStore.fetchChildren();
         const params: { category?: number; page: number; pageSize: number } = {
           page: 1,
           pageSize: 50,
@@ -163,14 +250,16 @@ export function MallPage() {
     };
   }, [activeCategory]);
 
-  const currentChild = useChildStore.getState().getCurrentChild();
+  const handleChildSelect = (id: number) => {
+    setSelectedChildId(id);
+    childStore.setCurrentChildId(id);
+  };
 
   const handleExchange = async () => {
-    if (!currentChild || !exchangingItem) return;
+    if (!selectedChild || !exchangingItem) return;
     try {
-      const result = await redeemService.redeem(exchangingItem.id, currentChild.id);
-      childStore.updateBalance(currentChild.id, result.new_balance);
-      // 刷新商品列表
+      const result = await redeemService.redeem(exchangingItem.id, selectedChild.id);
+      childStore.updateBalance(selectedChild.id, result.new_balance);
       const itemsResult = await redeemService.getItems(
         activeCategory === 'all' ? { page: 1, pageSize: 50 } : { category: activeCategory, page: 1, pageSize: 50 }
       );
@@ -200,7 +289,7 @@ export function MallPage() {
     );
   }
 
-  if (!currentChild) {
+  if (!selectedChild || children.length === 0) {
     return (
       <div className="min-h-screen bg-bg pb-24 flex items-center justify-center p-4">
         <div className="bg-card rounded-2xl p-6 text-center shadow-sm">
@@ -218,7 +307,7 @@ export function MallPage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h1 className="text-xl font-bold text-white">积分商城</h1>
-              <p className="text-white/80 text-sm mt-0.5">用努力换取奖励，让成长更有动力</p>
+              <p className="text-white/80 text-sm mt-0.5">用努力换取奖励</p>
             </div>
             <button
               onClick={() => navigate('/mall/new')}
@@ -228,15 +317,17 @@ export function MallPage() {
             </button>
           </div>
 
-          <div className="bg-white/15 backdrop-blur rounded-2xl p-4">
+          <ChildTabs children={children} selectedId={selectedChild.id} onSelect={handleChildSelect} />
+
+          <div className="bg-white/15 backdrop-blur rounded-2xl p-4 mt-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-white/80 text-xs">兑换人</div>
-                <div className="text-white font-semibold text-lg mt-0.5">{currentChild.nickname}</div>
+                <div className="text-white font-semibold text-lg mt-0.5">{selectedChild.nickname}</div>
               </div>
               <div className="text-right">
                 <div className="text-white/80 text-xs">积分余额</div>
-                <div className="text-white text-2xl font-bold mt-0.5">{currentChild.balance}</div>
+                <div className="text-white text-2xl font-bold mt-0.5">{selectedChild.balance}</div>
               </div>
             </div>
           </div>
@@ -267,7 +358,7 @@ export function MallPage() {
               <ItemCard
                 key={item.id}
                 item={item}
-                child={{ id: currentChild.id, nickname: currentChild.nickname, balance: currentChild.balance }}
+                child={{ id: selectedChild.id, nickname: selectedChild.nickname, balance: selectedChild.balance }}
                 onExchange={() => setExchangingItem(item)}
               />
             ))}
@@ -291,7 +382,7 @@ export function MallPage() {
       {exchangingItem && (
         <ExchangeModal
           item={exchangingItem}
-          child={{ id: currentChild.id, nickname: currentChild.nickname, balance: currentChild.balance }}
+          child={{ id: selectedChild.id, nickname: selectedChild.nickname, balance: selectedChild.balance }}
           onClose={() => setExchangingItem(null)}
           onConfirm={handleExchange}
         />

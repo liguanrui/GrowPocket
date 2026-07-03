@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>童劳童得 - 成就勋章</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 60px 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .header p {
+            font-size: 15px;
+            opacity: 0.9;
+        }
+        
+        .badges-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 25px;
+        }
+        
+        .badge-card {
+            background: white;
+            border-radius: 24px;
+            padding: 25px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .badge-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+        }
+        
+        .badge-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        }
+        
+        .badge-icon {
+            width: 90px;
+            height: 90px;
+            margin: 0 auto 18px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: linear-gradient(145deg, var(--bg-light), var(--bg-dark));
+            box-shadow: 0 4px 15px var(--shadow);
+        }
+        
+        .badge-icon::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%);
+        }
+        
+        .badge-icon svg {
+            width: 48px;
+            height: 48px;
+            position: relative;
+            z-index: 2;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+        }
+        
+        .badge-name {
+            font-size: 17px;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 6px;
+        }
+        
+        .badge-desc {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.4;
+        }
+        
+        .badge-level {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--level-bg-start), var(--level-bg-end));
+            color: var(--level-text);
+            box-shadow: 0 2px 8px var(--level-shadow);
+        }
+        
+        .badge-card:nth-child(1) { --accent-start: #CD7F32; --accent-end: #DAA520; --bg-light: #FFE4B5; --bg-dark: #F5DEB3; --shadow: rgba(205,127,50,0.3); --level-bg-start: #FFE4B5; --level-bg-end: #DEB887; --level-text: #8B4513; --level-shadow: rgba(139,69,19,0.2); }
+        .badge-card:nth-child(2) { --accent-start: #C0C0C0; --accent-end: #DCDCDC; --bg-light: #E8E8E8; --bg-dark: #DCDCDC; --shadow: rgba(192,192,192,0.3); --level-bg-start: #E8E8E8; --level-bg-end: #DCDCDC; --level-text: #696969; --level-shadow: rgba(105,105,105,0.2); }
+        .badge-card:nth-child(3) { --accent-start: #C0C0C0; --accent-end: #DCDCDC; --bg-light: #E8E8E8; --bg-dark: #DCDCDC; --shadow: rgba(192,192,192,0.3); --level-bg-start: #E8E8E8; --level-bg-end: #DCDCDC; --level-text: #696969; --level-shadow: rgba(105,105,105,0.2); }
+        .badge-card:nth-child(4) { --accent-start: #C0C0C0; --accent-end: #DCDCDC; --bg-light: #E8E8E8; --bg-dark: #DCDCDC; --shadow: rgba(192,192,192,0.3); --level-bg-start: #E8E8E8; --level-bg-end: #DCDCDC; --level-text: #696969; --level-shadow: rgba(105,105,105,0.2); }
+        .badge-card:nth-child(5) { --accent-start: #FFD700; --accent-end: #FFA500; --bg-light: #FFFACD; --bg-dark: #FFE4B5; --shadow: rgba(255,215,0,0.4); --level-bg-start: #FFFACD; --level-bg-end: #FFD700; --level-text: #8B6914; --level-shadow: rgba(139,105,20,0.3); }
+        .badge-card:nth-child(6) { --accent-start: #FFD700; --accent-end: #FFA500; --bg-light: #FFFACD; --bg-dark: #FFE4B5; --shadow: rgba(255,215,0,0.4); --level-bg-start: #FFFACD; --level-bg-end: #FFD700; --level-text: #8B6914; --level-shadow: rgba(139,105,20,0.3); }
+        .badge-card:nth-child(7) { --accent-start: #FFD700; --accent-end: #FFA500; --bg-light: #FFFACD; --bg-dark: #FFE4B5; --shadow: rgba(255,215,0,0.4); --level-bg-start: #FFFACD; --level-bg-end: #FFD700; --level-text: #8B6914; --level-shadow: rgba(139,105,20,0.3); }
+        .badge-card:nth-child(8) { --accent-start: #E5E4E2; --accent-end: #C0C0C0; --bg-light: #F5F5F5; --bg-dark: #E8E8E8; --shadow: rgba(200,200,200,0.4); --level-bg-start: #E0FFFF; --level-bg-end: #B0E0E6; --level-text: #1E90FF; --level-shadow: rgba(30,144,255,0.2); }
+        .badge-card:nth-child(9) { --accent-start: #E5E4E2; --accent-end: #C0C0C0; --bg-light: #F5F5F5; --bg-dark: #E8E8E8; --shadow: rgba(200,200,200,0.4); --level-bg-start: #E0FFFF; --level-bg-end: #B0E0E6; --level-text: #1E90FF; --level-shadow: rgba(30,144,255,0.2); }
+        .badge-card:nth-child(10) { --accent-start: #B9F2FF; --accent-end: #6A5ACD; --bg-light: #E6E6FA; --bg-dark: #DDA0DD; --shadow: rgba(135,206,235,0.5); --level-bg-start: #E6E6FA; --level-bg-end: #DDA0DD; --level-text: #4B0082; --level-shadow: rgba(75,0,130,0.3); animation: glow 2s ease-in-out infinite; }
+        
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 10px 40px rgba(0,0,0,0.15); }
+            50% { box-shadow: 0 15px 50px rgba(135,206,235,0.4); }
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            color: rgba(255,255,255,0.8);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏅 童劳童得 - 成就勋章</h1>
+            <p>记录成长每一步，点亮专属成就</p>
+        </div>
+        
+        <div class="badges-grid">
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="star1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#DAA520"/>
+                                <stop offset="100%" stop-color="#CD7F32"/>
+                            </linearGradient>
+                        </defs>
+                        <polygon points="32,4 38,22 58,24 44,36 48,56 32,46 16,56 20,36 6,24 26,22" fill="url(#star1)"/>
+                        <circle cx="32" cy="32" r="6" fill="#FFF" opacity="0.7"/>
+                    </svg>
+                </div>
+                <div class="badge-name">初露锋芒</div>
+                <div class="badge-desc">完成第一个任务</div>
+                <div class="badge-level">青铜</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="flame1" x1="0%" y1="100%" x2="0%" y2="0%">
+                                <stop offset="0%" stop-color="#4A5568"/>
+                                <stop offset="50%" stop-color="#718096"/>
+                                <stop offset="100%" stop-color="#A0AEC0"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M32 60 C20 60 12 52 16 40 C10 36 14 24 22 28 C18 16 32 8 32 8 C32 8 46 16 42 28 C50 24 54 36 48 40 C52 52 44 60 32 60 Z" fill="url(#flame1)"/>
+                    </svg>
+                </div>
+                <div class="badge-name">连续打卡</div>
+                <div class="badge-desc">连续7天完成任务</div>
+                <div class="badge-level">白银</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="house1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#718096"/>
+                                <stop offset="100%" stop-color="#4A5568"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M32 8 L8 28 L8 56 L56 56 L56 28 Z" fill="url(#house1)"/>
+                        <polygon points="32,8 8,28 56,28" fill="#2D3748"/>
+                        <rect x="24" y="36" width="16" height="20" fill="#FFF" opacity="0.3"/>
+                        <path d="M32 36 L32 56" stroke="#FFF" stroke-width="2" opacity="0.5"/>
+                    </svg>
+                </div>
+                <div class="badge-name">家务能手</div>
+                <div class="badge-desc">完成家务50次</div>
+                <div class="badge-level">白银</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="book1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#718096"/>
+                                <stop offset="100%" stop-color="#4A5568"/>
+                            </linearGradient>
+                        </defs>
+                        <rect x="8" y="20" width="48" height="32" rx="2" fill="#FFF" stroke="url(#book1)" stroke-width="3"/>
+                        <rect x="10" y="22" width="18" height="28" fill="url(#book1)" opacity="0.3"/>
+                        <path d="M32 22 L32 50" stroke="url(#book1)" stroke-width="2" stroke-dasharray="4 3"/>
+                        <polygon points="32,14 28,22 36,22" fill="url(#book1)"/>
+                    </svg>
+                </div>
+                <div class="badge-name">学习之星</div>
+                <div class="badge-desc">完成学习任务50次</div>
+                <div class="badge-level">白银</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="target1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FFD700"/>
+                                <stop offset="100%" stop-color="#FFA500"/>
+                            </linearGradient>
+                        </defs>
+                        <circle cx="32" cy="32" r="26" fill="none" stroke="#FFD700" stroke-width="3" stroke-dasharray="8 4"/>
+                        <circle cx="32" cy="32" r="18" fill="none" stroke="#FFA500" stroke-width="2"/>
+                        <circle cx="32" cy="32" r="8" fill="url(#target1)"/>
+                        <path d="M22 32 L32 32 L32 22" stroke="#FFF" stroke-width="3" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div class="badge-name">完美达成</div>
+                <div class="badge-desc">任务验收满分</div>
+                <div class="badge-level">黄金</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="hand1" x1="0%" y1="100%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#FF69B4"/>
+                                <stop offset="100%" stop-color="#FF1493"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M44 28 C44 28 52 20 52 32 C52 44 44 52 32 52 C20 52 12 44 12 32 C12 20 20 28 20 28" fill="url(#hand1)"/>
+                        <path d="M24 24 C24 16 30 12 36 18" stroke="#FFF" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="24" cy="32" r="4" fill="#FFF" opacity="0.6"/>
+                        <circle cx="32" cy="36" r="4" fill="#FFF" opacity="0.6"/>
+                        <circle cx="40" cy="34" r="4" fill="#FFF" opacity="0.6"/>
+                    </svg>
+                </div>
+                <div class="badge-name">乐于助人</div>
+                <div class="badge-desc">帮助家人20次</div>
+                <div class="badge-level">黄金</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="trend1" x1="0%" y1="100%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#32CD32"/>
+                                <stop offset="100%" stop-color="#00FA9A"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M10 52 L10 14" stroke="#DDD" stroke-width="2" stroke-dasharray="4 3"/>
+                        <path d="M10 54 L54 54" stroke="#DDD" stroke-width="2"/>
+                        <path d="M14 48 L22 40 L30 34 L38 28 L46 20" stroke="url(#trend1)" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="14" cy="48" r="4" fill="url(#trend1)"/>
+                        <circle cx="46" cy="20" r="6" fill="url(#trend1)"/>
+                        <circle cx="46" cy="20" r="10" fill="url(#trend1)" opacity="0.2"/>
+                    </svg>
+                </div>
+                <div class="badge-name">进步之星</div>
+                <div class="badge-desc">连续3个月积分增长</div>
+                <div class="badge-level">黄金</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="family1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#667EEA"/>
+                                <stop offset="100%" stop-color="#764BA2"/>
+                            </linearGradient>
+                        </defs>
+                        <circle cx="20" cy="36" r="10" fill="url(#family1)"/>
+                        <circle cx="44" cy="36" r="10" fill="url(#family1)"/>
+                        <circle cx="32" cy="24" r="8" fill="#4A5568"/>
+                        <path d="M20 46 L20 54" stroke="url(#family1)" stroke-width="3"/>
+                        <path d="M44 46 L44 54" stroke="url(#family1)" stroke-width="3"/>
+                        <path d="M32 32 L32 40" stroke="#4A5568" stroke-width="3"/>
+                    </svg>
+                </div>
+                <div class="badge-name">家庭管家</div>
+                <div class="badge-desc">管理任务100次</div>
+                <div class="badge-level">铂金</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="crown1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#667EEA"/>
+                                <stop offset="100%" stop-color="#764BA2"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M16 32 L12 44 L24 40 L24 52 L40 52 L40 40 L52 44 L48 32 Z" fill="url(#crown1)"/>
+                        <circle cx="32" cy="28" r="6" fill="#FFD700"/>
+                        <polygon points="32,16 28,28 36,28" fill="#FFD700"/>
+                    </svg>
+                </div>
+                <div class="badge-name">成长达人</div>
+                <div class="badge-desc">累计积分1000</div>
+                <div class="badge-level">铂金</div>
+            </div>
+            
+            <div class="badge-card">
+                <div class="badge-icon">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <defs>
+                            <linearGradient id="trophy1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FFD700"/>
+                                <stop offset="50%" stop-color="#FFA500"/>
+                                <stop offset="100%" stop-color="#FF8C00"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M16 28 Q8 28 8 36 L8 48 Q8 56 16 56 L48 56 Q56 56 56 48 L56 36 Q56 28 48 28 Q40 28 40 20 Q40 12 32 12 Q24 12 24 20 Q24 28 16 28 Z" fill="url(#trophy1)"/>
+                        <path d="M20 48 L24 60 L40 60 L44 48" fill="none" stroke="#FFA500" stroke-width="4"/>
+                        <circle cx="32" cy="36" r="5" fill="#FFF" opacity="0.7"/>
+                    </svg>
+                </div>
+                <div class="badge-name">年度之星</div>
+                <div class="badge-desc">年度最佳表现</div>
+                <div class="badge-level">钻石</div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>童劳童得 - 让成长看得见</p>
+        </div>
+    </div>
+</body>
+</html>

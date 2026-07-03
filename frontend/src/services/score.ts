@@ -29,6 +29,21 @@ export interface TrendPoint {
   balance: number;
 }
 
+export interface MonthlyStats {
+  month: string;
+  income: number;
+  expense: number;
+  balance: number;
+}
+
+export async function getMonthlyStats(childId: number): Promise<MonthlyStats[]> {
+  return request<MonthlyStats[]>({
+    method: 'GET',
+    url: '/score/monthly-stats',
+    params: { child_id: childId },
+  });
+}
+
 export async function getBalance(childId: number): Promise<{ child_id: number; child_name: string; balance: number }> {
   return request<{ child_id: number; child_name: string; balance: number }>({
     method: 'GET',

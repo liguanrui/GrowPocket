@@ -233,7 +233,8 @@ export function TaskDetailPage() {
     );
   }
 
-  const child = useChildStore.getState().children.find((c) => c.id === task.childId);
+  const child = useChildStore.getState().children.find((c) => c.id === task.child_id);
+  const childName = task.child_name || child?.nickname || '未设置';
   const status = STATUS_MAP[task.status] || STATUS_MAP[1];
 
   const handleSubmit = async () => {
@@ -307,7 +308,7 @@ export function TaskDetailPage() {
             </div>
             <div className="bg-white/15 rounded-xl p-3">
               <div className="text-white/70 text-xs">指派</div>
-              <div className="text-white font-medium mt-0.5">{child?.nickname || '未设置'}</div>
+              <div className="text-white font-medium mt-0.5">{childName}</div>
             </div>
           </div>
 
@@ -368,7 +369,7 @@ export function TaskDetailPage() {
             <CheckCircle2 size={28} className="text-success mx-auto" />
             <div className="mt-2 text-success font-medium">任务已完成</div>
             <div className="text-sm text-text-secondary mt-1">
-              {task.points} 积分已发放给 {child?.nickname}
+              {task.points} 积分已发放给 {childName}
             </div>
           </div>
         )}
@@ -382,7 +383,7 @@ export function TaskDetailPage() {
           </div>
           <div className="flex items-start justify-between py-2 border-b border-gray-100">
             <span className="text-sm text-text-tertiary">指派给</span>
-            <span className="text-sm text-text-primary font-medium">{child?.nickname}</span>
+            <span className="text-sm text-text-primary font-medium">{childName}</span>
           </div>
           <div className="flex items-start justify-between py-2 border-b border-gray-100">
             <span className="text-sm text-text-tertiary">原任务积分</span>

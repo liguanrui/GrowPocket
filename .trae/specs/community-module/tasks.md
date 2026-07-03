@@ -1,0 +1,290 @@
+# 社区模块 - 实施计划（分解后的优先级任务列表）
+
+## [ ] Task 1: 数据库模型设计与迁移
+- **Priority**: P0
+- **Depends On**: None
+- **Description**: 
+  - 创建社区分享模型 `CommunityShare`：id, family_id, user_id, nickname, content_type(1=memory/2=activity/3=game), title, description, photo, task_id(可选), task_title(可选), task_points(可选), tag, like_count, comment_count, created_at, updated_at
+  - 创建点赞模型 `CommunityLike`：id, share_id, family_id, user_id, created_at（联合唯一索引：share_id + family_id）
+  - 创建评论模型 `CommunityComment`：id, share_id, family_id, user_id, nickname, content, created_at
+  - 创建公益项目模型 `CharityProject`：id, title, icon, description, steps_description, points, category(1=book/2=clothes/3=toy), created_at
+  - 创建公益项目参与记录 `CharityDonation`：id, family_id, child_id, child_name, project_id, project_title, details(JSON: 书籍名称/数量等), photo, points, created_at
+  - 创建公益活动模型 `CharityActivity`：id, family_id, nickname, title, activity_type, description, location, event_time, max_participants, current_participants, status(1=recruiting/2=ongoing/3=ended), photo, created_at
+  - 创建活动参与记录 `ActivityParticipant`：id, activity_id, family_id, nickname, status(1=signed_up/2=completed), points_earned, completed_at, created_at
+  - 创建游戏模型 `Game`：id, game_type(1=logic/2=expression), difficulty(1/2/3), title, description, content(JSON: 题目/选项/答案), points, created_at
+  - 创建游戏参与记录 `GamePlay`：id, family_id, child_id, child_name, game_id, game_title, game_type, is_correct, user_answer(JSON: 选择/描述), points_earned, created_at
+  - 在 `database.Init()` 的 AutoMigrate 中添加以上 8 个模型
+- **Acceptance Criteria Addressed**: AC-1, AC-2, AC-4, AC-5, AC-7, AC-13
+- **Test Requirements**:
+  - `programmatic` TR-1.1: `go test` 确保数据库迁移和 GORM 模型定义无错误（AutoMigrate 成功创建所有表）
+  - `programmatic` TR-1.2: 可以通过数据库 Insert/Find 验证 CRUD 基本操作
+  - `programmatic` TR-1.3: 新增的常量定义（如 ShareTypeMemory=1, ActivityStatusRecruiting=1 等）测试通过
+- **Notes**: 参考现有 `model.Task`、`model.Transaction`、`model.RedeemItem` 的命名和 tag 风格；JSON 字段使用 `gorm:"type:text"` + `json:"field"`
+
+## [ ] Task 2: 服务端公共基础设施（Service + Handler 基础 + Seed 数据）
+- **Priority**: P0
+- **Depends On**: Task 1
+- **Description**: 
+  - 创建 `backend/internal/service/community_service.go` 基础服务结构（类似 `GrowthService`，但包含多个子方法）
+  - 创建 `backend/internal/handler/community.go` 处理器基础结构
+  - 在 `backend/cmd/main.go` 的 authorized 路由组中注册 `/api/community/*` 路由前缀
+  - 实现公益项目 seed 数据：在 backend 启动时，如果 `CharityProject` 表为空，自动插入 3 条预置数据（捐书、捐衣服、捐玩具）
+  - 实现游戏 seed 数据：在 backend 启动时，如果 `Game` 表为空，自动插入 6-10 道预置题目（3 道简单逻辑 + 2 道中等逻辑 + 2 道表达挑战）
+  - 在 `backend/internal/handler/tasks.go` 或 `util` 包中已有的 `parseUintFromQuery` 和 `parseUint` 等辅助函数复用
+- **Acceptance Criteria Addressed**: AC-13
+- **Test Requirements**:
+  - `programmatic` TR-2.1: 首次启动时 `CharityProject` 和 `Game` 表被正确 seed
+  - `programmatic` TR-2.2: 再次启动时不重复插入 seed 数据（幂等）
+  - `programmatic` TR-2.3: 路由注册成功，`/api/community/*` 路径可用
+
+## [ ] Task 3: 社区分享（Share）CRUD + 点赞评论
+- **Priority**: P0
+- **Depends On**: Task 2
+- **Description**: 
+  - Service 层：实现 `CreateShare`、`ListShares`（分页 + sort）、`GetShare`、`DeleteShare`（校验 family_id）、`ToggleLike`、`AddComment`、`ListComments`
+  - Handler 层：实现对应 HTTP 处理器
+  - 路由：`POST /api/community/shares`、`GET /api/community/shares`、`GET /api/community/shares/:id`、`DELETE /api/community/shares/:id`、`POST /api/community/shares/:id/like`、`DELETE /api/community/shares/:id/like`、`POST /api/community/shares/:id/comments`、`GET /api/community/shares/:id/comments`
+  - 积分机制：分享成长回忆 **不** 直接给予积分（积分已在完成任务时给予），但点赞互动可以选择给予少量积分（可选功能，MVP 阶段暂不实现）
+- **Acceptance Criteria Addressed**: AC-1, AC-2, AC-3, AC-9, AC-12
+- **Test Requirements**:
+  - `programmatic` TR-3.1: 创建分享 API 返回 200 且数据正确插入数据库
+  - `programmatic` TR-3.2: 分页列表 API 返回正确的分页数据（items, total, page, page_size）
+  - `programmatic` TR-3.3: 点赞 toggle API 正确切换点赞状态并更新计数
+  - `programmatic` TR-3.4: 非创建者家庭删除他人分享被拒绝（403/400）
+  - `programmatic` TR-3.5: 评论创建和列表获取功能正常
+  - `programmatic` TR-3.6: Go 单元测试覆盖 service 层核心逻辑（参考 `task_service_test.go`）
+
+## [ ] Task 4: 公益项目（Charity Projects）服务端
+- **Priority**: P0
+- **Depends On**: Task 2
+- **Description**: 
+  - Service 层：`ListProjects`、`GetProject`、`JoinProject`（创建 donation 记录 + 调用积分服务增加积分 + 创建 Transaction）
+  - Handler 层：对应处理器
+  - 路由：`GET /api/community/charity-projects`、`GET /api/community/charity-projects/:id`、`POST /api/community/charity-projects/:id/join`、`GET /api/community/charity-projects/my`
+  - `JoinProject` 必须：校验 child_id 属于当前家庭，创建 `CharityDonation`，调用现有 `score_service.AddPoints` 或等效逻辑增加积分，并创建 `model.Transaction`（type=0, amount=项目积分, reason="参与公益项目：{项目名}"）
+- **Acceptance Criteria Addressed**: AC-4
+- **Test Requirements**:
+  - `programmatic` TR-4.1: GET projects 返回预置的 3 个项目
+  - `programmatic` TR-4.2: POST join 返回 200 且数据库新增一条 CharityDonation + Transaction
+  - `programmatic` TR-4.3: 孩子余额正确增加
+  - `programmatic` TR-4.4: GET my 返回当前家庭参与记录
+  - `programmatic` TR-4.5: 单元测试覆盖 JoinProject 的核心逻辑（积分 + Transaction）
+
+## [ ] Task 5: 公益活动（Charity Activities）服务端
+- **Priority**: P0
+- **Depends On**: Task 2
+- **Description**: 
+  - Service 层：`CreateActivity`、`ListActivities`、`GetActivity`、`JoinActivity`（检查人数上限，添加 participant 记录）、`CompleteActivity`（标记完成并发放积分，生成 Transaction）、`DeleteActivity`（仅创建者）
+  - Handler 层：对应处理器
+  - 路由：`GET /api/community/activities`、`POST /api/community/activities`、`GET /api/community/activities/:id`、`POST /api/community/activities/:id/join`、`POST /api/community/activities/:id/complete`、`DELETE /api/community/activities/:id`
+  - 活动完成积分：基础 100 分，可通过 URL 参数或请求体自定义
+- **Acceptance Criteria Addressed**: AC-5, AC-6
+- **Test Requirements**:
+  - `programmatic` TR-5.1: 创建活动 API 成功
+  - `programmatic` TR-5.2: 报名活动成功，参与人数正确增加
+  - `programmatic` TR-5.3: 报名人数超过 max_participants 时被拒绝
+  - `programmatic` TR-5.4: 完成活动后 Transaction 正确生成，余额正确增加
+  - `programmatic` TR-5.5: 单元测试覆盖 service 层
+
+## [ ] Task 6: 前端社区主页 + 导航集成（含 UI 组件规范）
+- **Priority**: P0
+- **Depends On**: Task 3
+- **Description**: 
+  - **路由层**（`frontend/src/App.tsx`）
+    - 在 MainLayout 的 Routes 中添加 `path: "community"` → `element: <CommunityPage />`
+    - 社区首页路由 `/community`，其他页面 `/community/shares/:id`（分享详情）、`/community/charity-projects`、`/community/charity-activities/:id`
+  - **导航层**（`frontend/src/components/BottomNav.tsx`）
+    - 从 lucide-react 引入 `Globe` 图标
+    - navItems 数组增加第 6 项：`{ id: 'community', label: '社区', icon: Globe }`
+    - activeTab === 'community' 时背景 `bg-primary/10`，文字 `text-primary`，图标 strokeWidth=2.5
+  - **Service 层**（`frontend/src/services/community.ts`）
+    - TypeScript 接口定义：`Share`、`Comment`、`CharityProject`、`Donation`、`CharityActivity`、`ActivityParticipant`
+    - API 函数：`fetchShares(params)`、`fetchShare(id)`、`createShare(data)`、`deleteShare(id)`、`toggleLike(shareId)`、`fetchComments(shareId)`、`addComment(shareId, content)`
+    - API 函数：`fetchCharityProjects()`、`joinCharityProject(projectId, data)`、`fetchMyDonations()`
+    - API 函数：`fetchActivities(params)`、`createActivity(data)`、`fetchActivity(id)`、`joinActivity(id)`、`completeActivity(id, data)`、`fetchMyActivities()`
+    - 所有请求使用统一的 request 工具函数（`await api.request('/api/community/...', { method, body })`）
+    - 支持分页参数：`{ page, page_size, sort, filter }`
+  - **页面层**（`frontend/src/pages/CommunityPage.tsx`）
+    - 使用 `useState` 管理 `activeTab`（'feed' | 'projects' | 'activities'）
+    - 顶部渐变区域（emerald-500 到 green-600）：标题"社区广场"、副标题"与其他家庭一起成长"、数据卡片（分享总数/今日参与家庭数）
+    - Tab 切换栏（`bg-card rounded-2xl p-1 shadow-sm`）：动态 / 公益项目 / 公益活动，激活态 `bg-primary text-white shadow`
+    - 根据 activeTab 渲染 3 个不同的 Tab 内容组件：
+      - `ShareFeed`（动态列表）
+      - `CharityProjectList`（公益项目列表）
+      - `CharityActivityList`（公益活动列表）
+    - 页面通用：`min-h-screen bg-bg pb-24`，内容 `max-w-lg mx-auto`
+  - **通用组件**
+    - `components/community/ShareCard.tsx`：分享卡片组件（头像、昵称、标签、时间、图片、标题、描述、积分、点赞、评论）
+    - `components/community/CharityProjectCard.tsx`：公益项目卡片
+    - `components/community/CharityActivityCard.tsx`：公益活动卡片
+    - `components/community/CommentModal.tsx`：评论模态框
+    - `components/community/ShareModal.tsx`：发表分享模态框
+    - `components/community/ActivityCreateModal.tsx`：创建活动模态框
+    - `components/community/LikeButton.tsx`：点赞按钮组件
+    - `components/community/EmptyState.tsx`：空状态组件（图标 + 标题 + 描述 + CTA 按钮）
+    - `components/community/SuccessModal.tsx`：成功反馈模态框（大对勾 + 获得积分）
+- **Acceptance Criteria Addressed**: AC-1, AC-8, AC-9
+- **Test Requirements**:
+  - `human-judgment` TR-6.1: 底部导航栏出现"社区"，点击跳转 `/community` 页面正常显示
+  - `human-judgment` TR-6.2: 社区主页视觉风格与其他页面（首页/成长页/任务页）一致
+  - `human-judgment` TR-6.3: 3 个 Tab 可以相互切换，Tab 栏 UI 正确展示
+  - `human-judgment` TR-6.4: 顶部渐变区域、Tab 栏、卡片列表视觉层级正确
+  - `programmatic` TR-6.5: 前端 service 文件正确导出类型定义和 API 函数
+
+## [ ] Task 7: 前端 - 成长回忆分享子页面（详细 UI 规格）
+- **Priority**: P1
+- **Depends On**: Task 6, Task 3
+- **Description**:
+  - **发表分享**：点击 CommunityPage 右下角浮动按钮（fixed bottom-24 right-4）打开 `ShareModal`
+    - `ShareModal` 结构：
+      - 关闭按钮 ×（左）+ 标题"发表成长回忆"（中）+ "发布"按钮（右，橙色主色）
+      - 图片预览区：`aspect-square rounded-2xl bg-gray-100 overflow-hidden`（来自任务照片或上传新照片）
+      - 标题输入框：placeholder "给这段回忆起个标题..."，限 50 字
+      - 描述 textarea：placeholder "分享你和孩子的成长故事..."，限 500 字
+      - 标签选择：`flex flex-wrap gap-2`，按钮 `px-3 py-1 rounded-full text-sm bg-gray-100 text-text-secondary`，选中态 `bg-primary text-white`
+      - 预设标签：阅读时刻、运动达人、家务小能手、艺术创作、学习打卡、亲子时光
+      - 任务信息卡片：`bg-bg rounded-xl p-3 text-sm mt-3` + 任务标题 + `+XX 积分`（橙色 font-bold）
+      - 发布按钮：`w-full py-3 bg-primary text-white rounded-xl font-medium mt-4`
+  - **点赞交互**：`LikeButton` 组件
+    - 未点赞：空心 Heart 图标 + 灰色文字 + `opacity-0.7 hover:opacity-100`
+    - 已点赞：实心 Heart 图标（红色）+ `text-danger` 文字 + `scale-105` 点击效果
+    - 点击后 150ms 内从空心→实心动画（opacity/scale/transform transition-all duration-150）
+    - 数字在 optimistic 更新后调用异步 API，失败时回滚
+    - 点赞时使用 `isPending` 状态避免重复点击
+  - **评论功能**：`CommentModal` 组件
+    - 顶部：评论总数（`评论 (23)`）+ 关闭按钮
+    - 中部：评论列表 `space-y-3 max-h-80 overflow-y-auto`
+      - 每条评论：`flex gap-3` + 圆形头像（`w-8 h-8 rounded-full bg-gray-100`）+ 垂直内容区
+      - 内容区：昵称 + 时间 + 评论文字
+    - 底部：`sticky bottom-0 bg-white border-t border-gray-100 p-3`
+      - `flex gap-2`：textarea（`flex-1 p-2 bg-gray-50 rounded-xl resize-none text-sm`）+ "发布"按钮（`bg-primary text-white rounded-xl px-4`）
+  - **删除功能**：自己发布的分享右上角显示 `MoreHorizontal` 图标
+    - 点击弹出操作菜单：删除（红色文字）、取消
+    - 删除前二次确认模态框：确认按钮 `bg-danger text-white rounded-xl`
+  - **排序筛选**：动态 Tab 中放置"最新/最热"切换按钮（小字号 pill 风格）
+    - 点击后调用 `fetchShares({ sort: 'popular' })` 重新拉取列表
+  - **分享详情页**（可选 MVP 简化为卡片点击展开评论区，或独立路由 `community/shares/:id`）
+- **Acceptance Criteria Addressed**: AC-2, AC-3, AC-7
+- **Test Requirements**:
+  - `human-judgment` TR-7.1: 从成长相册选择照片 → 填写信息 → 发布，动态流中出现新分享
+  - `human-judgment` TR-7.2: 点赞按钮可以正确切换，计数实时更新
+  - `human-judgment` TR-7.3: 评论提交后列表即时显示
+  - `human-judgment` TR-7.4: 自己的分享可以删除，他人分享没有删除按钮
+  - `human-judgment` TR-7.5: Tab 切换到成长回忆时只显示类型=memory 的分享
+
+## [ ] Task 8: 前端 - 公益项目子页面（详细 UI 规格）
+- **Priority**: P1
+- **Depends On**: Task 6, Task 4
+- **Description**:
+  - **公益项目列表页**（CommunityPage 中 Tab='projects' 时渲染 `CharityProjectList`）
+    - 顶部渐变区域（绿色）：标题"公益项目"，副标题"参与公益，获得积分奖励"
+    - 数据统计：累计参与次数 + 累计获得积分（`bg-white/15 rounded-2xl p-3`）
+    - 项目卡片列表（`space-y-3 mt-4`）
+      - 每张卡片（`bg-card rounded-2xl shadow-sm overflow-hidden`）：
+        - `flex gap-3 p-4 items-center`
+        - 左侧图标区：`w-14 h-14 rounded-full flex items-center justify-center`，背景 `bg-primary/10`，图标 `text-primary`
+        - 图标映射：捐书 = 书本图标，捐衣服 = Shirt 图标，捐玩具 = Gift 图标
+        - 中间区：项目名（`font-bold text-text-primary`）+ 简短描述（`text-sm text-text-tertiary line-clamp-2`）
+        - 右侧：积分（`text-primary font-bold text-lg`，+XX 分）+ "参与"按钮
+    - 我的参与记录（`SectionHeader` 标题"我的捐赠记录" + `查看全部` + 列表）
+      - 每条记录：`bg-card rounded-2xl p-3 shadow-sm flex items-center justify-between`
+      - 左侧：项目图标 + 项目名称 + 参与时间
+      - 右侧：`+XX`（橙色 font-bold）
+  - **参与流程**（3 步模态框 `CharityDonationWizard`）
+    - **步骤 1（项目介绍）**：
+      - 顶部进度指示器：`flex justify-center gap-2` + 3 个圆点（已完成=green，当前=primary，未完成=gray）
+      - 居中大图标（`w-20 h-20 rounded-full bg-primary/10 mx-auto`）
+      - 项目名称（`text-xl font-bold text-text-primary text-center mt-4`）
+      - 步骤说明列表（`space-y-2 text-sm text-text-secondary mt-4`）
+      - 奖励积分：`text-primary text-3xl font-bold text-center mt-4`（+XX 积分）
+      - 底部按钮：`w-full py-3 bg-primary text-white rounded-xl font-medium mt-6`（"开始填写"）
+    - **步骤 2（填写信息）**：
+      - 标题："填写捐赠信息"
+      - 不同项目的字段：
+        - 捐书：书籍名称（text input）、数量（stepper: - 1 +）
+        - 捐衣服：类型（radio button group：上装/下装/冬装/其他）+ 数量
+        - 捐玩具：类型（text input）+ 数量 + 新旧程度（select：全新/九成新/八成新/其他）
+      - 上传完成照片：`aspect-[4/3] rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-2 p-6 mt-3`（点击上传图片预览）
+      - 底部按钮："提交并获取积分"（disabled 直到关键信息填写完整）
+    - **步骤 3（成功反馈）**：
+      - 居中的绿色 Check 圆形大图标（`w-20 h-20 rounded-full bg-success flex items-center justify-center mx-auto` + Check 64px white 图标）
+      - `text-xl font-bold text-text-primary text-center mt-4`（"恭喜完成！"）
+      - `text-primary text-4xl font-bold text-center mt-3`（+XX 积分）
+      - `text-sm text-text-tertiary text-center mt-2`（"积分已加入你的账户"）
+      - 底部两个按钮（`w-full` + 间距）："继续浏览"（`bg-gray-100 text-text-secondary`）、"查看积分记录"（`bg-primary text-white`）
+- **Acceptance Criteria Addressed**: AC-4
+- **Test Requirements**:
+  - `human-judgment` TR-8.1: 可以浏览 3 类公益项目
+  - `human-judgment` TR-8.2: 参与项目后积分增加，Transaction 在积分明细中可见
+  - `human-judgment` TR-8.3: 我的参与记录列表正确显示
+  - `human-judgment` TR-8.4: 3 步流程 UI 切换正确，步骤指示点颜色与当前进度匹配
+
+## [ ] Task 9: 前端 - 公益活动子页面（详细 UI 规格）
+- **Priority**: P1
+- **Depends On**: Task 6, Task 5
+- **Description**:
+  - **活动列表页**（CommunityPage 中 Tab='activities' 时渲染 `CharityActivityList`）
+    - 顶部渐变区域（蓝色 `from-blue-500 to-blue-600`）：标题"公益活动" + 副标题"组织或参与线下公益活动"
+    - 发起活动按钮：右上角 `flex items-center gap-1 px-3 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-white text-sm`
+    - Tab 筛选栏（模式 D）：全部 / 捡垃圾 / 老人院服务 / 植树 / 博弈游戏（数字为各类型活动数量）
+    - 活动卡片列表（`space-y-3 mt-4`）：
+      - 每张卡片：`bg-card rounded-2xl shadow-sm overflow-hidden`
+      - 顶部图片区：`aspect-video bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center relative` + 大图标（根据活动类型显示不同图标：捡垃圾=Broom，老人院=HeartHandshake，植树=TreePine，博弈游戏=Brain）
+      - 状态标签：右上角 `px-2 py-0.5 rounded-full text-xs font-medium`，颜色按状态区分（招募中=green，进行中=blue，已结束=gray）
+      - 内容区 `p-4`：标题 font-bold，描述 text-sm line-clamp-2 text-text-secondary
+      - 信息行 `flex items-center gap-4 text-sm text-text-tertiary mt-3`：
+        - Calendar 图标 + 时间（YYYY-MM-DD HH:mm）
+        - MapPin 图标 + 地点（超过省略号）
+        - Users 图标 + 5/10 已报名
+      - 底部操作栏 `border-t border-gray-100 p-3 flex items-center justify-between`：
+        - 左：`+80 积分`（text-primary font-bold，博弈游戏活动额外显示 `组织者+100`）
+        - 右：按钮（未报名=primary 颜色 + 文案"报名"，已报名=gray-200 text-text-secondary + 文案"已报名"）
+  - **创建活动表单**（全屏幕模态框 `CreateActivityModal`）
+    - 顶部：关闭 × + 标题"发起公益活动"（居中）
+    - 表单字段：
+      - 活动标题：text input placeholder "活动标题"
+      - 活动类型：按钮组（`flex flex-wrap gap-2`），按钮 pill 风格：捡垃圾 / 老人院服务 / 植树 / 公益讲座 / 其他
+      - 日期时间：`type="datetime-local"` 或自定义日期选择器（`bg-gray-50 rounded-xl px-3 py-2 w-full`）
+      - 地点：text input placeholder "活动地点"
+      - 人数上限：数字输入，默认值 10，旁边 "+" "-" 步进
+      - 描述：textarea placeholder "活动详情..."
+    - 底部两个按钮：`flex gap-2` + 取消（bg-gray-100 text-text-secondary）+ 发布（bg-primary text-white）
+  - **活动详情页**（独立路由 `/community/charity-activities/:id` 或模态框形式）
+    - 大图/大图标区域
+    - 状态标签 + 标题 + 描述
+    - 信息卡：时间、地点、参与人数（已报名/上限）
+    - 发起者卡片：头像 + 昵称 + "发起人"标签
+    - 参与者网格：`grid grid-cols-6 gap-2` + 每个参与者头像+昵称
+    - 底部按钮：
+      - 未报名：`w-full py-3 bg-primary text-white rounded-xl font-medium`（"我要报名"）
+      - 已报名但活动未结束：`w-full py-3 bg-gray-100 text-text-secondary rounded-xl`（"已报名"）
+      - 活动结束且已报名：`w-full py-3 bg-success text-white rounded-xl font-medium`（"标记完成并获取积分"）
+  - **完成活动流程**（点击"标记完成"后）
+    - 弹出 `CharityActivityCompleteModal`
+    - 上传成果照片（必填）
+    - 简短感想（可选 textarea）
+    - 提交后显示 SuccessModal（+100 积分）
+- **Acceptance Criteria Addressed**: AC-5, AC-6
+- **Test Requirements**:
+  - `human-judgment` TR-9.1: 活动创建、报名、标记完成流程正常
+  - `human-judgment` TR-9.2: 完成活动后积分正确发放（组织者+100，参与者+80）
+  - `human-judgment` TR-9.3: 活动筛选 Tab（全部/捡垃圾/老人院/植树/博弈游戏）工作正常
+  - `human-judgment` TR-9.4: 活动状态标签颜色区分清晰，参与者网格布局整洁
+  - `human-judgment` TR-9.5: 博弈游戏类活动在列表中显示 Brain 图标，区分于其他活动
+
+## [ ] Task 10: 端到端集成测试与验证
+- **Priority**: P1
+- **Depends On**: Tasks 6-9
+- **Description**:
+  - 确保前端 `community.ts` service 与后端 `/api/community/*` API 正确对接
+  - 确保各页面在真实后端服务环境下（`npm run dev` + `go run`）可以正常操作
+  - 检查积分系统：每次参与公益项目/活动后，首页积分卡片数字正确更新
+  - 检查数据库中 Transaction 记录数据完整性（reason、amount、child_id 等字段正确）
+  - 错误处理：网络错误、参数缺失时显示友好提示
+  - 清理：删除测试数据，保留 seed 数据逻辑
+- **Acceptance Criteria Addressed**: AC-1 至 AC-11 的端到端验证
+- **Test Requirements**:
+  - `programmatic` TR-10.1: 所有新增 API 端点返回 200 成功（至少一个 happy path）
+  - `programmatic` TR-10.2: 积分流程端到端验证（从参与到 Transaction 生成到余额更新）
+  - `human-judgment` TR-10.3: 视觉检查所有页面风格与现有页面一致
+  - `human-judgment` TR-10.4: 错误场景提示友好（如网络断开时显示错误信息而非白屏）

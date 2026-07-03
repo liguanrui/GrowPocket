@@ -62,6 +62,24 @@ func (h *ScoreHandler) GetHistory(c *gin.Context) {
 	})
 }
 
+func (h *ScoreHandler) GetMonthlyStats(c *gin.Context) {
+	childID, err := parseUintFromQuery(c, "child_id")
+	if err != nil || childID == 0 {
+		util.FailBadRequest(c, "请提供 child_id")
+		return
+	}
+
+	stats, err := h.service.GetMonthlyStats(childID, middleware.GetFamilyID(c))
+	if err != nil {
+		util.FailInternal(c, err.Error())
+		return
+	}
+	if stats == nil {
+		stats = make([]service.MonthlyStats, 0)
+	}
+	util.OK(c, stats)
+}
+
 type adjustReq struct {
 	ChildID     uint   `json:"child_id" binding:"required"`
 	Points      int    `json:"points" binding:"required"` // 正数

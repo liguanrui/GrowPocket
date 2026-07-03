@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, User, CalendarDays, Sparkles } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import * as tasksService from '../services/tasks';
 
@@ -163,6 +163,7 @@ function TaskTemplates({
 
 export function CreateTaskPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const childStore = useChildStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -178,9 +179,15 @@ export function CreateTaskPage() {
       setLoading(true);
       try {
         await childStore.fetchChildren();
-        const current = useChildStore.getState().getCurrentChild();
-        if (current && mounted) {
-          setChildId(current.id);
+        const children = useChildStore.getState().children;
+        if (children.length > 0) {
+          // 优先从URL参数获取，其次使用currentChildId，最后使用第一个孩子
+          const urlChildId = searchParams.get('child_id');
+          const targetId = urlChildId ? Number(urlChildId) : useChildStore.getState().currentChildId;
+          const validId = targetId && children.some((c) => c.id === targetId) ? targetId : children[0].id;
+          if (mounted) {
+            setChildId(validId);
+          }
         }
       } catch (e: any) {
         if (mounted) setError(e.message || '加载失败');
@@ -192,7 +199,7 @@ export function CreateTaskPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [searchParams]);
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -217,7 +224,7 @@ export function CreateTaskPage() {
         deadline,
         status: 1,
       });
-      navigate('/tasks');
+      navigate('/home');
     } catch (e: any) {
       setError(e.message || '创建失败');
     }

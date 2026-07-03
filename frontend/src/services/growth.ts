@@ -21,6 +21,32 @@ export interface TimelineDay {
   events: TimelineEvent[];
 }
 
+export interface Achievement {
+  id: number;
+  family_id?: number;
+  name: string;
+  description: string;
+  icon: string;
+  icon_color?: string;
+  type: number;
+  target_value: number;
+  points: number;
+  is_custom?: boolean;
+  created_by?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface UserAchievement {
+  id: number;
+  child_id: number;
+  achievement_id: number;
+  unlocked: boolean;
+  unlocked_at?: string;
+  current_value: number;
+  Achievement: Achievement;
+}
+
 export async function getAlbum(
   childId: number,
   page = 1,
@@ -38,5 +64,69 @@ export async function getTimeline(childId: number, days = 30): Promise<TimelineD
     method: 'GET',
     url: '/growth/timeline',
     params: { child_id: childId, days },
+  });
+}
+
+export async function getAchievements(childId: number): Promise<UserAchievement[]> {
+  return request<UserAchievement[]>({
+    method: 'GET',
+    url: '/achievements',
+    params: { child_id: childId },
+  });
+}
+
+export async function checkAndUnlock(childId: number): Promise<UserAchievement[]> {
+  return request<UserAchievement[]>({
+    method: 'POST',
+    url: '/achievements/check',
+    params: { child_id: childId },
+  });
+}
+
+// ==================== 自定义勋章 CRUD ====================
+
+export interface CreateAchievementParams {
+  name: string;
+  description: string;
+  icon: string;
+  icon_color?: string;
+  type: number;
+  target_value: number;
+  points: number;
+}
+
+export async function createAchievement(params: CreateAchievementParams): Promise<Achievement> {
+  return request<Achievement>({
+    method: 'POST',
+    url: '/achievements',
+    data: params,
+  });
+}
+
+export interface UpdateAchievementParams {
+  name?: string;
+  description?: string;
+  icon?: string;
+  icon_color?: string;
+  type?: number;
+  target_value?: number;
+  points?: number;
+}
+
+export async function updateAchievement(
+  id: number,
+  params: UpdateAchievementParams,
+): Promise<Achievement> {
+  return request<Achievement>({
+    method: 'PUT',
+    url: `/achievements/${id}`,
+    data: params,
+  });
+}
+
+export async function deleteAchievement(id: number): Promise<void> {
+  return request<void>({
+    method: 'DELETE',
+    url: `/achievements/${id}`,
   });
 }
