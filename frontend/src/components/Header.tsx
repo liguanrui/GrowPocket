@@ -1,4 +1,5 @@
-import { Bell, ChevronRight, Users } from 'lucide-react';
+import { Bell, ChevronRight, Users, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { children as mockChildren, currentFamily } from '../data/mockData';
 import type { Child } from '../types';
 
@@ -108,6 +109,36 @@ function Header({ title, subtitle }: { title: string; subtitle?: string }) {
     <div>
       <h1 className="text-xl font-bold text-text-primary">{title}</h1>
       {subtitle && <p className="text-sm text-text-secondary mt-1">{subtitle}</p>}
+    </div>
+  );
+}
+
+export function BackHeader({ title, onBack }: { title: string; onBack?: () => void }) {
+  const navigate = useNavigate();
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      navigate(-1);
+    }
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-primary to-amber-500 pt-6 pb-10 px-4">
+      <div className="max-w-lg mx-auto">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBack}
+            className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition-colors"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-white">{title}</h1>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
