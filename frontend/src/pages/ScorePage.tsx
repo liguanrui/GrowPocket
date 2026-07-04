@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, TrendingUp, Plus, Minus, Star, ImagePlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Plus, Minus, Star, ImagePlus, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
