@@ -15,6 +15,7 @@ const activityTypeLabels: Record<number, string> = {
 
 // ============ 社区主页 ============
 export function CommunityPage() {
+  const childStore = useChildStore();
   const [activeTab, setActiveTab] = useState<'feed' | 'projects' | 'activities'>('feed');
   const [showShareModal, setShowShareModal] = useState(false);
 
@@ -659,6 +660,7 @@ function CharityProjects() {
 
 // ============ 公益活动 ============
 function Activities() {
+  const childStore = useChildStore();
   const [activities, setActivities] = useState<CharityActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState(0);
