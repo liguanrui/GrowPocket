@@ -12,6 +12,14 @@ import (
 type AchievementService struct{}
 
 func (s *AchievementService) GetAchievements(childID uint) ([]model.UserAchievement, error) {
+	if err := s.CheckAndUnlock(childID); err != nil {
+		return nil, err
+	}
+
+	return s.getAchievementsWithoutCheck(childID)
+}
+
+func (s *AchievementService) getAchievementsWithoutCheck(childID uint) ([]model.UserAchievement, error) {
 	var achievements []model.Achievement
 	if err := database.DB.Find(&achievements).Error; err != nil {
 		return nil, err
@@ -37,7 +45,7 @@ func (s *AchievementService) GetAchievements(childID uint) ([]model.UserAchievem
 }
 
 func (s *AchievementService) CheckAndUnlock(childID uint) error {
-	userAchievements, err := s.GetAchievements(childID)
+	userAchievements, err := s.getAchievementsWithoutCheck(childID)
 	if err != nil {
 		return err
 	}
@@ -87,7 +95,7 @@ func (s *AchievementService) CheckAndUnlock(childID uint) error {
 
 func (s *AchievementService) addAchievementPoints(childID uint, amount int, name string) error {
 	var child model.User
-	if err := database.DB.Where("id = ? AND role = ?", childID, "child").First(&child).Error; err != nil {
+	if err := database.DB.Where("id = ? AND role = ?", childID, model.RoleChild).First(&child).Error; err != nil {
 		return err
 	}
 
@@ -124,7 +132,7 @@ func (s *AchievementService) calculateCurrentValue(childID uint, achievementType
 		return s.getConsecutiveDays(childID)
 	case model.AchievementTypeTotalPoints:
 		var total int64
-		err := database.DB.Model(&model.Transaction{}).Where("child_id = ? AND type = ?", childID, 0).Select("COALESCE(SUM(amount), 0)").Scan(&total).Error
+		err := database.DB.Model(&model.Transaction{}).Where("child_id = ? AND amount > 0", childID).Select("COALESCE(SUM(amount), 0)").Scan(&total).Error
 		return int(total), err
 	case model.AchievementTypeTaskCount:
 		var count int64
@@ -145,7 +153,7 @@ func (s *AchievementService) calculateCurrentValue(childID uint, achievementType
 
 func (s *AchievementService) getConsecutiveDays(childID uint) (int, error) {
 	var tasks []model.Task
-	err := database.DB.Where("child_id = ? AND status = ?", childID, model.TaskStatusCompleted).Order("updated_at DESC").Limit(31).Find(&tasks).Error
+	err := database.DB.Where("child_id = ? AND status = ?", childID, model.TaskStatusCompleted).Order("updated_at DESC").Limit(60).Find(&tasks).Error
 	if err != nil {
 		return 0, err
 	}
@@ -154,19 +162,20 @@ func (s *AchievementService) getConsecutiveDays(childID uint) (int, error) {
 		return 0, nil
 	}
 
-	consecutive := 1
+	visited := make(map[string]bool)
+	for _, task := range tasks {
+		visited[task.UpdatedAt.Format("2006-01-02")] = true
+	}
+
+	consecutive := 0
 	lastDate := tasks[0].UpdatedAt.Format("2006-01-02")
+	currentTime, _ := time.Parse("2006-01-02", lastDate)
 
-	for i := 1; i < len(tasks); i++ {
-		currentDate := tasks[i].UpdatedAt.Format("2006-01-02")
-		lastTime, _ := time.Parse("2006-01-02", lastDate)
-		currentTime, _ := time.Parse("2006-01-02", currentDate)
-		diff := lastTime.Sub(currentTime).Hours() / 24
-
-		if diff == 1 {
+	for {
+		if visited[currentTime.Format("2006-01-02")] {
 			consecutive++
-			lastDate = currentDate
-		} else if diff > 1 {
+			currentTime = currentTime.Add(-24 * time.Hour)
+		} else {
 			break
 		}
 	}
