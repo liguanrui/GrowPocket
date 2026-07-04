@@ -276,18 +276,14 @@ func (s *AchievementService) addAchievementPoints(childID uint, amount int, name
 
 func InitAchievements() error {
 	achievements := []model.Achievement{
-		{Name: "初露锋芒", Description: "完成第一个任务", Icon: "🌟", CounterType: model.CounterTypeTaskCount, CounterTarget: 1, Points: 100},
-		{Name: "坚持3天", Description: "连续3天完成任务", Icon: "🔥", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 3, Points: 150},
-		{Name: "坚持7天", Description: "连续7天完成任务", Icon: "💪", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 7, Points: 300},
-		{Name: "坚持30天", Description: "连续30天完成任务", Icon: "💎", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 30, Points: 800},
-		{Name: "小试牛刀", Description: "累计获得500积分", Icon: "🥈", CounterType: model.CounterTypeTotalPoints, CounterTarget: 500, Points: 200},
-		{Name: "积分达人", Description: "累计获得1000积分", Icon: "🥇", CounterType: model.CounterTypeTotalPoints, CounterTarget: 1000, Points: 350},
-		{Name: "富甲一方", Description: "累计获得5000积分", Icon: "👑", CounterType: model.CounterTypeTotalPoints, CounterTarget: 5000, Points: 1000},
-		{Name: "勤劳小蜜蜂", Description: "完成10个任务", Icon: "🐝", CounterType: model.CounterTypeTaskCount, CounterTarget: 10, Points: 200},
-		{Name: "任务达人", Description: "完成50个任务", Icon: "⭐", CounterType: model.CounterTypeTaskCount, CounterTarget: 50, Points: 500},
-		{Name: "超级劳模", Description: "完成100个任务", Icon: "🏆", CounterType: model.CounterTypeTaskCount, CounterTarget: 100, Points: 1000},
-		{Name: "精打细算", Description: "兑换5次奖品", Icon: "🎁", CounterType: model.CounterTypeRedeemCount, CounterTarget: 5, Points: 150},
-		{Name: "公益小天使", Description: "参与1次公益活动", Icon: "❤️", CounterType: model.CounterTypeCharity, CounterTarget: 1, Points: 200},
+		{Name: "任务达人", Description: "完成50个任务", Icon: "⭐", CounterType: model.CounterTypeTaskCount, CounterTarget: 50, Points: 100},
+		{Name: "超级劳模", Description: "完成100个任务", Icon: "🏆", CounterType: model.CounterTypeTaskCount, CounterTarget: 100, Points: 200},
+		{Name: "坚持7天", Description: "连续7天完成任务", Icon: "💪", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 7, Points: 80},
+		{Name: "坚持30天", Description: "连续30天完成任务", Icon: "💎", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 30, Points: 200},
+		{Name: "小试牛刀", Description: "累计获得500积分", Icon: "🥈", CounterType: model.CounterTypeTotalPoints, CounterTarget: 500, Points: 50},
+		{Name: "积分达人", Description: "累计获得1000积分", Icon: "🥇", CounterType: model.CounterTypeTotalPoints, CounterTarget: 1000, Points: 100},
+		{Name: "富甲一方", Description: "累计获得5000积分", Icon: "👑", CounterType: model.CounterTypeTotalPoints, CounterTarget: 5000, Points: 300},
+		{Name: "公益小天使", Description: "参与1次公益活动", Icon: "❤️", CounterType: model.CounterTypeCharity, CounterTarget: 1, Points: 50},
 	}
 
 	for _, achievement := range achievements {
@@ -297,6 +293,10 @@ func InitAchievements() error {
 				return err
 			}
 		}
+	}
+
+	if err := database.DB.Where("name IN (?)", []string{"初露锋芒", "勤劳小蜜蜂", "坚持3天", "精打细算"}).Delete(&model.Achievement{}).Error; err != nil {
+		return err
 	}
 
 	return nil
@@ -340,38 +340,41 @@ func (s *AchievementService) UpdateAchievement(id uint, familyID uint, name, des
 		return nil, err
 	}
 
-	if !achievement.IsCustom {
-		return nil, errors.New("只能更新自定义勋章")
-	}
-	if achievement.FamilyID != familyID {
-		return nil, errors.New("无权修改该勋章")
+	if achievement.IsCustom {
+		if achievement.FamilyID != familyID {
+			return nil, errors.New("无权修改该勋章")
+		}
 	}
 
 	updates := make(map[string]interface{})
-	if name != nil {
-		updates["name"] = *name
-	}
-	if description != nil {
-		updates["description"] = *description
-	}
-	if icon != nil {
-		updates["icon"] = *icon
-	}
-	if iconColor != nil {
-		updates["icon_color"] = *iconColor
-	}
-	if counterType != nil {
-		updates["counter_type"] = *counterType
-	}
-	if counterTarget != nil {
-		if *counterTarget < 0 {
-			return nil, fmt.Errorf("counterTarget必须>=0")
+
+	if achievement.IsCustom {
+		if name != nil {
+			updates["name"] = *name
 		}
-		updates["counter_target"] = *counterTarget
+		if description != nil {
+			updates["description"] = *description
+		}
+		if icon != nil {
+			updates["icon"] = *icon
+		}
+		if iconColor != nil {
+			updates["icon_color"] = *iconColor
+		}
+		if counterType != nil {
+			updates["counter_type"] = *counterType
+		}
+		if counterTarget != nil {
+			if *counterTarget < 0 {
+				return nil, fmt.Errorf("counterTarget必须>=0")
+			}
+			updates["counter_target"] = *counterTarget
+		}
+		if templateID != nil {
+			updates["template_id"] = *templateID
+		}
 	}
-	if templateID != nil {
-		updates["template_id"] = *templateID
-	}
+
 	if points != nil {
 		if *points < 0 {
 			return nil, fmt.Errorf("points必须>=0")

@@ -219,10 +219,6 @@ func (s *RedeemService) Redeem(itemID, childID, familyID uint) (*model.Redeem, i
 
 	tx.Commit()
 
-	achievementService := &AchievementService{}
-	achievementService.IncrementCounter(childID, model.CounterTypeRedeemCount, 0, 1)
-	achievementService.CheckAchievements(childID, model.CounterTypeRedeemCount, 0)
-
 	return redeem, newBalance, nil
 }
 

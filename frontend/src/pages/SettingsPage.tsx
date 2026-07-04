@@ -13,170 +13,6 @@ import { ACHIEVEMENT_TYPE_OPTIONS, TASK_CATEGORY_OPTIONS } from '../services/tas
 
 const EMOJI_OPTIONS = ['🌟', '🔥', '💪', '💎', '🥈', '🥇', '👑', '🐝', '⭐', '🏆', '🎁', '❤️', '🏅', '⚡', '🌈', '🎯', '🎖️', '💯', '🎪', '🎨'];
 
-function AchievementForm({
-  achievement,
-  onSubmit,
-  onCancel,
-}: {
-  achievement?: Achievement;
-  onSubmit: (data: any) => void;
-  onCancel: () => void;
-}) {
-  const isEdit = !!achievement;
-  const [form, setForm] = useState({
-    name: achievement?.name || '',
-    description: achievement?.description || '',
-    icon: achievement?.icon || '🌟',
-    icon_color: achievement?.icon_color || '#FF9500',
-    type: achievement?.type || 1,
-    target_value: achievement?.target_value || 1,
-    points: achievement?.points || 100,
-  });
-
-  const handleSubmit = () => {
-    if (!form.name.trim()) return;
-    onSubmit(form);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-text-primary">
-            {isEdit ? '编辑勋章' : '创建勋章'}
-          </h3>
-          <button onClick={onCancel} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">勋章名称 *</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-              placeholder="输入勋章名称"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">描述</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={2}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary resize-none"
-              placeholder="输入勋章描述"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">图标</label>
-            <div className="flex items-center gap-2">
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
-                style={{ backgroundColor: form.icon_color }}
-              >
-                {form.icon}
-              </div>
-              <div className="flex-1">
-                <div className="flex flex-wrap gap-1">
-                  {EMOJI_OPTIONS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      onClick={() => setForm({ ...form, icon: emoji })}
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-all ${
-                        form.icon === emoji ? 'bg-primary/20 ring-2 ring-primary' : 'bg-gray-100 hover:bg-gray-200'
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">图标颜色</label>
-            <div className="flex items-center gap-3">
-              <input
-                type="color"
-                value={form.icon_color}
-                onChange={(e) => setForm({ ...form, icon_color: e.target.value })}
-                className="w-10 h-10 rounded-lg cursor-pointer"
-              />
-              <input
-                type="text"
-                value={form.icon_color}
-                onChange={(e) => setForm({ ...form, icon_color: e.target.value })}
-                className="flex-1 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">达成条件</label>
-            <select
-              value={form.type}
-              onChange={(e) => setForm({ ...form, type: Number(e.target.value) })}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-            >
-              {ACHIEVEMENT_TYPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.icon} {option.label} - {option.description}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-2">目标值</label>
-              <input
-                type="number"
-                min="0"
-                value={form.target_value}
-                onChange={(e) => setForm({ ...form, target_value: Math.max(0, Number(e.target.value) || 0) })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-2">奖励积分</label>
-              <input
-                type="number"
-                min="0"
-                value={form.points}
-                onChange={(e) => setForm({ ...form, points: Math.max(0, Number(e.target.value) || 0) })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-3 bg-gray-100 text-text-secondary rounded-xl font-medium"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!form.name.trim()}
-            className="flex-1 py-3 bg-gradient-to-r from-primary to-amber-500 text-white rounded-xl font-medium disabled:opacity-50"
-          >
-            {isEdit ? '保存' : '创建'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function TaskTemplateForm({
   template,
   onSubmit,
@@ -204,8 +40,8 @@ function TaskTemplateForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-6 pb-4 flex-shrink-0">
           <h3 className="text-lg font-semibold text-text-primary">
             {isEdit ? '编辑任务模板' : '创建任务模板'}
           </h3>
@@ -214,7 +50,7 @@ function TaskTemplateForm({
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto px-6 pb-2">
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">任务名称 *</label>
             <input
@@ -313,7 +149,7 @@ function TaskTemplateForm({
           </div>
         </div>
 
-        <div className="flex gap-3 mt-6">
+        <div className="flex gap-3 p-6 pt-4 flex-shrink-0">
           <button
             onClick={onCancel}
             className="flex-1 py-3 bg-gray-100 text-text-secondary rounded-xl font-medium"
@@ -356,8 +192,8 @@ function ChildForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-6 pb-4 flex-shrink-0">
           <h3 className="text-lg font-semibold text-text-primary">
             {isEdit ? '编辑孩子档案' : '添加孩子档案'}
           </h3>
@@ -366,7 +202,7 @@ function ChildForm({
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto px-6 pb-2">
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">姓名 *</label>
             <input
@@ -411,7 +247,7 @@ function ChildForm({
           </div>
         </div>
 
-        <div className="flex gap-3 mt-6">
+        <div className="flex gap-3 p-6 pt-4 flex-shrink-0">
           <button
             onClick={onCancel}
             className="flex-1 py-3 bg-gray-100 text-text-secondary rounded-xl font-medium"
@@ -438,10 +274,8 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'account' | 'achievements' | 'templates'>('account');
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
-  const [showAchievementForm, setShowAchievementForm] = useState(false);
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [showChildForm, setShowChildForm] = useState(false);
-  const [editingAchievement, setEditingAchievement] = useState<Achievement | undefined>();
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | undefined>();
   const [editingChild, setEditingChild] = useState<Child | undefined>();
   const [loading, setLoading] = useState(true);
@@ -483,28 +317,6 @@ export function SettingsPage() {
     if (confirm('确定要退出登录吗？')) {
       authStore.logout();
       navigate('/login');
-    }
-  };
-
-  const handleCreateAchievement = async (data: any) => {
-    try {
-      await growthService.createAchievement(data);
-      setShowAchievementForm(false);
-      loadData();
-    } catch (e) {
-      console.error('创建勋章失败:', e);
-    }
-  };
-
-  const handleUpdateAchievement = async (data: any) => {
-    if (!editingAchievement) return;
-    try {
-      await growthService.updateAchievement(editingAchievement.id, data);
-      setShowAchievementForm(false);
-      setEditingAchievement(undefined);
-      loadData();
-    } catch (e) {
-      console.error('更新勋章失败:', e);
     }
   };
 
@@ -738,8 +550,7 @@ export function SettingsPage() {
           <>
             <button
               onClick={() => {
-                setEditingAchievement(undefined);
-                setShowAchievementForm(true);
+                navigate('/settings/achievement/edit');
               }}
               className="w-full bg-card rounded-2xl p-4 shadow-sm mb-3 flex items-center justify-center gap-2 text-primary hover:bg-primary/5 transition-colors"
             >
@@ -755,7 +566,7 @@ export function SettingsPage() {
                   <div
                     key={achievement.id}
                     className={`bg-card rounded-2xl p-4 shadow-sm ${
-                      achievement.is_custom ? 'border-l-4 border-primary' : ''
+                      achievement.is_custom ? '' : 'border-l-4 border-amber-400'
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -768,8 +579,10 @@ export function SettingsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-text-primary">{achievement.name}</span>
-                          {achievement.is_custom && (
+                          {achievement.is_custom ? (
                             <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">自定义</span>
+                          ) : (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">系统</span>
                           )}
                         </div>
                         <p className="text-sm text-text-tertiary mt-1">{achievement.description}</p>
@@ -789,26 +602,22 @@ export function SettingsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            navigate(`/settings/achievement/edit?id=${achievement.id}`);
+                          }}
+                          className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-text-secondary hover:bg-gray-200"
+                        >
+                          <Edit2 size={14} />
+                        </button>
                         {achievement.is_custom && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setEditingAchievement(achievement);
-                                setShowAchievementForm(true);
-                              }}
-                              className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-text-secondary hover:bg-gray-200"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteAchievement(achievement.id)}
-                              className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500 hover:bg-red-100"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
+                          <button
+                            onClick={() => handleDeleteAchievement(achievement.id)}
+                            className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500 hover:bg-red-100"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         )}
-                        <ChevronRight size={18} className="text-text-tertiary" />
                       </div>
                     </div>
                   </div>
@@ -904,17 +713,6 @@ export function SettingsPage() {
 
         <div className="h-8" />
       </div>
-
-      {showAchievementForm && (
-        <AchievementForm
-          achievement={editingAchievement}
-          onSubmit={editingAchievement ? handleUpdateAchievement : handleCreateAchievement}
-          onCancel={() => {
-            setShowAchievementForm(false);
-            setEditingAchievement(undefined);
-          }}
-        />
-      )}
 
       {showTemplateForm && (
         <TaskTemplateForm
