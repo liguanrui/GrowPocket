@@ -93,8 +93,6 @@ export const ACHIEVEMENT_TYPE_OPTIONS = [
   { value: 2, label: '模板任务', icon: '📋', description: '完成指定模板任务的数量' },
   { value: 3, label: '连续天数', icon: '🔥', description: '连续几天完成任务' },
   { value: 4, label: '累计积分', icon: '💰', description: '累计获得指定积分' },
-  { value: 5, label: '活动参与', icon: '🎯', description: '累计参与活动的数量' },
-  { value: 7, label: '公益参与', icon: '❤️', description: '参与指定次数的公益活动' },
 ];
 
 export const TASK_CATEGORY_OPTIONS = [
