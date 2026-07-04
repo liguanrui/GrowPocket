@@ -34,9 +34,9 @@ const (
 	CounterTypeTemplateTaskCount = 2 // 完成某个模板任务的数量
 	CounterTypeConsecutiveDays   = 3 // 连续完成任务的天数
 	CounterTypeTotalPoints       = 4 // 累计获取积分数量
-	CounterTypeActivityCount     = 5 // 累计参与活动的数量
+	// CounterTypeActivityCount     = 5 // 累计参与活动的数量（暂时去掉）
 	CounterTypeRedeemCount       = 6 // 兑换次数
-	CounterTypeCharity           = 7 // 公益参与次数
+	// CounterTypeCharity           = 7 // 公益参与次数（暂时去掉）
 )
 
 // UserAchievement 用户成就进度表

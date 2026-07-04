@@ -278,9 +278,6 @@ func (s *CommunityService) JoinProject(projectID, familyID, childID uint, childN
 	}
 
 	achievementService := &AchievementService{}
-	achievementService.IncrementCounter(childID, model.CounterTypeCharity, 0, 1)
-	achievementService.CheckAchievements(childID, model.CounterTypeCharity, 0)
-
 	achievementService.IncrementCounter(childID, model.CounterTypeTotalPoints, 0, project.Points)
 	achievementService.CheckAchievements(childID, model.CounterTypeTotalPoints, 0)
 
