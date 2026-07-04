@@ -5,45 +5,68 @@ import (
 )
 
 // Achievement 勋章表
-// type: 达成条件类型
-// target_value: 达成目标值
+// counter_type: 计数器类型
+// counter_target: 计数器目标值
+// template_id: 模板任务ID（CounterTypeTemplateTaskCount时使用）
 // points: 解锁后奖励积分
 // is_custom: 是否为家庭自定义勋章（false 为系统预置）
 // family_id: 所属家庭（自定义勋章必填）
-// icon_color: 图标背景色（自定义勋章可选）
-// custom_type: 自定义条件类型 1=任务完成次数, 2=累计积分, 3=连续天数, 4=兑换次数, 5=公益参与次数
 type Achievement struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	FamilyID    uint      `gorm:"index" json:"family_id"`            // 所属家庭（0 为系统预置）
-	Name        string    `gorm:"size:50;not null" json:"name"`
-	Description string    `gorm:"size:200" json:"description"`
-	Icon        string    `gorm:"size:100" json:"icon"`               // emoji 或图片URL
-	IconColor   string    `gorm:"size:20;default:'#FF9500'" json:"icon_color"` // 图标颜色
-	Type        int       `gorm:"not null" json:"type"`               // 达成条件类型
-	TargetValue int       `gorm:"not null;default:0" json:"target_value"` // 达成目标值
-	Points      int       `gorm:"not null;default:0" json:"points"`   // 解锁后奖励积分
-	IsCustom    bool      `gorm:"not null;default:false" json:"is_custom"` // 是否为自定义勋章
-	CreatedBy   uint      `json:"created_by"`                         // 创建者（家长ID）
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	FamilyID      uint      `gorm:"index" json:"family_id"`            // 所属家庭（0 为系统预置）
+	Name          string    `gorm:"size:50;not null" json:"name"`
+	Description   string    `gorm:"size:200" json:"description"`
+	Icon          string    `gorm:"size:100" json:"icon"`               // emoji 或图片URL
+	IconColor     string    `gorm:"size:20;default:'#FF9500'" json:"icon_color"` // 图标颜色
+	CounterType   int       `gorm:"not null" json:"counter_type"`       // 计数器类型
+	CounterTarget int       `gorm:"not null;default:0" json:"counter_target"` // 计数器目标值
+	TemplateID    uint      `gorm:"index" json:"template_id"`           // 模板任务ID
+	Points        int       `gorm:"not null;default:0" json:"points"`   // 解锁后奖励积分
+	IsCustom      bool      `gorm:"not null;default:false" json:"is_custom"` // 是否为自定义勋章
+	CreatedBy     uint      `json:"created_by"`                         // 创建者（家长ID）
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// CounterType 计数器类型
 const (
-	AchievementTypeFirstTask       = 1 // 完成第一个任务
-	AchievementTypeConsecutiveDays = 2 // 连续天数完成任务
-	AchievementTypeTotalPoints     = 3 // 累计积分达到
-	AchievementTypeTaskCount       = 4 // 任务完成次数
-	AchievementTypeRedeemCount     = 5 // 兑换次数
-	AchievementTypeCharity         = 6 // 公益参与次数
+	CounterTypeTaskCount         = 1 // 完成任务的数量
+	CounterTypeTemplateTaskCount = 2 // 完成某个模板任务的数量
+	CounterTypeConsecutiveDays   = 3 // 连续完成任务的天数
+	CounterTypeTotalPoints       = 4 // 累计获取积分数量
+	CounterTypeActivityCount     = 5 // 累计参与活动的数量
+	CounterTypeRedeemCount       = 6 // 兑换次数
+	CounterTypeCharity           = 7 // 公益参与次数
 )
 
+// UserAchievement 用户成就进度表
 type UserAchievement struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	ChildID       uint      `gorm:"index;not null" json:"child_id"`
-	AchievementID uint      `gorm:"not null" json:"achievement_id"`
-	Unlocked      bool      `gorm:"not null;default:false" json:"unlocked"`
-	UnlockedAt    time.Time `json:"unlocked_at,omitempty"`
-	CurrentValue  int       `gorm:"not null;default:0" json:"current_value"`
+	ID            uint        `gorm:"primaryKey" json:"id"`
+	ChildID       uint        `gorm:"index;not null" json:"child_id"`
+	AchievementID uint        `gorm:"not null" json:"achievement_id"`
+	AwardCount    int         `gorm:"not null;default:0" json:"award_count"` // 获得次数
+	CurrentValue  int         `gorm:"not null;default:0" json:"current_value"`
+	Achievement   Achievement `gorm:"foreignKey:AchievementID" json:"Achievement"`
+}
+
+// UserCounter 用户计数器表
+type UserCounter struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	ChildID      uint      `gorm:"index;not null" json:"child_id"`
+	CounterType  int       `gorm:"not null;index" json:"counter_type"`
+	TemplateID   uint      `gorm:"index" json:"template_id"`           // 模板任务ID（CounterTypeTemplateTaskCount时使用）
+	CurrentValue int       `gorm:"not null;default:0" json:"current_value"`
+	LastDate     string    `gorm:"size:10" json:"last_date"`           // 最后更新日期（用于连续天数判断）
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// AchievementAward 成就获得记录表（支持重复获得）
+type AchievementAward struct {
+	ID            uint        `gorm:"primaryKey" json:"id"`
+	ChildID       uint        `gorm:"index;not null" json:"child_id"`
+	AchievementID uint        `gorm:"not null;index" json:"achievement_id"`
+	AwardedAt     time.Time   `gorm:"not null" json:"awarded_at"`
+	Points        int         `gorm:"not null;default:0" json:"points"`
 	Achievement   Achievement `gorm:"foreignKey:AchievementID" json:"Achievement"`
 }
 

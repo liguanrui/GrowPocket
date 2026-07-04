@@ -11,9 +11,9 @@ import (
 
 type AchievementService struct{}
 
-func (s *AchievementService) GetAchievements(childID uint) ([]model.UserAchievement, error) {
+func (s *AchievementService) GetUserAchievements(childID, familyID uint) ([]model.UserAchievement, error) {
 	var achievements []model.Achievement
-	if err := database.DB.Find(&achievements).Error; err != nil {
+	if err := database.DB.Where("family_id = 0 OR family_id = ?", familyID).Find(&achievements).Error; err != nil {
 		return nil, err
 	}
 
@@ -22,12 +22,16 @@ func (s *AchievementService) GetAchievements(childID uint) ([]model.UserAchievem
 		var ua model.UserAchievement
 		err := database.DB.Where("child_id = ? AND achievement_id = ?", childID, achievement.ID).First(&ua).Error
 		if err != nil {
+			counterValue, _ := s.GetCounterValue(childID, achievement.CounterType, achievement.TemplateID)
 			ua = model.UserAchievement{
 				ChildID:       childID,
 				AchievementID: achievement.ID,
-				Unlocked:      false,
-				CurrentValue:  0,
+				AwardCount:    0,
+				CurrentValue:  counterValue,
 			}
+		} else {
+			counterValue, _ := s.GetCounterValue(childID, achievement.CounterType, achievement.TemplateID)
+			ua.CurrentValue = counterValue
 		}
 		ua.Achievement = achievement
 		userAchievements = append(userAchievements, ua)
@@ -36,53 +40,209 @@ func (s *AchievementService) GetAchievements(childID uint) ([]model.UserAchievem
 	return userAchievements, nil
 }
 
-func (s *AchievementService) CheckAndUnlock(childID uint) error {
-	userAchievements, err := s.GetAchievements(childID)
-	if err != nil {
+func (s *AchievementService) CheckAndUnlock(childID, familyID uint) error {
+	var achievements []model.Achievement
+	if err := database.DB.Where("family_id = 0 OR family_id = ?", familyID).Find(&achievements).Error; err != nil {
 		return err
 	}
 
-	for _, ua := range userAchievements {
-		if ua.Unlocked {
-			continue
-		}
-
-		currentValue, err := s.calculateCurrentValue(childID, ua.Achievement.Type)
+	for _, achievement := range achievements {
+		counterValue, err := s.GetCounterValue(childID, achievement.CounterType, achievement.TemplateID)
 		if err != nil {
 			return err
 		}
 
-		ua.CurrentValue = currentValue
-
-		if currentValue >= ua.Achievement.TargetValue {
-			ua.Unlocked = true
-			ua.UnlockedAt = time.Now()
-
-			var existingUA model.UserAchievement
-			err := database.DB.Where("child_id = ? AND achievement_id = ?", childID, ua.AchievementID).First(&existingUA).Error
+		if counterValue >= achievement.CounterTarget {
+			_, err := s.AwardAchievement(childID, achievement.ID)
 			if err != nil {
-				if err := database.DB.Create(&ua).Error; err != nil {
-					return err
-				}
-			} else {
-				if err := database.DB.Model(&existingUA).Updates(map[string]interface{}{
-					"unlocked":      true,
-					"unlocked_at":   ua.UnlockedAt,
-					"current_value": currentValue,
-				}).Error; err != nil {
-					return err
-				}
-			}
-
-			if err := s.addAchievementPoints(childID, ua.Achievement.Points, ua.Achievement.Name); err != nil {
 				return err
 			}
-		} else {
-			database.DB.Model(&model.UserAchievement{}).Where("child_id = ? AND achievement_id = ?", childID, ua.AchievementID).Update("current_value", currentValue)
+
+			s.ResetCounter(childID, achievement.CounterType, achievement.TemplateID)
 		}
 	}
 
 	return nil
+}
+
+func (s *AchievementService) IncrementCounter(childID uint, counterType int, templateID uint, delta int) (int, error) {
+	var counter model.UserCounter
+	err := database.DB.Where("child_id = ? AND counter_type = ? AND template_id = ?", childID, counterType, templateID).First(&counter).Error
+
+	if counterType == model.CounterTypeConsecutiveDays {
+		today := time.Now().Format("2006-01-02")
+		if err != nil {
+			counter = model.UserCounter{
+				ChildID:       childID,
+				CounterType:   counterType,
+				TemplateID:    templateID,
+				CurrentValue:  1,
+				LastDate:      today,
+			}
+			if err := database.DB.Create(&counter).Error; err != nil {
+				return 0, err
+			}
+			return 1, nil
+		}
+
+		if counter.LastDate == today {
+			return counter.CurrentValue, nil
+		}
+
+		lastTime, _ := time.Parse("2006-01-02", counter.LastDate)
+		todayTime, _ := time.Parse("2006-01-02", today)
+		diff := todayTime.Sub(lastTime).Hours() / 24
+
+		if diff == 1 {
+			counter.CurrentValue += 1
+			counter.LastDate = today
+		} else {
+			counter.CurrentValue = 1
+			counter.LastDate = today
+		}
+
+		if err := database.DB.Save(&counter).Error; err != nil {
+			return 0, err
+		}
+		return counter.CurrentValue, nil
+	}
+
+	if err != nil {
+		counter = model.UserCounter{
+			ChildID:       childID,
+			CounterType:   counterType,
+			TemplateID:    templateID,
+			CurrentValue:  delta,
+		}
+		if err := database.DB.Create(&counter).Error; err != nil {
+			return 0, err
+		}
+		return delta, nil
+	}
+
+	counter.CurrentValue += delta
+	if err := database.DB.Save(&counter).Error; err != nil {
+		return 0, err
+	}
+
+	return counter.CurrentValue, nil
+}
+
+func (s *AchievementService) ResetCounter(childID uint, counterType int, templateID uint) error {
+	return database.DB.Model(&model.UserCounter{}).
+		Where("child_id = ? AND counter_type = ? AND template_id = ?", childID, counterType, templateID).
+		Update("current_value", 0).Error
+}
+
+func (s *AchievementService) GetCounterValue(childID uint, counterType int, templateID uint) (int, error) {
+	var counter model.UserCounter
+	err := database.DB.Where("child_id = ? AND counter_type = ? AND template_id = ?", childID, counterType, templateID).First(&counter).Error
+	if err != nil {
+		return 0, nil
+	}
+
+	if counterType == model.CounterTypeConsecutiveDays {
+		today := time.Now().Format("2006-01-02")
+		if counter.LastDate != today {
+			lastTime, _ := time.Parse("2006-01-02", counter.LastDate)
+			todayTime, _ := time.Parse("2006-01-02", today)
+			diff := todayTime.Sub(lastTime).Hours() / 24
+			if diff > 1 {
+				return 0, nil
+			}
+		}
+	}
+
+	return counter.CurrentValue, nil
+}
+
+func (s *AchievementService) CheckAchievements(childID uint, counterType int, templateID uint) ([]model.AchievementAward, error) {
+	var achievements []model.Achievement
+	query := database.DB.Where("counter_type = ? AND family_id = 0", counterType)
+	if counterType == model.CounterTypeTemplateTaskCount {
+		query = query.Where("template_id = ?", templateID)
+	}
+	if err := query.Find(&achievements).Error; err != nil {
+		return nil, err
+	}
+
+	var awards []model.AchievementAward
+	counterValue, err := s.GetCounterValue(childID, counterType, templateID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, achievement := range achievements {
+		if counterValue >= achievement.CounterTarget {
+			award, err := s.AwardAchievement(childID, achievement.ID)
+			if err != nil {
+				return nil, err
+			}
+			awards = append(awards, *award)
+
+			s.ResetCounter(childID, counterType, templateID)
+			counterValue, _ = s.GetCounterValue(childID, counterType, templateID)
+		}
+	}
+
+	return awards, nil
+}
+
+func (s *AchievementService) AwardAchievement(childID uint, achievementID uint) (*model.AchievementAward, error) {
+	var achievement model.Achievement
+	if err := database.DB.First(&achievement, achievementID).Error; err != nil {
+		return nil, errors.New("成就不存在")
+	}
+
+	award := model.AchievementAward{
+		ChildID:       childID,
+		AchievementID: achievementID,
+		AwardedAt:     time.Now(),
+		Points:        achievement.Points,
+	}
+
+	if err := database.DB.Create(&award).Error; err != nil {
+		return nil, err
+	}
+
+	if err := s.addAchievementPoints(childID, achievement.Points, achievement.Name); err != nil {
+		return nil, err
+	}
+
+	var ua model.UserAchievement
+	err := database.DB.Where("child_id = ? AND achievement_id = ?", childID, achievementID).First(&ua).Error
+	if err != nil {
+		ua = model.UserAchievement{
+			ChildID:       childID,
+			AchievementID: achievementID,
+			AwardCount:    1,
+			CurrentValue:  0,
+		}
+		if err := database.DB.Create(&ua).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		ua.AwardCount += 1
+		ua.CurrentValue = 0
+		if err := database.DB.Save(&ua).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	award.Achievement = achievement
+	return &award, nil
+}
+
+func (s *AchievementService) GetAchievementAwards(childID uint, achievementID uint) ([]model.AchievementAward, error) {
+	var awards []model.AchievementAward
+	query := database.DB.Where("child_id = ?", childID)
+	if achievementID > 0 {
+		query = query.Where("achievement_id = ?", achievementID)
+	}
+	if err := query.Preload("Achievement").Order("awarded_at DESC").Find(&awards).Error; err != nil {
+		return nil, err
+	}
+	return awards, nil
 }
 
 func (s *AchievementService) addAchievementPoints(childID uint, amount int, name string) error {
@@ -96,7 +256,7 @@ func (s *AchievementService) addAchievementPoints(childID uint, amount int, name
 	newBalance := child.Balance + amount
 	transaction := model.Transaction{
 		ChildID:      childID,
-		Type:         0,
+		Type:         model.TransactionTypeIncome,
 		Amount:       amount,
 		Reason:       "成就奖励: " + name,
 		BalanceAfter: newBalance,
@@ -114,80 +274,20 @@ func (s *AchievementService) addAchievementPoints(childID uint, amount int, name
 	return tx.Commit().Error
 }
 
-func (s *AchievementService) calculateCurrentValue(childID uint, achievementType int) (int, error) {
-	switch achievementType {
-	case model.AchievementTypeFirstTask:
-		var count int64
-		err := database.DB.Model(&model.Task{}).Where("child_id = ? AND status = ?", childID, model.TaskStatusCompleted).Count(&count).Error
-		return int(count), err
-	case model.AchievementTypeConsecutiveDays:
-		return s.getConsecutiveDays(childID)
-	case model.AchievementTypeTotalPoints:
-		var total int64
-		err := database.DB.Model(&model.Transaction{}).Where("child_id = ? AND type = ?", childID, 0).Select("COALESCE(SUM(amount), 0)").Scan(&total).Error
-		return int(total), err
-	case model.AchievementTypeTaskCount:
-		var count int64
-		err := database.DB.Model(&model.Task{}).Where("child_id = ? AND status = ?", childID, model.TaskStatusCompleted).Count(&count).Error
-		return int(count), err
-	case model.AchievementTypeRedeemCount:
-		var count int64
-		err := database.DB.Model(&model.Redeem{}).Where("child_id = ?", childID).Count(&count).Error
-		return int(count), err
-	case model.AchievementTypeCharity:
-		var count int64
-		err := database.DB.Model(&model.CharityDonation{}).Where("child_id = ?", childID).Count(&count).Error
-		return int(count), err
-	default:
-		return 0, nil
-	}
-}
-
-func (s *AchievementService) getConsecutiveDays(childID uint) (int, error) {
-	var tasks []model.Task
-	err := database.DB.Where("child_id = ? AND status = ?", childID, model.TaskStatusCompleted).Order("updated_at DESC").Limit(31).Find(&tasks).Error
-	if err != nil {
-		return 0, err
-	}
-
-	if len(tasks) == 0 {
-		return 0, nil
-	}
-
-	consecutive := 1
-	lastDate := tasks[0].UpdatedAt.Format("2006-01-02")
-
-	for i := 1; i < len(tasks); i++ {
-		currentDate := tasks[i].UpdatedAt.Format("2006-01-02")
-		lastTime, _ := time.Parse("2006-01-02", lastDate)
-		currentTime, _ := time.Parse("2006-01-02", currentDate)
-		diff := lastTime.Sub(currentTime).Hours() / 24
-
-		if diff == 1 {
-			consecutive++
-			lastDate = currentDate
-		} else if diff > 1 {
-			break
-		}
-	}
-
-	return consecutive, nil
-}
-
 func InitAchievements() error {
 	achievements := []model.Achievement{
-		{Name: "初露锋芒", Description: "完成第一个任务", Icon: "🌟", Type: model.AchievementTypeFirstTask, TargetValue: 1, Points: 100},
-		{Name: "坚持3天", Description: "连续3天完成任务", Icon: "🔥", Type: model.AchievementTypeConsecutiveDays, TargetValue: 3, Points: 150},
-		{Name: "坚持7天", Description: "连续7天完成任务", Icon: "💪", Type: model.AchievementTypeConsecutiveDays, TargetValue: 7, Points: 300},
-		{Name: "坚持30天", Description: "连续30天完成任务", Icon: "💎", Type: model.AchievementTypeConsecutiveDays, TargetValue: 30, Points: 800},
-		{Name: "小试牛刀", Description: "累计获得500积分", Icon: "🥈", Type: model.AchievementTypeTotalPoints, TargetValue: 500, Points: 200},
-		{Name: "积分达人", Description: "累计获得1000积分", Icon: "🥇", Type: model.AchievementTypeTotalPoints, TargetValue: 1000, Points: 350},
-		{Name: "富甲一方", Description: "累计获得5000积分", Icon: "👑", Type: model.AchievementTypeTotalPoints, TargetValue: 5000, Points: 1000},
-		{Name: "勤劳小蜜蜂", Description: "完成10个任务", Icon: "🐝", Type: model.AchievementTypeTaskCount, TargetValue: 10, Points: 200},
-		{Name: "任务达人", Description: "完成50个任务", Icon: "⭐", Type: model.AchievementTypeTaskCount, TargetValue: 50, Points: 500},
-		{Name: "超级劳模", Description: "完成100个任务", Icon: "🏆", Type: model.AchievementTypeTaskCount, TargetValue: 100, Points: 1000},
-		{Name: "精打细算", Description: "兑换5次奖品", Icon: "🎁", Type: model.AchievementTypeRedeemCount, TargetValue: 5, Points: 150},
-		{Name: "公益小天使", Description: "参与1次公益活动", Icon: "❤️", Type: model.AchievementTypeCharity, TargetValue: 1, Points: 200},
+		{Name: "初露锋芒", Description: "完成第一个任务", Icon: "🌟", CounterType: model.CounterTypeTaskCount, CounterTarget: 1, Points: 100},
+		{Name: "坚持3天", Description: "连续3天完成任务", Icon: "🔥", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 3, Points: 150},
+		{Name: "坚持7天", Description: "连续7天完成任务", Icon: "💪", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 7, Points: 300},
+		{Name: "坚持30天", Description: "连续30天完成任务", Icon: "💎", CounterType: model.CounterTypeConsecutiveDays, CounterTarget: 30, Points: 800},
+		{Name: "小试牛刀", Description: "累计获得500积分", Icon: "🥈", CounterType: model.CounterTypeTotalPoints, CounterTarget: 500, Points: 200},
+		{Name: "积分达人", Description: "累计获得1000积分", Icon: "🥇", CounterType: model.CounterTypeTotalPoints, CounterTarget: 1000, Points: 350},
+		{Name: "富甲一方", Description: "累计获得5000积分", Icon: "👑", CounterType: model.CounterTypeTotalPoints, CounterTarget: 5000, Points: 1000},
+		{Name: "勤劳小蜜蜂", Description: "完成10个任务", Icon: "🐝", CounterType: model.CounterTypeTaskCount, CounterTarget: 10, Points: 200},
+		{Name: "任务达人", Description: "完成50个任务", Icon: "⭐", CounterType: model.CounterTypeTaskCount, CounterTarget: 50, Points: 500},
+		{Name: "超级劳模", Description: "完成100个任务", Icon: "🏆", CounterType: model.CounterTypeTaskCount, CounterTarget: 100, Points: 1000},
+		{Name: "精打细算", Description: "兑换5次奖品", Icon: "🎁", CounterType: model.CounterTypeRedeemCount, CounterTarget: 5, Points: 150},
+		{Name: "公益小天使", Description: "参与1次公益活动", Icon: "❤️", CounterType: model.CounterTypeCharity, CounterTarget: 1, Points: 200},
 	}
 
 	for _, achievement := range achievements {
@@ -202,28 +302,29 @@ func InitAchievements() error {
 	return nil
 }
 
-func (s *AchievementService) CreateAchievement(familyID uint, createdBy uint, name, description, icon, iconColor string, typeVal, targetValue, points int) (*model.Achievement, error) {
+func (s *AchievementService) CreateAchievement(familyID uint, createdBy uint, name, description, icon, iconColor string, counterType, counterTarget, templateID, points int) (*model.Achievement, error) {
 	if name == "" {
 		return nil, errors.New("name不能为空")
 	}
-	if targetValue < 0 {
-		return nil, fmt.Errorf("targetValue必须>=0")
+	if counterTarget < 0 {
+		return nil, fmt.Errorf("counterTarget必须>=0")
 	}
 	if points < 0 {
 		return nil, fmt.Errorf("points必须>=0")
 	}
 
 	achievement := &model.Achievement{
-		FamilyID:    familyID,
-		CreatedBy:   createdBy,
-		Name:        name,
-		Description: description,
-		Icon:        icon,
-		IconColor:   iconColor,
-		Type:        typeVal,
-		TargetValue: targetValue,
-		Points:      points,
-		IsCustom:    true,
+		FamilyID:      familyID,
+		CreatedBy:     createdBy,
+		Name:          name,
+		Description:   description,
+		Icon:          icon,
+		IconColor:     iconColor,
+		CounterType:   counterType,
+		CounterTarget: counterTarget,
+		TemplateID:    uint(templateID),
+		Points:        points,
+		IsCustom:      true,
 	}
 
 	if err := database.DB.Create(achievement).Error; err != nil {
@@ -233,7 +334,7 @@ func (s *AchievementService) CreateAchievement(familyID uint, createdBy uint, na
 	return achievement, nil
 }
 
-func (s *AchievementService) UpdateAchievement(id uint, familyID uint, name, description, icon, iconColor *string, typeVal, targetValue, points *int) (*model.Achievement, error) {
+func (s *AchievementService) UpdateAchievement(id uint, familyID uint, name, description, icon, iconColor *string, counterType, counterTarget, templateID, points *int) (*model.Achievement, error) {
 	var achievement model.Achievement
 	if err := database.DB.First(&achievement, id).Error; err != nil {
 		return nil, err
@@ -259,14 +360,17 @@ func (s *AchievementService) UpdateAchievement(id uint, familyID uint, name, des
 	if iconColor != nil {
 		updates["icon_color"] = *iconColor
 	}
-	if typeVal != nil {
-		updates["type"] = *typeVal
+	if counterType != nil {
+		updates["counter_type"] = *counterType
 	}
-	if targetValue != nil {
-		if *targetValue < 0 {
-			return nil, fmt.Errorf("targetValue必须>=0")
+	if counterTarget != nil {
+		if *counterTarget < 0 {
+			return nil, fmt.Errorf("counterTarget必须>=0")
 		}
-		updates["target_value"] = *targetValue
+		updates["counter_target"] = *counterTarget
+	}
+	if templateID != nil {
+		updates["template_id"] = *templateID
 	}
 	if points != nil {
 		if *points < 0 {
@@ -302,6 +406,11 @@ func (s *AchievementService) DeleteAchievement(id uint, familyID uint) error {
 	tx := database.DB.Begin()
 
 	if err := tx.Where("achievement_id = ?", id).Delete(&model.UserAchievement{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Where("achievement_id = ?", id).Delete(&model.AchievementAward{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}

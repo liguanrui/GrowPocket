@@ -15,6 +15,7 @@ type Task struct {
 	ChildID     uint      `gorm:"index;not null" json:"child_id"`
 	ChildName   string    `gorm:"size:50;not null" json:"child_name"`
 	CreatedBy   uint      `gorm:"not null" json:"created_by"` // 创建者 UserID（家长）
+	TemplateID  uint      `gorm:"index" json:"template_id"`    // 模板任务ID（从模板创建时记录）
 	Photo       string    `gorm:"size:500" json:"photo,omitempty"` // 成果照片 / 奖惩凭证照片
 	Deadline    *time.Time `json:"deadline,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`

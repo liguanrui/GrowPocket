@@ -267,7 +267,7 @@ func (s *CommunityService) JoinProject(projectID, familyID, childID uint, childN
 	// 创建 Transaction 记录
 	tx := &model.Transaction{
 		ChildID:     childID,
-		Type:        0, // 0 = 获得积分
+		Type:        model.TransactionTypeIncome,
 		Amount:      project.Points,
 		Reason:      "参与公益项目: " + project.Title,
 		BalanceAfter: newBalance,
@@ -276,6 +276,13 @@ func (s *CommunityService) JoinProject(projectID, familyID, childID uint, childN
 	if err := database.DB.Create(tx).Error; err != nil {
 		return nil, err
 	}
+
+	achievementService := &AchievementService{}
+	achievementService.IncrementCounter(childID, model.CounterTypeCharity, 0, 1)
+	achievementService.CheckAchievements(childID, model.CounterTypeCharity, 0)
+
+	achievementService.IncrementCounter(childID, model.CounterTypeTotalPoints, 0, project.Points)
+	achievementService.CheckAchievements(childID, model.CounterTypeTotalPoints, 0)
 
 	return donation, nil
 }

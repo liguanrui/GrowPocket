@@ -16,8 +16,9 @@ type createAchievementReq struct {
 	Description string `json:"description" binding:"max=200"`
 	Icon        string `json:"icon" binding:"required,max=100"`
 	IconColor   string `json:"icon_color" binding:"max=20"`
-	Type        int    `json:"type" binding:"required,min=1,max=6"`
+	Type        int    `json:"type" binding:"required,min=1,max=7"`
 	TargetValue int    `json:"target_value" binding:"min=0"`
+	TemplateID  int    `json:"template_id"`
 	Points      int    `json:"points" binding:"min=0"`
 }
 
@@ -37,6 +38,7 @@ func (h *AchievementHandler) CreateAchievement(c *gin.Context) {
 		req.IconColor,
 		req.Type,
 		req.TargetValue,
+		req.TemplateID,
 		req.Points,
 	)
 	if err != nil {
@@ -53,6 +55,7 @@ type updateAchievementReq struct {
 	IconColor   *string `json:"icon_color"`
 	Type        *int    `json:"type"`
 	TargetValue *int    `json:"target_value"`
+	TemplateID  *int    `json:"template_id"`
 	Points      *int    `json:"points"`
 }
 
@@ -78,6 +81,7 @@ func (h *AchievementHandler) UpdateAchievement(c *gin.Context) {
 		req.IconColor,
 		req.Type,
 		req.TargetValue,
+		req.TemplateID,
 		req.Points,
 	)
 	if err != nil {
