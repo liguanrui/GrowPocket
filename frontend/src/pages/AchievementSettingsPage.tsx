@@ -4,6 +4,7 @@ import * as growthService from '../services/growth';
 import type { Achievement } from '../services/growth';
 import { ACHIEVEMENT_TYPE_OPTIONS } from '../services/taskTemplates';
 import { Medal, Plus, Edit2, Trash2, X, Target, Flame, Coins, Sparkles, ChevronRight } from 'lucide-react';
+import { useAuthStore } from '../stores/authStore';
 
 const EMOJI_OPTIONS = ['🌟', '🔥', '💪', '💎', '🥈', '🥇', '👑', '🐝', '⭐', '🏆', '🎁', '❤️', '🏅', '⚡', '🌈', '🎯', '🎖️', '💯', '🎪', '🎨'];
 
@@ -172,6 +173,7 @@ function AchievementForm({
 }
 
 export function AchievementSettingsPage() {
+  const authStore = useAuthStore();
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [showAchievementForm, setShowAchievementForm] = useState(false);
   const [editingAchievement, setEditingAchievement] = useState<Achievement | undefined>();
@@ -194,7 +196,11 @@ export function AchievementSettingsPage() {
 
   const handleCreateAchievement = async (data: any) => {
     try {
-      await growthService.createAchievement(data);
+      await growthService.createAchievement({
+        ...data,
+        family_id: authStore.family?.id || 0,
+        created_by: authStore.user?.id || 0,
+      });
       setShowAchievementForm(false);
       loadData();
     } catch (e) {

@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
-import { Plus, TrendingUp, Gift, Clock, CheckCircle, ChevronLeft, ChevronRight, CheckCircle2, Inbox, FileText, XCircle, Minus, X, Send, ImagePlus, ClipboardList } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, TrendingUp, Gift, Clock, CheckCircle, CheckCircle2, Inbox, FileText, XCircle, Minus, X, Send, ImagePlus, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import { ChildTabs } from '../components/ChildTabs';
 import * as tasksService from '../services/tasks';
 import * as scoreService from '../services/score';
 import type { Task, TaskStatus } from '../services/tasks';
-import type { Child } from '../stores/childStore';
 
 const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any; color: string }[] = [
   { id: 'all', label: '全部', icon: FileText, color: 'text-text-primary' },
@@ -15,78 +15,7 @@ const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any; color: st
   { id: 4, label: '已拒绝', icon: XCircle, color: 'text-danger' },
 ];
 
-function ChildTabs({
-  children,
-  selectedId,
-  onSelect,
-}: {
-  children: Child[];
-  selectedId: number;
-  onSelect: (id: number) => void;
-}) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({
-        left: direction === 'left' ? -150 : 150,
-        behavior: 'smooth',
-      });
-    }
-  };
-
-  return (
-    <div className="relative">
-      {children.length > 4 && (
-        <button
-          onClick={() => scroll('left')}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30"
-        >
-          <ChevronLeft size={18} />
-        </button>
-      )}
-      <div
-        ref={scrollRef}
-        className="flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-hide"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-      >
-        {children.map((child) => {
-          const isActive = child.id === selectedId;
-          return (
-            <button
-              key={child.id}
-              onClick={() => onSelect(child.id)}
-              className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                isActive
-                  ? 'bg-white text-primary shadow-lg'
-                  : 'bg-white/15 text-white hover:bg-white/25'
-              }`}
-            >
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  isActive ? 'bg-primary/10 text-primary' : 'bg-white/20 text-white'
-                }`}
-              >
-                {child.nickname.charAt(0)}
-              </div>
-              <span>{child.nickname}</span>
-            </button>
-          );
-        })}
-      </div>
-      {children.length > 4 && (
-        <button
-          onClick={() => scroll('right')}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30"
-        >
-          <ChevronRight size={18} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function PointsCard({ balance, nickname, totalIncome, totalExpense, onAdd, onDeduct, onClick }: { balance: number; nickname: string; totalIncome: number; totalExpense: number; onAdd: () => void; onDeduct: () => void; onClick: () => void }) {
+function PointsCard({ balance, nickname, monthIncome, monthExpense, onAdd, onDeduct, onClick }: { balance: number; nickname: string; monthIncome: number; monthExpense: number; onAdd: () => void; onDeduct: () => void; onClick: () => void }) {
   return (
     <div className="bg-card rounded-2xl p-5 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow" onClick={onClick}>
       <div className="text-center">
@@ -97,11 +26,11 @@ function PointsCard({ balance, nickname, totalIncome, totalExpense, onAdd, onDed
         <div className="flex justify-center gap-4 mt-4">
           <div className="flex items-center gap-1 text-text-tertiary text-sm">
             <TrendingUp size={14} />
-            <span>累计获得 {totalIncome}</span>
+            <span>本月获得 {monthIncome}</span>
           </div>
           <div className="flex items-center gap-1 text-text-tertiary text-sm">
             <Minus size={14} />
-            <span>累计消耗 {totalExpense}</span>
+            <span>本月消耗 {monthExpense}</span>
           </div>
         </div>
       </div>
@@ -473,8 +402,10 @@ export function HomePage() {
     };
   }, [selectedChildId]);
 
-  const totalIncome = monthlyStats.reduce((sum, s) => sum + s.income, 0);
-  const totalExpense = monthlyStats.reduce((sum, s) => sum + s.expense, 0);
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const monthStats = monthlyStats.find((s) => s.month === currentMonth);
+  const monthIncome = monthStats?.income ?? 0;
+  const monthExpense = monthStats?.expense ?? 0;
 
   const selectedChild = children.find((c) => c.id === selectedChildId) || null;
 
@@ -572,8 +503,8 @@ export function HomePage() {
             <PointsCard
               balance={balance}
               nickname={selectedChild.nickname}
-              totalIncome={totalIncome}
-              totalExpense={totalExpense}
+              monthIncome={monthIncome}
+              monthExpense={monthExpense}
               onAdd={() => setScoreModalMode('add')}
               onDeduct={() => setScoreModalMode('deduct')}
               onClick={() => navigate(`/score?child_id=${selectedChildId}`)}

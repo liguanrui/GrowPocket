@@ -26,7 +26,8 @@ export interface AdjustResult {
 
 export interface TrendPoint {
   date: string;
-  balance: number;
+  income: number;
+  expense: number;
 }
 
 export interface MonthlyStats {
@@ -56,11 +57,16 @@ export async function getHistory(
   childId: number,
   page = 1,
   pageSize = 20,
+  startDate?: string,
+  endDate?: string,
 ): Promise<PaginatedResponse<Transaction>> {
+  const params: Record<string, string | number> = { child_id: childId, page, page_size: pageSize };
+  if (startDate) params.start_date = startDate;
+  if (endDate) params.end_date = endDate;
   return request<PaginatedResponse<Transaction>>({
     method: 'GET',
     url: '/score/history',
-    params: { child_id: childId, page, page_size: pageSize },
+    params,
   });
 }
 
@@ -92,10 +98,10 @@ export async function deductPoints(childId: number, points: number, title: strin
   });
 }
 
-export async function getTrend(childId: number, days = 7): Promise<TrendPoint[]> {
+export async function getTrend(childId: number, startDate: string, endDate: string): Promise<TrendPoint[]> {
   return request<TrendPoint[]>({
     method: 'GET',
     url: '/score/trend',
-    params: { child_id: childId, days },
+    params: { child_id: childId, start_date: startDate, end_date: endDate },
   });
 }

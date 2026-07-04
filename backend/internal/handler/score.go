@@ -7,6 +7,7 @@ import (
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,8 +46,10 @@ func (h *ScoreHandler) GetHistory(c *gin.Context) {
 
 	page := util.ParseInt(c.Query("page"), 1)
 	pageSize := util.ParseInt(c.Query("page_size"), 20)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
 
-	records, total, err := h.service.GetHistory(childID, middleware.GetFamilyID(c), page, pageSize)
+	records, total, err := h.service.GetHistory(childID, middleware.GetFamilyID(c), page, pageSize, startDate, endDate)
 	if err != nil {
 		util.FailInternal(c, err.Error())
 		return
@@ -149,8 +152,14 @@ func (h *ScoreHandler) GetTrend(c *gin.Context) {
 		return
 	}
 
-	days := util.ParseInt(c.Query("days"), 7)
-	data, err := h.service.GetTrend(childID, middleware.GetFamilyID(c), days)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+	if startDate == "" || endDate == "" {
+		now := time.Now()
+		endDate = now.Format("2006-01-02")
+		startDate = now.AddDate(0, 0, -6).Format("2006-01-02")
+	}
+	data, err := h.service.GetTrend(childID, middleware.GetFamilyID(c), startDate, endDate)
 	if err != nil {
 		util.FailInternal(c, err.Error())
 		return
