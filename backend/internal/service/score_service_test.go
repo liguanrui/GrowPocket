@@ -3,6 +3,7 @@ package service
 import (
 	"growpocket/internal/model"
 	"testing"
+	"time"
 )
 
 func TestGetBalance(t *testing.T) {
@@ -43,7 +44,7 @@ func TestAdjust_AddPoints(t *testing.T) {
 	}
 
 	// 应该有一条 transaction
-	history, total, err := service.GetHistory(child.ID, family.ID, 1, 20)
+	history, total, err := service.GetHistory(child.ID, family.ID, 1, 20, "", "")
 	if err != nil {
 		t.Fatalf("GetHistory 失败: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestGetHistory(t *testing.T) {
 		t.Fatalf("Adjust 失败: %v", err)
 	}
 
-	history, total, err := service.GetHistory(child.ID, family.ID, 1, 20)
+	history, total, err := service.GetHistory(child.ID, family.ID, 1, 20, "", "")
 	if err != nil {
 		t.Fatalf("GetHistory 失败: %v", err)
 	}
@@ -149,7 +150,10 @@ func TestGetTrend(t *testing.T) {
 		t.Fatalf("Adjust 失败: %v", err)
 	}
 
-	trend, err := service.GetTrend(child.ID, family.ID, 7)
+	now := time.Now()
+	endDate := now.Format("2006-01-02")
+	startDate := now.AddDate(0, 0, -6).Format("2006-01-02")
+	trend, err := service.GetTrend(child.ID, family.ID, startDate, endDate)
 	if err != nil {
 		t.Fatalf("GetTrend 失败: %v", err)
 	}
@@ -157,14 +161,14 @@ func TestGetTrend(t *testing.T) {
 		t.Errorf("trend 长度 got %d want 7", len(trend))
 	}
 
-	// 今天（最后一条）余额应为 50
+	// 今天（最后一条）收入应为 50
 	lastDay := trend[len(trend)-1]
-	balance, ok := lastDay["balance"].(int)
+	income, ok := lastDay["income"].(int)
 	if !ok {
-		t.Fatalf("balance 不是 int 类型")
+		t.Fatalf("income 不是 int 类型")
 	}
-	if balance != 50 {
-		t.Errorf("今天 balance got %d want 50", balance)
+	if income != 50 {
+		t.Errorf("今天 income got %d want 50", income)
 	}
 
 	// 每天 date 字段应该存在

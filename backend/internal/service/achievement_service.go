@@ -247,7 +247,7 @@ func (s *AchievementService) GetAchievementAwards(childID uint, achievementID ui
 
 func (s *AchievementService) addAchievementPoints(childID uint, amount int, name string) error {
 	var child model.User
-	if err := database.DB.Where("id = ? AND role = ?", childID, "child").First(&child).Error; err != nil {
+	if err := database.DB.Where("id = ? AND role = ?", childID, model.RoleChild).First(&child).Error; err != nil {
 		return err
 	}
 
@@ -273,6 +273,7 @@ func (s *AchievementService) addAchievementPoints(childID uint, amount int, name
 
 	return tx.Commit().Error
 }
+
 
 func InitAchievements() error {
 	achievements := []model.Achievement{

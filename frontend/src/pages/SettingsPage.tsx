@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Settings, Medal, ListTodo, Plus, Edit2, Trash2, ChevronRight, X, Check, Sparkles, Star, Gift, Heart, Target, Flame, Coins, ArrowUpRight, User, Users, LogOut, Phone, Home, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useChildStore } from '../stores/childStore';
 import { useAuthStore } from '../stores/authStore';
+import { useChildStore } from '../stores/childStore';
 import * as growthService from '../services/growth';
 import * as templateService from '../services/taskTemplates';
 import * as childService from '../services/children';
@@ -10,6 +9,7 @@ import type { Achievement } from '../services/growth';
 import type { TaskTemplate } from '../services/taskTemplates';
 import type { Child } from '../services/children';
 import { ACHIEVEMENT_TYPE_OPTIONS, TASK_CATEGORY_OPTIONS } from '../services/taskTemplates';
+import { Settings, User, Users, ListTodo, Medal, LogOut, ChevronRight, Plus, Edit2, Trash2, Target, Flame, Coins, Sparkles, X } from 'lucide-react';
 
 const EMOJI_OPTIONS = ['🌟', '🔥', '💪', '💎', '🥈', '🥇', '👑', '🐝', '⭐', '🏆', '🎁', '❤️', '🏅', '⚡', '🌈', '🎯', '🎖️', '💯', '🎪', '🎨'];
 
@@ -398,6 +398,37 @@ export function SettingsPage() {
     return ACHIEVEMENT_TYPE_OPTIONS.find((o) => o.value === type)?.label || '未知';
   };
 
+  const menuItems = [
+    {
+      id: 'account',
+      label: '登录信息',
+      icon: User,
+      description: '账号、密码管理',
+      path: '/settings/account',
+    },
+    {
+      id: 'family',
+      label: '家庭管理',
+      icon: Users,
+      description: '管理家庭信息和孩子档案',
+      path: '/settings/family',
+    },
+    {
+      id: 'templates',
+      label: '任务模板',
+      icon: ListTodo,
+      description: '自定义任务模板',
+      path: '/settings/templates',
+    },
+    {
+      id: 'achievements',
+      label: '自定义勋章',
+      icon: Medal,
+      description: '创建和管理勋章',
+      path: '/settings/achievements',
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-bg pb-24">
       <div className="bg-gradient-to-br from-primary to-amber-500 pt-6 pb-10 px-4 rounded-b-3xl">
@@ -412,141 +443,123 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex bg-white/15 backdrop-blur rounded-xl p-1">
-            {[
-              { id: 'account' as const, label: '账户', icon: User },
-              { id: 'achievements' as const, label: '勋章', icon: Medal },
-              { id: 'templates' as const, label: '任务模板', icon: ListTodo },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg transition-all ${
-                    isActive ? 'bg-white text-primary shadow-md' : 'text-white/80 hover:text-white'
-                  }`}
-                >
-                  <Icon size={18} />
-                  <span className="font-medium">{tab.label}</span>
-                </button>
-              );
-            })}
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <User size={28} className="text-primary" />
+              </div>
+              <div className="flex-1">
+                <div className="text-lg font-bold text-text-primary">
+                  {authStore.user?.nickname || '未登录'}
+                </div>
+                <div className="text-sm text-text-secondary">
+                  {authStore.user?.role === 'parent' ? '家长' : '孩子'}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-text-tertiary">当前家庭</div>
+                <div className="text-sm font-medium text-text-primary">
+                  {authStore.family?.name || '未加入家庭'}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
-        {activeTab === 'account' && (
-          <div className="space-y-4">
-            {/* 登录信息 */}
-            <div className="bg-card rounded-2xl p-4 shadow-sm">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <User size={20} className="text-primary" />
+        <div className="space-y-3">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => navigate(item.path)}
+                className="w-full bg-card rounded-2xl p-4 shadow-sm flex items-center gap-4 hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Icon size={22} className="text-primary" />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="font-semibold text-text-primary">{item.label}</div>
+                  <div className="text-sm text-text-tertiary">{item.description}</div>
+                </div>
+                <ChevronRight size={20} className="text-text-tertiary" />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="space-y-3">
+          {/* 家庭管理 */}
+          <div className="bg-card rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                  <Users size={20} className="text-blue-500" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-text-primary">登录信息</h3>
+                  <h3 className="font-semibold text-text-primary">家庭管理</h3>
+                  <p className="text-xs text-text-tertiary">管理孩子档案</p>
                 </div>
               </div>
-              <div className="space-y-3 pl-13">
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-text-secondary">账号</span>
-                  <span className="text-text-primary font-medium">{authStore.user?.nickname || '未登录'}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-text-secondary">角色</span>
-                  <span className="text-text-primary font-medium">
-                    {authStore.user?.role === 'parent' ? '家长' : '孩子'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between py-2">
-                  <span className="text-text-secondary">家庭</span>
-                  <span className="text-text-primary font-medium">{authStore.family?.name || '未加入家庭'}</span>
-                </div>
-              </div>
+              <button
+                onClick={() => {
+                  setEditingChild(undefined);
+                  setShowChildForm(true);
+                }}
+                className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20"
+              >
+                <Plus size={18} />
+              </button>
             </div>
 
-            {/* 家庭管理 */}
-            <div className="bg-card rounded-2xl p-4 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                    <Users size={20} className="text-blue-500" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-text-primary">家庭管理</h3>
-                    <p className="text-xs text-text-tertiary">管理孩子档案</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setEditingChild(undefined);
-                    setShowChildForm(true);
-                  }}
-                  className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20"
+            <div className="space-y-2">
+              {childrenList.map((child) => (
+                <div
+                  key={child.id}
+                  className="flex items-center justify-between py-3 px-3 bg-gray-50 rounded-xl"
                 >
-                  <Plus size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {childrenList.map((child) => (
-                  <div
-                    key={child.id}
-                    className="flex items-center justify-between py-3 px-3 bg-gray-50 rounded-xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-lg">
-                        {child.gender === 1 ? '👦' : '👧'}
-                      </div>
-                      <div>
-                        <div className="font-medium text-text-primary">{child.nickname}</div>
-                        <div className="text-xs text-text-tertiary">
-                          {child.birthday ? `${child.birthday} · ${child.gender === 1 ? '男' : '女'}` : (child.gender === 1 ? '男' : '女')}
-                        </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-lg">
+                      {child.gender === 1 ? '👦' : '👧'}
+                    </div>
+                    <div>
+                      <div className="font-medium text-text-primary">{child.nickname}</div>
+                      <div className="text-xs text-text-tertiary">
+                        {child.birthday ? `${child.birthday} · ${child.gender === 1 ? '男' : '女'}` : (child.gender === 1 ? '男' : '女')}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingChild(child);
-                          setShowChildForm(true);
-                        }}
-                        className="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center text-text-secondary hover:bg-gray-300"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteChild(child.id)}
-                        className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500 hover:bg-red-100"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
                   </div>
-                ))}
-                {childrenList.length === 0 && (
-                  <div className="text-center py-6 text-text-tertiary">
-                    暂无孩子档案，点击 + 添加
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingChild(child);
+                        setShowChildForm(true);
+                      }}
+                      className="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center text-text-secondary hover:bg-gray-300"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteChild(child.id)}
+                      className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500 hover:bg-red-100"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                )}
-              </div>
+                </div>
+              ))}
+              {childrenList.length === 0 && (
+                <div className="text-center py-6 text-text-tertiary">
+                  暂无孩子档案，点击 + 添加
+                </div>
+              )}
             </div>
-
-            {/* 登出 */}
-            <button
-              onClick={handleLogout}
-              className="w-full bg-card rounded-2xl p-4 shadow-sm flex items-center justify-center gap-2 text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <LogOut size={20} />
-              <span className="font-medium">退出登录</span>
-            </button>
           </div>
-        )}
 
-        {activeTab === 'achievements' && (
+          {/* 勋章管理 */}
+          {activeTab === 'achievements' && (
           <>
             <button
               onClick={() => {
@@ -735,6 +748,18 @@ export function SettingsPage() {
           }}
         />
       )}
+
+      <div className="mt-8">
+        <button
+          onClick={handleLogout}
+          className="w-full bg-card rounded-2xl p-4 shadow-sm flex items-center justify-center gap-2 text-red-500 hover:bg-red-50 transition-colors"
+        >
+          <LogOut size={20} />
+          <span className="font-medium">退出登录</span>
+        </button>
+      </div>
+
+      <div className="h-8" />
     </div>
   );
 }

@@ -21,7 +21,7 @@ func (s *ScoreService) GetBalance(childID, familyID uint) (int, string, error) {
 	return child.Balance, child.Nickname, nil
 }
 
-func (s *ScoreService) GetHistory(childID, familyID uint, page, pageSize int) ([]model.Transaction, int64, error) {
+func (s *ScoreService) GetHistory(childID, familyID uint, page, pageSize int, startDate, endDate string) ([]model.Transaction, int64, error) {
 	if _, err := NewChildService().GetChild(childID, familyID); err != nil {
 		return nil, 0, err
 	}
@@ -29,6 +29,12 @@ func (s *ScoreService) GetHistory(childID, familyID uint, page, pageSize int) ([
 	var records []model.Transaction
 	var total int64
 	db := database.DB.Model(&model.Transaction{}).Where("child_id = ?", childID)
+	if startDate != "" {
+		db = db.Where("created_at >= ?", startDate+" 00:00:00")
+	}
+	if endDate != "" {
+		db = db.Where("created_at <= ?", endDate+" 23:59:59")
+	}
 	db.Count(&total)
 	offset := (page - 1) * pageSize
 	err := db.Order("created_at DESC").Limit(pageSize).Offset(offset).Find(&records).Error
@@ -153,39 +159,47 @@ func (s *ScoreService) Adjust(childID, familyID, createdBy uint, delta int, titl
 	return newBalance, nil
 }
 
-func (s *ScoreService) GetTrend(childID, familyID uint, days int) ([]map[string]interface{}, error) {
+// GetTrend 按日期区间统计每天的收入与消耗。
+// startDate/endDate 格式为 YYYY-MM-DD，区间为闭区间。
+func (s *ScoreService) GetTrend(childID, familyID uint, startDate, endDate string) ([]map[string]interface{}, error) {
 	if _, err := NewChildService().GetChild(childID, familyID); err != nil {
 		return nil, err
 	}
 
-	if days <= 0 {
-		days = 7
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return nil, errors.New("start_date 格式应为 YYYY-MM-DD")
+	}
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return nil, errors.New("end_date 格式应为 YYYY-MM-DD")
 	}
 
 	var transactions []model.Transaction
-	err := database.DB.Where("child_id = ?", childID).Order("created_at ASC").Find(&transactions).Error
+	err = database.DB.Where("child_id = ? AND created_at >= ? AND created_at < ?", childID, start, end.AddDate(0, 0, 1)).
+		Order("created_at ASC").Find(&transactions).Error
 	if err != nil {
 		return nil, err
 	}
 
-	// 按日期记录每天的收入（获得的积分）
 	dailyIncome := make(map[string]int)
+	dailyExpense := make(map[string]int)
 	for _, t := range transactions {
 		day := t.CreatedAt.Format("2006-01-02")
-		if t.Type == 0 { // 收入
+		if t.Type == model.TransactionTypeIncome {
 			dailyIncome[day] += t.Amount
+		} else {
+			dailyExpense[day] += t.Amount
 		}
 	}
 
-	result := make([]map[string]interface{}, 0, days)
-	now := time.Now()
-
-	// 从最早（days-1 天前）到今天，依次填充
-	for i := days - 1; i >= 0; i-- {
-		day := now.AddDate(0, 0, -i).Format("2006-01-02")
+	result := make([]map[string]interface{}, 0)
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		day := d.Format("2006-01-02")
 		result = append(result, map[string]interface{}{
 			"date":    day,
-			"balance": dailyIncome[day], // 每天获得的积分
+			"income":  dailyIncome[day],
+			"expense": dailyExpense[day],
 		})
 	}
 

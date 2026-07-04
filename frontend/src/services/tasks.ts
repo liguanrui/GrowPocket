@@ -1,4 +1,5 @@
 import { request } from './api';
+import * as growthService from './growth';
 
 // 任务状态：1=进行中 2=待验收 3=已完成 4=已拒绝
 export type TaskStatus = 1 | 2 | 3 | 4;
@@ -109,9 +110,15 @@ export async function submitTask(id: number, photo: string): Promise<Task> {
 
 // 家长验收
 export async function reviewTask(id: number, approved: boolean, points?: number): Promise<Task> {
-  return request<Task>({
+  const task = await request<Task>({
     method: 'PUT',
     url: `/tasks/${id}/review`,
     data: { approved, points: points || undefined },
   });
+
+  if (approved && task.status === 3) {
+    growthService.checkAndUnlock(task.child_id).catch(() => {});
+  }
+
+  return task;
 }

@@ -12,6 +12,10 @@ import { CreateTaskPage } from './pages/CreateTaskPage';
 import { CreateItemPage } from './pages/CreateItemPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AchievementEditPage } from './pages/AchievementEditPage';
+import { AccountSettingsPage } from './pages/AccountSettingsPage';
+import { FamilySettingsPage } from './pages/FamilySettingsPage';
+import { TemplateSettingsPage } from './pages/TemplateSettingsPage';
+import { AchievementSettingsPage } from './pages/AchievementSettingsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -23,10 +27,10 @@ function MainLayout() {
   const currentPath = window.location.pathname;
   let activeTab: PageKey = 'home';
   if (currentPath.startsWith('/mall')) activeTab = 'mall';
-  else if (currentPath === '/growth') activeTab = 'growth';
-  else if (currentPath === '/family') activeTab = 'settings';
-  else if (currentPath.startsWith('/community')) activeTab = 'community';
-  else if (currentPath === '/settings') activeTab = 'settings';
+    else if (currentPath === '/growth') activeTab = 'growth';
+    else if (currentPath === '/family') activeTab = 'settings';
+    else if (currentPath.startsWith('/community')) activeTab = 'community';
+    else if (currentPath.startsWith('/settings')) activeTab = 'settings';
 
   const handleTab = (tab: string) => {
     navigate(`/${tab === 'home' ? 'home' : tab}`, { replace: true });
@@ -65,6 +69,10 @@ export default function App() {
         <Route path="score" element={<ScorePage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="settings/achievement/edit" element={<AchievementEditPage />} />
+        <Route path="settings/account" element={<AccountSettingsPage />} />
+        <Route path="settings/family" element={<FamilySettingsPage />} />
+        <Route path="settings/templates" element={<TemplateSettingsPage />} />
+        <Route path="settings/achievements" element={<AchievementSettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
