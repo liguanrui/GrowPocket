@@ -284,7 +284,6 @@ func InitAchievements() error {
 		{Name: "小试牛刀", Description: "累计获得500积分", Icon: "🥈", CounterType: model.CounterTypeTotalPoints, CounterTarget: 500, Points: 50},
 		{Name: "积分达人", Description: "累计获得1000积分", Icon: "🥇", CounterType: model.CounterTypeTotalPoints, CounterTarget: 1000, Points: 100},
 		{Name: "富甲一方", Description: "累计获得5000积分", Icon: "👑", CounterType: model.CounterTypeTotalPoints, CounterTarget: 5000, Points: 300},
-		{Name: "公益小天使", Description: "参与1次公益活动", Icon: "❤️", CounterType: model.CounterTypeCharity, CounterTarget: 1, Points: 50},
 	}
 
 	for _, achievement := range achievements {
@@ -296,11 +295,32 @@ func InitAchievements() error {
 		}
 	}
 
-	if err := database.DB.Where("name IN (?)", []string{"初露锋芒", "勤劳小蜜蜂", "坚持3天", "精打细算"}).Delete(&model.Achievement{}).Error; err != nil {
+	oldAchievementNames := []string{"初露锋芒", "勤劳小蜜蜂", "坚持3天", "精打细算", "公益小天使"}
+
+	tx := database.DB.Begin()
+
+	var oldAchievements []model.Achievement
+	if err := tx.Where("name IN (?)", oldAchievementNames).Find(&oldAchievements).Error; err != nil {
+		tx.Rollback()
 		return err
 	}
 
-	return nil
+	for _, oldAchievement := range oldAchievements {
+		if err := tx.Where("achievement_id = ?", oldAchievement.ID).Delete(&model.UserAchievement{}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Where("achievement_id = ?", oldAchievement.ID).Delete(&model.AchievementAward{}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Delete(&oldAchievement).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit().Error
 }
 
 func (s *AchievementService) CreateAchievement(familyID uint, createdBy uint, name, description, icon, iconColor string, counterType, counterTarget, templateID, points int) (*model.Achievement, error) {
