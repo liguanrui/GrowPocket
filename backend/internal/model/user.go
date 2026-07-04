@@ -2,6 +2,11 @@ package model
 
 import "time"
 
+const (
+	RoleParent = "parent"
+	RoleChild  = "child"
+)
+
 // User 用户表（家长账号 + 孩子档案统一在一张表里，通过 role 区分）
 // - role = 'parent'：家长（可以登录，有密码）
 // - role = 'child'：孩子档案（暂不登录，无密码，balance 字段有效）

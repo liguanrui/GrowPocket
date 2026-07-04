@@ -488,7 +488,11 @@ export function SettingsPage() {
 
   const handleCreateAchievement = async (data: any) => {
     try {
-      await growthService.createAchievement(data);
+      await growthService.createAchievement({
+        ...data,
+        family_id: authStore.family?.id || 0,
+        created_by: authStore.user?.id || 0,
+      });
       setShowAchievementForm(false);
       loadData();
     } catch (e) {

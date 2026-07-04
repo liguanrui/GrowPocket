@@ -86,6 +86,8 @@ export async function checkAndUnlock(childId: number): Promise<UserAchievement[]
 // ==================== 自定义勋章 CRUD ====================
 
 export interface CreateAchievementParams {
+  family_id: number;
+  created_by: number;
   name: string;
   description: string;
   icon: string;
