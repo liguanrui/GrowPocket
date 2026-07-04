@@ -9,7 +9,7 @@ import type { Achievement } from '../services/growth';
 import type { TaskTemplate } from '../services/taskTemplates';
 import type { Child } from '../services/children';
 import { ACHIEVEMENT_TYPE_OPTIONS, TASK_CATEGORY_OPTIONS } from '../services/taskTemplates';
-import { Settings, User, Users, ListTodo, Medal, LogOut, ChevronRight, Plus, Edit2, Trash2, Target, Flame, Coins, Sparkles, X } from 'lucide-react';
+import { Settings, User, Users, ListTodo, Medal, LogOut, ChevronRight, Plus, Edit2, Trash2, Target, Flame, Coins, Sparkles, X, Star } from 'lucide-react';
 
 const EMOJI_OPTIONS = ['🌟', '🔥', '💪', '💎', '🥈', '🥇', '👑', '🐝', '⭐', '🏆', '🎁', '❤️', '🏅', '⚡', '🌈', '🎯', '🎖️', '💯', '🎪', '🎨'];
 
@@ -236,9 +236,9 @@ function ChildForm({
                 👦 男
               </button>
               <button
-                onClick={() => setForm({ ...form, gender: 2 })}
+                onClick={() => setForm({ ...form, gender: 0 })}
                 className={`flex-1 py-3 rounded-xl border-2 transition-all ${
-                  form.gender === 2 ? 'border-primary bg-primary/5 text-primary' : 'border-gray-100 text-text-secondary'
+                  form.gender === 0 ? 'border-primary bg-primary/5 text-primary' : 'border-gray-100 text-text-secondary'
                 }`}
               >
                 👧 女
@@ -760,6 +760,7 @@ export function SettingsPage() {
       </div>
 
       <div className="h-8" />
+      </div>
     </div>
   );
 }

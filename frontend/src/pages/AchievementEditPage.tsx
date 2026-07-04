@@ -3,12 +3,14 @@ import { ArrowLeft, Medal } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as growthService from '../services/growth';
 import { ACHIEVEMENT_TYPE_OPTIONS } from '../services/taskTemplates';
+import { useAuthStore } from '../stores/authStore';
 
 const EMOJI_OPTIONS = ['🌟', '🔥', '💪', '💎', '🥈', '🥇', '👑', '🐝', '⭐', '🏆', '🎁', '❤️', '🏅', '⚡', '🌈', '🎯', '🎖️', '💯', '🎪', '🎨'];
 
 export function AchievementEditPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const authStore = useAuthStore();
   const id = searchParams.get('id');
   const isEdit = !!id;
   const [isSystem, setIsSystem] = useState(false);
@@ -89,7 +91,11 @@ export function AchievementEditPage() {
       if (isEdit && id) {
         await growthService.updateAchievement(Number(id), form);
       } else {
-        await growthService.createAchievement(form);
+        await growthService.createAchievement({
+          ...form,
+          family_id: authStore.family?.id || 0,
+          created_by: authStore.user?.id || 0,
+        });
       }
       navigate(-1);
     } catch (e: any) {
