@@ -146,6 +146,16 @@ func (s *ScoreService) Adjust(childID, familyID, createdBy uint, delta int, titl
 	}
 
 	tx.Commit()
+
+	achievementService := &AchievementService{}
+	achievementService.IncrementCounter(childID, model.CounterTypeTaskCount, 0, 1)
+	achievementService.CheckAchievements(childID, model.CounterTypeTaskCount, 0)
+
+	if delta > 0 {
+		achievementService.IncrementCounter(childID, model.CounterTypeTotalPoints, 0, delta)
+		achievementService.CheckAchievements(childID, model.CounterTypeTotalPoints, 0)
+	}
+
 	return newBalance, nil
 }
 

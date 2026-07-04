@@ -218,6 +218,7 @@ func (s *RedeemService) Redeem(itemID, childID, familyID uint) (*model.Redeem, i
 	}
 
 	tx.Commit()
+
 	return redeem, newBalance, nil
 }
 

@@ -290,6 +290,24 @@ func (s *TaskService) ReviewTask(id, familyID uint, input ReviewTaskInput) (*mod
 	}
 
 	tx.Commit()
+
+	achievementService := &AchievementService{}
+	achievementService.IncrementCounter(task.ChildID, model.CounterTypeTaskCount, 0, 1)
+	achievementService.CheckAchievements(task.ChildID, model.CounterTypeTaskCount, 0)
+
+	if task.TemplateID > 0 {
+		achievementService.IncrementCounter(task.ChildID, model.CounterTypeTemplateTaskCount, task.TemplateID, 1)
+		achievementService.CheckAchievements(task.ChildID, model.CounterTypeTemplateTaskCount, task.TemplateID)
+	}
+
+	achievementService.IncrementCounter(task.ChildID, model.CounterTypeConsecutiveDays, 0, 1)
+	achievementService.CheckAchievements(task.ChildID, model.CounterTypeConsecutiveDays, 0)
+
+	if actualPoints > 0 {
+		achievementService.IncrementCounter(task.ChildID, model.CounterTypeTotalPoints, 0, actualPoints)
+		achievementService.CheckAchievements(task.ChildID, model.CounterTypeTotalPoints, 0)
+	}
+
 	return task, nil
 }
 

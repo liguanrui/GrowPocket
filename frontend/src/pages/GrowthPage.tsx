@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Camera, Calendar, Trophy, Star, Share2, Lock, Unlock, Sparkles, Image, FileText, Send, X, ChevronDown, Plus } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Camera, Calendar, Trophy, Star, ChevronLeft, ChevronRight, Share2, Lock, Unlock, Sparkles, Image, FileText, Send, X, ChevronDown, Plus, Medal } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
@@ -18,44 +18,61 @@ function AchievementCard({ achievement }: { achievement: UserAchievement }) {
     <div
       className={`relative rounded-2xl p-4 transition-all ${
         unlocked
-          ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 shadow-lg shadow-amber-100'
+          ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 shadow-lg shadow-amber-100/50'
           : 'bg-gray-50 border-2 border-gray-100'
       }`}
     >
+      {unlocked && (
+        <div className="absolute top-3 right-3">
+          <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm">
+            已获得
+          </div>
+        </div>
+      )}
       <div className="flex items-start gap-3">
         <div
-          className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl ${
-            unlocked ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-md' : 'bg-gray-200'
+          className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 ${
+            unlocked
+              ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-200/50'
+              : 'bg-gray-200'
           }`}
         >
           {unlocked ? (
-            <span className="drop-shadow-lg">{Achievement.icon}</span>
+            <span className="drop-shadow">{Achievement.icon}</span>
           ) : (
-            <Lock size={20} className="text-gray-400" />
+            <Lock size={22} className="text-gray-400" />
           )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`font-semibold ${unlocked ? 'text-amber-800' : 'text-text-secondary'}`}>
+            <span className={`font-semibold text-base ${unlocked ? 'text-amber-900' : 'text-text-secondary'}`}>
               {Achievement.name}
             </span>
-            {unlocked && <Unlock size={14} className="text-amber-600" />}
           </div>
           <p className="text-xs text-text-tertiary mt-0.5 line-clamp-1">{Achievement.description}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs text-primary font-bold">+{Achievement.points} 积分</span>
+          <div className="flex items-center gap-3 mt-2">
+            <span className={`text-xs font-bold ${unlocked ? 'text-amber-600' : 'text-primary'}`}>
+              +{Achievement.points} 积分
+            </span>
+            {Achievement.is_custom && (
+              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                自定义
+              </span>
+            )}
           </div>
         </div>
       </div>
       {!unlocked && (
         <div className="mt-3">
-          <div className="flex justify-between text-xs text-text-tertiary mb-1">
-            <span>进度</span>
-            <span>{current_value}/{Achievement.target_value}</span>
+          <div className="flex justify-between text-xs text-text-tertiary mb-1.5">
+            <span>完成进度</span>
+            <span className="font-medium text-text-secondary">
+              {current_value}/{Achievement.target_value}
+            </span>
           </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-primary to-amber-400 transition-all duration-500"
+              className="h-full bg-gradient-to-r from-primary to-amber-400 transition-all duration-500 rounded-full"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -446,9 +463,42 @@ export function GrowthPage() {
 
         {/* 勋章 Section */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                <Trophy size={16} className="text-amber-600" />
+              </div>
+              <span className="font-semibold text-text-primary">勋章</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold text-amber-600">{unlockedCount}</span>
+              <span className="text-sm text-text-tertiary">/ {totalCount}</span>
+            </div>
+          </div>
+
+          {unlockedCount > 0 && (
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+              {achievements
+                .filter((a) => a.unlocked)
+                .map((achievement) => (
+                  <div
+                    key={achievement.id}
+                    className="flex-shrink-0 flex flex-col items-center gap-1 w-14"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-2xl shadow-md shadow-amber-200">
+                      {achievement.Achievement.icon}
+                    </div>
+                    <span className="text-xs text-text-secondary text-center line-clamp-1 w-full">
+                      {achievement.Achievement.name}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
+
           <SectionHeader
-            icon={Trophy}
-            title="勋章"
+            icon={Medal}
+            title="全部勋章"
             count={achievements.length}
             onToggle={achievements.length > DEFAULT_ACHIEVEMENT_COUNT ? () => setAchievementsExpanded(!achievementsExpanded) : undefined}
             expanded={achievementsExpanded}

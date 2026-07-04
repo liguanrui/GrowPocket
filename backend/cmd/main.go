@@ -94,6 +94,7 @@ func main() {
 		achievementHandler := handler.NewAchievementHandler()
 		authorized.GET("/achievements", achievementHandler.GetAchievements)
 		authorized.POST("/achievements/check", achievementHandler.CheckAndUnlock)
+		authorized.GET("/achievements/awards", achievementHandler.GetAchievementAwards)
 		authorized.POST("/achievements", achievementHandler.CreateAchievement)
 		authorized.PUT("/achievements/:id", achievementHandler.UpdateAchievement)
 		authorized.DELETE("/achievements/:id", achievementHandler.DeleteAchievement)

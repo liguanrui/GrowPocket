@@ -11,6 +11,7 @@ import { ScorePage } from './pages/ScorePage';
 import { CreateTaskPage } from './pages/CreateTaskPage';
 import { CreateItemPage } from './pages/CreateItemPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AchievementEditPage } from './pages/AchievementEditPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { FamilySettingsPage } from './pages/FamilySettingsPage';
 import { TemplateSettingsPage } from './pages/TemplateSettingsPage';
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="community" element={<CommunityPage />} />
         <Route path="score" element={<ScorePage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings/achievement/edit" element={<AchievementEditPage />} />
         <Route path="settings/account" element={<AccountSettingsPage />} />
         <Route path="settings/family" element={<FamilySettingsPage />} />
         <Route path="settings/templates" element={<TemplateSettingsPage />} />
