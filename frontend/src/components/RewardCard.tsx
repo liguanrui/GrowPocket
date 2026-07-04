@@ -57,13 +57,13 @@ export function RewardCard({ reward, onClick, onExchange, disabled }: RewardCard
         </div>
       </div>
       
-      <div className="p-3">
+      <div className="p-4">
         <h3 className="font-semibold text-text-primary mb-1 truncate">{reward.title}</h3>
         <p className="text-xs text-text-tertiary line-clamp-2 mb-3">{reward.description}</p>
         
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            <span className="text-lg font-bold text-primary">{reward.pointsRequired}</span>
+            <span className="text-lg font-bold bg-gradient-to-r from-primary to-warm-dark bg-clip-text text-transparent">{reward.pointsRequired}</span>
             <span className="text-xs text-text-tertiary">积分</span>
           </div>
           

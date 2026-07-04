@@ -22,7 +22,7 @@ export function PointsDisplay({ points, showTrend, trend = 0, size = 'medium' }:
 
   return (
     <div className="flex items-center gap-3">
-      <div className={`flex items-center gap-2 ${sizeClasses[size]} font-bold text-primary`}>
+      <div className={`flex items-center gap-2 ${sizeClasses[size]} font-bold bg-gradient-to-r from-primary to-warm-light bg-clip-text text-transparent`}>
         <Sparkles size={iconSizes[size]} className="fill-primary" />
         <span>{points.toLocaleString()}</span>
         <span className="text-sm text-text-tertiary font-normal">积分</span>

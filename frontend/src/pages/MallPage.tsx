@@ -83,7 +83,7 @@ function ItemCard({ item, child, onExchange }: { item: RedeemItem; child: { nick
         {item.image ? (
           <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-text-tertiary">
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/5 to-warm-light text-primary/30">
             <Gift size={48} />
           </div>
         )}
@@ -106,7 +106,8 @@ function ItemCard({ item, child, onExchange }: { item: RedeemItem; child: { nick
         )}
         <div className="flex items-center justify-between mt-3">
           <div className="flex items-center gap-1 text-primary">
-            <span className="font-bold text-sm">{item.points}</span>
+            <span className="font-bold text-base bg-gradient-to-r from-primary to-warm-light bg-clip-text text-transparent">{item.points}</span>
+            <span className="text-xs text-text-tertiary">积分</span>
           </div>
           {item.stock >= 0 && (
             <div className="text-xs text-text-tertiary flex items-center gap-1">
@@ -119,7 +120,7 @@ function ItemCard({ item, child, onExchange }: { item: RedeemItem; child: { nick
           disabled={!canExchange}
           className={`w-full mt-3 py-2 rounded-xl text-xs font-medium transition-colors ${
             canExchange
-              ? 'bg-primary text-white hover:bg-primary-dark'
+              ? 'bg-primary text-white hover:bg-primary-dark active:scale-[0.97] transition-all'
               : 'bg-gray-100 text-text-tertiary cursor-not-allowed'
           }`}
         >
@@ -165,7 +166,7 @@ function ExchangeModal({
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-secondary">本次消耗</span>
-              <span className="font-bold text-danger">-{item.points}</span>
+              <span className="font-bold text-lg text-danger">-{item.points}</span>
             </div>
             <div className="border-t border-gray-200 my-3" />
             <div className="flex items-center justify-between">
@@ -302,7 +303,7 @@ export function MallPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-purple-500 to-indigo-600 pt-6 pb-10 px-4 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-purple to-accent-dark pt-8 pb-12 px-5 rounded-b-3xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -334,8 +335,8 @@ export function MallPage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-3">
-        <div className="flex gap-2 mb-5 overflow-x-auto pb-2">
+      <div className="max-w-lg mx-auto px-5 -mt-3">
+        <div className="flex gap-3 mb-6 overflow-x-auto pb-2">
           {[
             { id: 'all', label: '全部' },
             { id: 0, label: '物质奖励' },
@@ -376,7 +377,7 @@ export function MallPage() {
           </div>
         )}
 
-        <div className="h-8" />
+        <div className="h-12" />
       </div>
 
       {exchangingItem && (

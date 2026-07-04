@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, TrendingUp, Gift, Clock, CheckCircle, ChevronLeft, ChevronRight, CheckCircle2, Inbox, FileText, XCircle, Minus, X, Send, ImagePlus } from 'lucide-react';
+import { Plus, TrendingUp, Gift, Clock, CheckCircle, ChevronLeft, ChevronRight, CheckCircle2, Inbox, FileText, XCircle, Minus, X, Send, ImagePlus, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import * as tasksService from '../services/tasks';
@@ -91,7 +91,7 @@ function PointsCard({ balance, nickname, totalIncome, totalExpense, onAdd, onDed
     <div className="bg-card rounded-2xl p-5 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow" onClick={onClick}>
       <div className="text-center">
         <div className="text-text-tertiary text-sm">{nickname} 的积分余额</div>
-        <div className="text-5xl font-bold text-primary mt-2 tracking-tight">
+        <div className="text-5xl font-bold bg-gradient-to-r from-primary to-warm-light bg-clip-text text-transparent mt-2 tracking-tight">
           {balance.toLocaleString()}
         </div>
         <div className="flex justify-center gap-4 mt-4">
@@ -383,8 +383,8 @@ function TaskBoard({
       <div>
         <StatusTabs active={activeStatus} onChange={onStatusChange} tasks={tasks} />
         <div className="text-center py-12 bg-card rounded-2xl shadow-sm mt-3">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-            <span className="text-3xl">📋</span>
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/5 flex items-center justify-center">
+            <ClipboardList size={28} className="text-primary/40" />
           </div>
           <p className="text-text-primary font-medium">暂无任务</p>
           <p className="text-text-tertiary text-sm mt-1">
@@ -500,8 +500,11 @@ export function HomePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-bg pb-24 flex items-center justify-center">
-        <div className="text-text-secondary">加载中...</div>
+      <div className="min-h-screen bg-bg pb-24 flex flex-col items-center justify-center gap-4">
+        <div className="relative">
+          <div className="w-12 h-12 rounded-full border-4 border-gray-200 animate-spin" style={{ borderTopColor: '#F59E6B' }} />
+        </div>
+        <div className="text-text-secondary text-sm">加载中...</div>
       </div>
     );
   }
@@ -548,9 +551,9 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-primary to-primary-dark pt-6 pb-6 px-4 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-primary to-primary-dark pt-8 pb-8 px-5 rounded-b-3xl">
         <div className="max-w-lg mx-auto">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-5">
             <div>
               <h1 className="text-xl font-bold text-white">任务看板</h1>
               <p className="text-white/80 text-sm mt-0.5">今日共 {tasks.length} 个任务</p>
@@ -588,7 +591,7 @@ export function HomePage() {
         />
       )}
 
-      <div className="max-w-lg mx-auto px-4 mt-4 space-y-4">
+      <div className="max-w-lg mx-auto px-5 mt-6 space-y-5">
         <TaskBoard
           tasks={tasks}
           activeStatus={activeStatus}
@@ -602,7 +605,7 @@ export function HomePage() {
 
       <button
         onClick={() => navigate(`/tasks/new?child_id=${selectedChildId}`)}
-        className="fixed bottom-24 right-4 w-14 h-14 bg-primary text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center z-40"
+        className="fixed bottom-24 right-5 w-14 h-14 bg-primary text-white rounded-2xl shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center z-40"
       >
         <Plus size={24} />
       </button>

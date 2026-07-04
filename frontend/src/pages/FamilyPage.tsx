@@ -18,7 +18,7 @@ function ChildProfileCard({
   onDelete: () => void;
 }) {
   return (
-    <div className={`rounded-2xl p-4 shadow-sm transition-all border-2 ${isSelected ? 'border-primary bg-white' : 'border-transparent bg-card'}`}>
+    <div className={`rounded-2xl p-4 shadow-sm transition-all border-2 ${isSelected ? 'border-primary bg-white' : 'border-warm-light bg-card'}`}>
       <div className="flex items-start gap-3">
         <div className="w-16 h-16 rounded-2xl bg-primary/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
           {child.avatar ? (

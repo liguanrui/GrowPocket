@@ -446,7 +446,7 @@ export function ScorePage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-success to-green-700 pt-6 pb-8 px-4">
+      <div className="bg-gradient-to-br from-success to-green-700 pt-8 pb-10 px-5">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-5">
             <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">

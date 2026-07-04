@@ -44,7 +44,7 @@ export function TaskCard({ task, onClick, showActions, onApprove, onReject }: Ta
   return (
     <div
       onClick={onClick}
-      className="bg-card rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer border border-gray-50"
+      className="bg-card rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer border border-warm-light"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -58,14 +58,14 @@ export function TaskCard({ task, onClick, showActions, onApprove, onReject }: Ta
 
           {/* 描述 */}
           {task.description && (
-            <p className="text-sm text-text-secondary line-clamp-2 mb-3">{task.description}</p>
+            <p className="text-sm text-text-secondary line-clamp-2 mb-4">{task.description}</p>
           )}
 
           {/* 积分 + 指派 + 截止 */}
           <div className="flex items-center gap-4 text-sm flex-wrap">
-            <div className="flex items-center gap-1.5 text-primary">
-              <Star size={16} className="fill-primary" />
-              <span className="font-semibold">{task.points}积分</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/5 rounded-lg text-primary">
+              <Star size={14} className="fill-primary" />
+              <span className="font-semibold text-sm">{task.points}积分</span>
             </div>
             {task.childName && (
               <div className="flex items-center gap-1.5 text-text-tertiary">
@@ -110,7 +110,7 @@ export function TaskCard({ task, onClick, showActions, onApprove, onReject }: Ta
 
           {/* 已拒绝：可以重新提交 */}
           {task.status === 'rejected' && showActions && (
-            <div className="mt-4 pt-3 border-t border-gray-100">
+            <div className="mt-4 pt-3 border-t border-warm-light">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
