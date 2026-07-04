@@ -229,7 +229,8 @@ export function MallPage() {
       <div className="min-h-screen bg-bg pb-24 flex items-center justify-center p-4">
         <div className="bg-card rounded-2xl p-6 text-center shadow-sm">
           <div className="text-text-primary font-medium">暂无孩子档案</div>
-          <button onClick={() => navigate('/family')} className="mt-3 px-4 py-2 bg-primary text-white text-sm rounded-xl">添加孩子</button>
+          <p className="text-sm text-text-tertiary mt-2">请先添加孩子信息</p>
+          <button onClick={() => navigate('/family')} className="mt-4 px-4 py-2 bg-primary text-white text-sm rounded-xl">去家庭管理</button>
         </div>
       </div>
     );

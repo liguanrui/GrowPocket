@@ -472,7 +472,7 @@ export function HomePage() {
               onClick={() => navigate('/family')}
               className="mt-4 px-4 py-2 bg-primary text-white text-sm rounded-xl"
             >
-              添加孩子
+              去家庭管理
             </button>
           </div>
         </div>
