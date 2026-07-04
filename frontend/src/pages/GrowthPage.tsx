@@ -11,8 +11,9 @@ import type { Task } from '../services/tasks';
 import * as communityService from '../services/community';
 
 function AchievementCard({ achievement }: { achievement: UserAchievement }) {
-  const { Achievement, unlocked, current_value } = achievement;
-  const progress = Math.min((current_value / Math.max(Achievement.target_value, 1)) * 100, 100);
+  const { Achievement, unlocked, current_value, award_count } = achievement;
+  const targetValue = Achievement.counter_target || Achievement.target_value || 0;
+  const progress = Math.min((current_value / Math.max(targetValue, 1)) * 100, 100);
 
   return (
     <div
@@ -25,22 +26,29 @@ function AchievementCard({ achievement }: { achievement: UserAchievement }) {
       {unlocked && (
         <div className="absolute top-3 right-3">
           <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm">
-            已获得
+            {award_count > 1 ? `已获得 x${award_count}` : '已获得'}
           </div>
         </div>
       )}
       <div className="flex items-start gap-3">
-        <div
-          className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 ${
-            unlocked
-              ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-200/50'
-              : 'bg-gray-200'
-          }`}
-        >
-          {unlocked ? (
-            <span className="drop-shadow">{Achievement.icon}</span>
-          ) : (
-            <Lock size={22} className="text-gray-400" />
+        <div className="relative">
+          <div
+            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 ${
+              unlocked
+                ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-200/50'
+                : 'bg-gray-200'
+            }`}
+          >
+            {unlocked ? (
+              <span className="drop-shadow">{Achievement.icon}</span>
+            ) : (
+              <Lock size={22} className="text-gray-400" />
+            )}
+          </div>
+          {unlocked && award_count > 1 && (
+            <div className="absolute -bottom-1 -right-1 bg-amber-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm min-w-[20px] text-center">
+              x{award_count}
+            </div>
           )}
         </div>
         <div className="flex-1 min-w-0">
@@ -67,12 +75,28 @@ function AchievementCard({ achievement }: { achievement: UserAchievement }) {
           <div className="flex justify-between text-xs text-text-tertiary mb-1.5">
             <span>完成进度</span>
             <span className="font-medium text-text-secondary">
-              {current_value}/{Achievement.target_value}
+              {current_value}/{targetValue}
             </span>
           </div>
           <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-primary to-amber-400 transition-all duration-500 rounded-full"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+      {unlocked && award_count > 0 && (
+        <div className="mt-3">
+          <div className="flex justify-between text-xs text-text-tertiary mb-1.5">
+            <span>累计进度</span>
+            <span className="font-medium text-text-secondary">
+              {current_value}/{targetValue}
+            </span>
+          </div>
+          <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-amber-400 to-yellow-500 transition-all duration-500 rounded-full"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -484,8 +508,15 @@ export function GrowthPage() {
                     key={achievement.id}
                     className="flex-shrink-0 flex flex-col items-center gap-1 w-14"
                   >
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-2xl shadow-md shadow-amber-200">
-                      {achievement.Achievement.icon}
+                    <div className="relative">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-2xl shadow-md shadow-amber-200">
+                        {achievement.Achievement.icon}
+                      </div>
+                      {achievement.award_count > 1 && (
+                        <div className="absolute -top-1 -right-1 bg-amber-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm min-w-[18px] text-center">
+                          x{achievement.award_count}
+                        </div>
+                      )}
                     </div>
                     <span className="text-xs text-text-secondary text-center line-clamp-1 w-full">
                       {achievement.Achievement.name}
@@ -495,13 +526,22 @@ export function GrowthPage() {
             </div>
           )}
 
-          <SectionHeader
-            icon={Medal}
-            title="全部勋章"
-            count={achievements.length}
-            onToggle={achievements.length > DEFAULT_ACHIEVEMENT_COUNT ? () => setAchievementsExpanded(!achievementsExpanded) : undefined}
-            expanded={achievementsExpanded}
-          />
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                <Medal size={16} />
+              </div>
+              <h2 className="font-semibold text-text-primary">全部勋章</h2>
+              <span className="text-xs text-text-tertiary bg-gray-100 px-2 py-0.5 rounded-full">{achievements.length}</span>
+            </div>
+            <button
+              onClick={() => navigate(`/achievements?child_id=${selectedChildId}`)}
+              className="flex items-center gap-1 text-sm text-text-tertiary hover:text-primary transition-colors"
+            >
+              <span>更多</span>
+              <ChevronDown size={16} />
+            </button>
+          </div>
           {achievements.length > 0 ? (
             <div className="space-y-3">
               {displayAchievements.map((achievement) => (

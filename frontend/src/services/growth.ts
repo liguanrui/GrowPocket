@@ -29,9 +29,12 @@ export interface Achievement {
   icon: string;
   icon_color?: string;
   type: number;
+  counter_type: number;
+  counter_target: number;
   target_value: number;
   points: number;
   is_custom?: boolean;
+  template_id?: number;
   created_by?: number;
   created_at?: string;
   updated_at?: string;
@@ -43,6 +46,7 @@ export interface UserAchievement {
   achievement_id: number;
   unlocked: boolean;
   unlocked_at?: string;
+  award_count: number;
   current_value: number;
   Achievement: Achievement;
 }

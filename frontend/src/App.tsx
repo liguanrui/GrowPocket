@@ -16,6 +16,7 @@ import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { FamilySettingsPage } from './pages/FamilySettingsPage';
 import { TemplateSettingsPage } from './pages/TemplateSettingsPage';
 import { AchievementSettingsPage } from './pages/AchievementSettingsPage';
+import { AchievementListPage } from './pages/AchievementListPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="mall" element={<MallPage />} />
         <Route path="mall/new" element={<CreateItemPage />} />
         <Route path="growth" element={<GrowthPage />} />
+        <Route path="achievements" element={<AchievementListPage />} />
         <Route path="family" element={<FamilyPage />} />
         <Route path="community" element={<CommunityPage />} />
         <Route path="score" element={<ScorePage />} />
