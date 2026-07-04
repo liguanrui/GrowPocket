@@ -3,6 +3,8 @@ import { ArrowLeft, Star, User, CalendarDays, Sparkles } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import * as tasksService from '../services/tasks';
+import { listTaskTemplates } from '../services/taskTemplates';
+import type { TaskTemplate } from '../services/taskTemplates';
 
 function PointsInput({ points, onChange }: { points: number; onChange: (n: number) => void }) {
   const presets = [20, 50, 100, 200];
@@ -127,36 +129,49 @@ function DeadlinePicker({
 }
 
 function TaskTemplates({
+  templates,
+  loading,
   onPick,
 }: {
+  templates: TaskTemplate[];
+  loading: boolean;
   onPick: (title: string, desc: string, points: number) => void;
 }) {
-  const templates = [
-    { title: '整理房间', desc: '整理床铺、叠好衣物', points: 50 },
-    { title: '洗碗', desc: '洗完饭后所有碗筷', points: 30 },
-    { title: '阅读30分钟', desc: '阅读课外书籍30分钟', points: 60 },
-    { title: '倒垃圾', desc: '把家里的垃圾倒到楼下', points: 15 },
-    { title: '完成作业', desc: '认真完成当日作业', points: 80 },
-    { title: '户外运动', desc: '户外活动1小时', points: 60 },
-  ];
-
   return (
     <div>
       <label className="block text-sm font-medium text-text-primary mb-2">
         <Sparkles size={14} className="inline mr-1 text-primary" /> 常见任务
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        {templates.map((t, i) => (
-          <button
-            key={i}
-            onClick={() => onPick(t.title, t.desc, t.points)}
-            className="text-left bg-bg hover:bg-gray-100 rounded-xl p-3 transition-colors"
-          >
-            <div className="text-sm text-text-primary font-medium">{t.title}</div>
-            <div className="text-xs text-text-tertiary mt-0.5">+{t.points} 积分</div>
-          </button>
-        ))}
-      </div>
+      {loading ? (
+        <div className="grid grid-cols-2 gap-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="bg-bg rounded-xl p-3 animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-2/3 mb-1.5" />
+              <div className="h-3 bg-gray-100 rounded w-1/3" />
+            </div>
+          ))}
+        </div>
+      ) : templates.length === 0 ? (
+        <div className="text-center py-6 text-sm text-text-tertiary">
+          暂无任务模板，可前往「设置 - 任务模板」添加
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {templates.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => onPick(t.title, t.description, t.points)}
+              className="text-left bg-bg hover:bg-gray-100 rounded-xl p-3 transition-colors"
+            >
+              <div className="text-sm text-text-primary font-medium flex items-center gap-1">
+                <span>{t.icon}</span>
+                <span>{t.title}</span>
+              </div>
+              <div className="text-xs text-text-tertiary mt-0.5">+{t.points} 积分</div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -172,6 +187,8 @@ export function CreateTaskPage() {
   const [deadline, setDeadline] = useState<string | undefined>(undefined);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -193,6 +210,20 @@ export function CreateTaskPage() {
         if (mounted) setError(e.message || '加载失败');
       } finally {
         if (mounted) setLoading(false);
+      }
+
+      // 拉取任务模板列表
+      setTemplatesLoading(true);
+      try {
+        const list = await listTaskTemplates();
+        if (mounted) {
+          setTemplates(list.filter((t) => t.is_active));
+        }
+      } catch (e: any) {
+        // 模板加载失败不阻断页面
+        if (mounted) setTemplates([]);
+      } finally {
+        if (mounted) setTemplatesLoading(false);
       }
     }
     loadData();
@@ -288,6 +319,8 @@ export function CreateTaskPage() {
 
         <div className="bg-card rounded-2xl p-5 shadow-sm">
           <TaskTemplates
+            templates={templates}
+            loading={templatesLoading}
             onPick={(t, d, p) => {
               setTitle(t);
               setDescription(d);

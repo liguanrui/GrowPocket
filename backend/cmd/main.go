@@ -23,6 +23,11 @@ func main() {
 		log.Printf("初始化成就数据失败: %v", err)
 	}
 
+	// 为已有家庭补齐默认任务模板
+	if err := service.SeedAllFamiliesTemplates(); err != nil {
+		log.Printf("补齐任务模板失败: %v", err)
+	}
+
 	// Gin
 	r := gin.Default()
 
