@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, TrendingUp, Gift, Clock, CheckCircle, CheckCircle2, Inbox, FileText, XCircle, Minus, X, Send, ImagePlus, ClipboardList } from 'lucide-react';
+import { Plus, TrendingUp, Gift, Clock, CheckCircle, CheckCircle2, Inbox, FileText, XCircle, Minus, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { ChildTabs } from '../components/ChildTabs';
@@ -48,133 +48,6 @@ function PointsCard({ balance, nickname, monthIncome, monthExpense, onAdd, onDed
         >
           <Minus size={16} />
           <span className="text-xs font-medium">减积分</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ScoreAdjustModal({
-  mode,
-  onClose,
-  onSubmit,
-  balance,
-}: {
-  mode: 'add' | 'deduct';
-  onClose: () => void;
-  onSubmit: (title: string, amount: number, description?: string, photo?: string) => void;
-  balance: number;
-}) {
-  const [amount, setAmount] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [photo, setPhoto] = useState<string | null>(null);
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhoto(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSubmit = () => {
-    const numAmount = parseInt(amount, 10);
-    if (!numAmount || numAmount <= 0) return;
-    if (!title.trim()) return;
-    onSubmit(title.trim(), numAmount, description.trim() || undefined, photo || undefined);
-  };
-
-  const canSubmit = amount && parseInt(amount, 10) > 0 && title.trim() && (mode === 'add' || parseInt(amount, 10) <= balance);
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-      <div className="bg-white rounded-t-3xl w-full max-w-lg p-5 pb-24 animate-slide-up max-h-[80vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-text-primary">
-            {mode === 'add' ? '奖励积分' : '扣除积分'}
-          </h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">金额 *</label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="输入积分数量"
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">标题 *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="输入操作名称"
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">备注</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="输入备注（可选）"
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">图片</label>
-            <div className="relative">
-              {photo ? (
-                <div className="relative w-full h-32 rounded-xl overflow-hidden">
-                  <img src={photo} alt="" className="w-full h-full object-cover" />
-                  <button
-                    onClick={() => setPhoto(null)}
-                    className="absolute top-2 right-2 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center"
-                  >
-                    <X size={12} className="text-white" />
-                  </button>
-                </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50">
-                  <ImagePlus size={24} className="text-gray-400" />
-                  <span className="text-sm text-gray-500 mt-2">点击上传图片</span>
-                  <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-                </label>
-              )}
-            </div>
-          </div>
-
-          {mode === 'deduct' && balance < parseInt(amount, 10) && (
-            <div className="bg-danger/5 border border-danger/20 text-danger text-sm rounded-xl p-3">
-              ⚠️ 当前余额不足（余额 {balance} 积分）
-            </div>
-          )}
-        </div>
-
-        <button
-          disabled={!canSubmit}
-          onClick={handleSubmit}
-          className={`w-full mt-6 py-3 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-            mode === 'add' ? 'bg-success hover:bg-green-700' : 'bg-danger hover:bg-red-700'
-          }`}
-        >
-          <Send size={18} />
-          {mode === 'add' ? '确认奖励' : '确认扣除'}
         </button>
       </div>
     </div>
@@ -356,7 +229,6 @@ export function HomePage() {
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [scoreModalMode, setScoreModalMode] = useState<'add' | 'deduct' | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
 
   useEffect(() => {
@@ -413,20 +285,6 @@ export function HomePage() {
     setSelectedChildId(id);
     childStore.setCurrentChildId(id);
     setActiveStatus('all');
-  };
-
-  const handleScoreAdjust = async (title: string, amount: number, description?: string, photo?: string) => {
-    if (!selectedChildId) return;
-    try {
-      const result = await (scoreModalMode === 'add'
-        ? scoreService.addPoints(selectedChildId, amount, title, description, photo)
-        : scoreService.deductPoints(selectedChildId, amount, title, description, photo));
-      setBalance(result.balance);
-      childStore.updateBalance(selectedChildId, result.balance);
-      setScoreModalMode(null);
-    } catch (e: any) {
-      alert(e.message || '操作失败');
-    }
   };
 
   if (loading) {
@@ -505,22 +363,13 @@ export function HomePage() {
               nickname={selectedChild.nickname}
               monthIncome={monthIncome}
               monthExpense={monthExpense}
-              onAdd={() => setScoreModalMode('add')}
-              onDeduct={() => setScoreModalMode('deduct')}
+              onAdd={() => navigate(`/score/adjust?mode=add&child_id=${selectedChildId}`)}
+              onDeduct={() => navigate(`/score/adjust?mode=deduct&child_id=${selectedChildId}`)}
               onClick={() => navigate(`/score?child_id=${selectedChildId}`)}
             />
           </div>
         </div>
       </div>
-
-      {scoreModalMode && (
-        <ScoreAdjustModal
-          mode={scoreModalMode}
-          onClose={() => setScoreModalMode(null)}
-          onSubmit={handleScoreAdjust}
-          balance={balance}
-        />
-      )}
 
       <div className="max-w-lg mx-auto px-5 mt-6 space-y-5">
         <TaskBoard

@@ -5,6 +5,7 @@ import (
 	"growpocket/internal/database"
 	"growpocket/internal/model"
 	"growpocket/pkg/util"
+	"log"
 )
 
 type AuthService struct{}
@@ -69,6 +70,11 @@ func (s *AuthService) Register(input RegisterInput, jwtSecret string, jwtDuratio
 	}
 
 	tx.Commit()
+
+	// 初始化默认任务模板（失败不阻断注册）
+	if err := NewTaskTemplateService().SeedInitialTemplates(family.ID, user.ID); err != nil {
+		log.Printf("初始化任务模板失败(family=%d): %v", family.ID, err)
+	}
 
 	// 生成 JWT
 	token, err := util.GenerateJWT(user.ID, family.ID, user.Nickname, jwtSecret, jwtDuration)

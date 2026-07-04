@@ -8,6 +8,7 @@ import { FamilyPage } from './pages/FamilyPage';
 import { CommunityPage } from './pages/CommunityPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ScorePage } from './pages/ScorePage';
+import { ScoreAdjustPage } from './pages/ScoreAdjustPage';
 import { CreateTaskPage } from './pages/CreateTaskPage';
 import { CreateItemPage } from './pages/CreateItemPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="family" element={<FamilyPage />} />
         <Route path="community" element={<CommunityPage />} />
         <Route path="score" element={<ScorePage />} />
+        <Route path="score/adjust" element={<ScoreAdjustPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="settings/achievement/edit" element={<AchievementEditPage />} />
         <Route path="settings/account" element={<AccountSettingsPage />} />
