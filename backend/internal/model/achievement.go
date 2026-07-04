@@ -18,7 +18,7 @@ type Achievement struct {
 	Description   string    `gorm:"size:200" json:"description"`
 	Icon          string    `gorm:"size:100" json:"icon"`               // emoji 或图片URL
 	IconColor     string    `gorm:"size:20;default:'#FF9500'" json:"icon_color"` // 图标颜色
-	CounterType   int       `gorm:"not null" json:"counter_type"`       // 计数器类型
+	CounterType   int       `gorm:"not null;default:1" json:"counter_type"`       // 计数器类型
 	CounterTarget int       `gorm:"not null;default:0" json:"counter_target"` // 计数器目标值
 	TemplateID    uint      `gorm:"index" json:"template_id"`           // 模板任务ID
 	Points        int       `gorm:"not null;default:0" json:"points"`   // 解锁后奖励积分

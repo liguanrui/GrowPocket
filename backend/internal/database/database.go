@@ -45,10 +45,16 @@ func Init(dbPath string) {
 		&model.ActivityParticipant{},
 		&model.Achievement{},
 		&model.UserAchievement{},
+		&model.UserCounter{},
+		&model.AchievementAward{},
 		&model.TaskTemplate{},
 	)
 	if err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
+	if err := migrateAchievementData(db); err != nil {
+		log.Printf("成就数据迁移失败: %v", err)
 	}
 
 	// Seed 数据
@@ -57,6 +63,43 @@ func Init(dbPath string) {
 	}
 
 	log.Printf("数据库初始化完成: %s", dbPath)
+}
+
+func migrateAchievementData(db *gorm.DB) error {
+	var count int64
+	db.Model(&model.Achievement{}).Where("counter_type = 1 AND counter_target = 0").Count(&count)
+	if count == 0 {
+		return nil
+	}
+
+	type oldTypeMapping struct {
+		OldType  int
+		NewType  int
+	}
+	mappings := []oldTypeMapping{
+		{1, 1},
+		{2, 3},
+		{3, 4},
+		{4, 1},
+		{5, 6},
+		{6, 7},
+	}
+
+	tx := db.Begin()
+
+	for _, m := range mappings {
+		if err := tx.Model(&model.Achievement{}).
+			Where("type = ? AND counter_type = 1 AND counter_target = 0", m.OldType).
+			Updates(map[string]interface{}{
+				"counter_type":   m.NewType,
+				"counter_target": gorm.Expr("target_value"),
+			}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit().Error
 }
 
 func seedCommunityData(db *gorm.DB) error {
