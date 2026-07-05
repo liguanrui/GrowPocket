@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Plus, Minus, Upload, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import { useToastStore } from '../stores/toastStore';
+import { useUIStore } from '../stores/uiStore';
 import * as scoreService from '../services/score';
 
 function AmountInput({ amount, onChange, mode }: { amount: number; onChange: (n: number) => void; mode: 'add' | 'deduct' }) {
@@ -78,13 +80,14 @@ export function ScoreAdjustPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const childStore = useChildStore();
+  const toast = useToastStore();
+  const uiStore = useUIStore();
   const mode = (searchParams.get('mode') === 'deduct' ? 'deduct' : 'add') as 'add' | 'deduct';
 
   const [amount, setAmount] = useState(50);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [childId, setChildId] = useState<number | null>(null);
@@ -107,7 +110,7 @@ export function ScoreAdjustPage() {
           if (mounted) setBalance(bal.balance);
         }
       } catch (e: any) {
-        if (mounted) setError(e.message || '加载失败');
+        if (mounted) toast.error(e.message || '加载失败');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -130,27 +133,31 @@ export function ScoreAdjustPage() {
 
   const handleSubmit = async () => {
     if (!childId) {
-      setError('未选择孩子');
+      toast.error('未选择孩子');
       return;
     }
     if (!title.trim()) {
-      setError('请填写标题');
+      toast.error('请填写标题');
       return;
     }
     if (amount <= 0) {
-      setError('积分数量必须大于 0');
+      toast.error('积分数量必须大于 0');
       return;
     }
-    setError('');
     setSubmitting(true);
     try {
       const result = isAdd
         ? await scoreService.addPoints(childId, amount, title.trim(), description.trim() || undefined, photo || undefined)
         : await scoreService.deductPoints(childId, amount, title.trim(), description.trim() || undefined, photo || undefined);
       childStore.updateBalance(childId, result.balance);
-      navigate('/home');
+      uiStore.triggerScoreAnimation(childId, amount, isAdd ? 'add' : 'deduct');
+      uiStore.setNeedRefreshScore(true);
+      uiStore.setNeedRefreshTasks(false);
+      childStore.setCurrentChildId(childId);
+      toast.success(isAdd ? `已奖励 ${amount} 积分` : `已扣除 ${amount} 积分`);
+      navigate('/home', { replace: true });
     } catch (e: any) {
-      setError(e.message || '操作失败');
+      toast.error(e.message || '操作失败');
     } finally {
       setSubmitting(false);
     }
@@ -221,10 +228,6 @@ export function ScoreAdjustPage() {
             </div>
           )}
         </div>
-
-        {error && (
-          <div className="bg-danger/5 border border-danger/20 text-danger text-sm rounded-xl p-3">{error}</div>
-        )}
 
         <div className="sticky bottom-4 pt-2">
           <button

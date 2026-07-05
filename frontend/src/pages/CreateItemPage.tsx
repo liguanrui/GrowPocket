@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { ArrowLeft, Gift, Check, Package } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Gift, Check, Package, Edit3, Trash2 } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useToastStore } from '../stores/toastStore';
+import { useUIStore } from '../stores/uiStore';
 import * as redeemService from '../services/redeem';
+import type { RedeemItem } from '../services/redeem';
 
 const CATEGORIES: { key: 0 | 1 | 2; label: string; desc: string }[] = [
   { key: 0, label: '物质奖励', desc: '玩具、文具、书籍等实物' },
@@ -11,6 +14,11 @@ const CATEGORIES: { key: 0 | 1 | 2; label: string; desc: string }[] = [
 
 export function CreateItemPage() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const toast = useToastStore();
+  const uiStore = useUIStore();
+  const isEdit = !!id;
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [points, setPoints] = useState(500);
@@ -18,36 +26,86 @@ export function CreateItemPage() {
   const [stock, setStock] = useState(10);
   const [isLimited, setIsLimited] = useState(true);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
-  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(isEdit);
+
+  useEffect(() => {
+    if (isEdit && id) {
+      loadItem();
+    }
+  }, [isEdit, id]);
+
+  const loadItem = async () => {
+    try {
+      const item = await redeemService.getItem(Number(id));
+      setName(item.name);
+      setDescription(item.description || '');
+      setPoints(item.points);
+      setCategory(item.category);
+      setIsLimited(item.stock < 900);
+      setStock(item.stock >= 900 ? 10 : item.stock);
+      setImageUrl(item.image);
+    } catch (e: any) {
+      toast.error(e.message || '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      setError('请填写商品名称');
+      toast.error('请填写商品名称');
       return;
     }
     if (points <= 0) {
-      setError('积分必须大于0');
+      toast.error('积分必须大于0');
       return;
     }
-    setError('');
     setSubmitting(true);
     try {
-      await redeemService.createItem({
+      const data = {
         name: name.trim(),
         description: description.trim() || undefined,
         points,
         category,
         stock: isLimited ? stock : 999,
         image: imageUrl,
-      });
-      navigate('/mall');
+      };
+      if (isEdit && id) {
+        await redeemService.updateItem(Number(id), data);
+        toast.success('商品修改成功');
+      } else {
+        await redeemService.createItem(data);
+        toast.success('商品创建成功');
+      }
+      uiStore.setNeedRefreshItems(true);
+      navigate(-1);
     } catch (e: any) {
-      setError(e.message || '创建失败');
+      toast.error(e.message || '保存失败');
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (!confirm('确定要删除这个商品吗？')) return;
+    try {
+      await redeemService.deleteItem(Number(id));
+      uiStore.setNeedRefreshItems(true);
+      toast.success('商品已删除');
+      navigate(-1);
+    } catch (e: any) {
+      toast.error(e.message || '删除失败');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg pb-24 flex items-center justify-center">
+        <div className="text-text-secondary">加载中...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-bg pb-24">
@@ -57,10 +115,23 @@ export function CreateItemPage() {
             <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
               <ArrowLeft size={20} className="text-white" />
             </button>
-            <h1 className="text-white font-semibold text-lg">创建新商品</h1>
-            <div className="w-10 h-10" />
+            <h1 className="text-white font-semibold text-lg">
+              {isEdit ? '编辑商品' : '创建新商品'}
+            </h1>
+            {isEdit ? (
+              <button
+                onClick={handleDelete}
+                className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors"
+              >
+                <Trash2 size={18} className="text-white" />
+              </button>
+            ) : (
+              <div className="w-10 h-10" />
+            )}
           </div>
-          <p className="text-white/80 text-sm">设定一个能激励孩子努力完成任务的奖励。</p>
+          <p className="text-white/80 text-sm">
+            {isEdit ? '修改商品的信息。' : '设定一个能激励孩子努力完成任务的奖励。'}
+          </p>
         </div>
       </div>
 
@@ -183,17 +254,13 @@ export function CreateItemPage() {
           </div>
         </div>
 
-        {error && (
-          <div className="bg-danger/5 border border-danger/20 text-danger text-sm rounded-xl p-3">{error}</div>
-        )}
-
         <div className="sticky bottom-4 pt-2">
           <button
             onClick={handleSubmit}
             disabled={!name.trim() || points <= 0 || submitting}
             className="w-full py-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-2xl font-semibold shadow-lg shadow-purple-500/20 hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? '提交中...' : '发布商品'}
+            {submitting ? '提交中...' : isEdit ? '保存修改' : '发布商品'}
           </button>
         </div>
 

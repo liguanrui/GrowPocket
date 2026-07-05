@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, ListTodo, Star } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useToastStore } from '../stores/toastStore';
+import { useUIStore } from '../stores/uiStore';
 import * as templateService from '../services/taskTemplates';
 import type { TaskTemplate } from '../services/taskTemplates';
 import { TASK_CATEGORY_OPTIONS } from '../services/taskTemplates';
@@ -10,6 +12,8 @@ const EMOJI_OPTIONS = ['🌟', '🔥', '💪', '💎', '🥈', '🥇', '👑', '
 export function TemplateEditPage() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const toast = useToastStore();
+  const uiStore = useUIStore();
   const isEdit = !!id;
 
   const [form, setForm] = useState({
@@ -21,7 +25,6 @@ export function TemplateEditPage() {
     sort_order: 0,
     is_active: true,
   });
-  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(isEdit);
 
@@ -44,7 +47,7 @@ export function TemplateEditPage() {
         is_active: template.is_active,
       });
     } catch (e: any) {
-      setError(e.message || '加载失败');
+      toast.error(e.message || '加载失败');
     } finally {
       setLoading(false);
     }
@@ -52,24 +55,26 @@ export function TemplateEditPage() {
 
   const handleSubmit = async () => {
     if (!form.title.trim()) {
-      setError('请填写任务名称');
+      toast.error('请填写任务名称');
       return;
     }
     if (form.points < 0) {
-      setError('奖励积分不能小于0');
+      toast.error('奖励积分不能小于0');
       return;
     }
-    setError('');
     setSubmitting(true);
     try {
       if (isEdit && id) {
         await templateService.updateTaskTemplate(Number(id), form);
+        toast.success('模板修改成功');
       } else {
         await templateService.createTaskTemplate(form);
+        toast.success('模板创建成功');
       }
+      uiStore.setNeedRefreshTemplates(true);
       navigate(-1);
     } catch (e: any) {
-      setError(e.message || '保存失败');
+      toast.error(e.message || '保存失败');
     } finally {
       setSubmitting(false);
     }
@@ -103,12 +108,6 @@ export function TemplateEditPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl mb-4 text-sm">
-            {error}
-          </div>
-        )}
-
         <div className="bg-card rounded-2xl p-5 shadow-sm space-y-5">
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">任务名称 *</label>

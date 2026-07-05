@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Medal } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useToastStore } from '../stores/toastStore';
+import { useUIStore } from '../stores/uiStore';
 import * as growthService from '../services/growth';
 import { ACHIEVEMENT_TYPE_OPTIONS } from '../services/taskTemplates';
 import { useAuthStore } from '../stores/authStore';
@@ -11,6 +13,8 @@ export function AchievementEditPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const authStore = useAuthStore();
+  const toast = useToastStore();
+  const uiStore = useUIStore();
   const id = searchParams.get('id');
   const isEdit = !!id;
   const [isSystem, setIsSystem] = useState(false);
@@ -24,7 +28,6 @@ export function AchievementEditPage() {
     target_value: 1,
     points: 100,
   });
-  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(isEdit);
 
@@ -52,7 +55,7 @@ export function AchievementEditPage() {
         setIsSystem(!a.is_custom);
       }
     } catch (e: any) {
-      setError(e.message || '加载失败');
+      toast.error(e.message || '加载失败');
     } finally {
       setLoading(false);
     }
@@ -60,13 +63,14 @@ export function AchievementEditPage() {
 
   const handleSubmit = async () => {
     if (isSystem) {
-      setError('');
       setSubmitting(true);
       try {
         await growthService.updateAchievement(Number(id), { points: form.points });
+        uiStore.setNeedRefreshAchievements(true);
+        toast.success('勋章修改成功');
         navigate(-1);
       } catch (e: any) {
-        setError(e.message || '保存失败');
+        toast.error(e.message || '保存失败');
       } finally {
         setSubmitting(false);
       }
@@ -74,32 +78,34 @@ export function AchievementEditPage() {
     }
 
     if (!form.name.trim()) {
-      setError('请填写勋章名称');
+      toast.error('请填写勋章名称');
       return;
     }
     if (form.target_value < 0) {
-      setError('目标值不能小于0');
+      toast.error('目标值不能小于0');
       return;
     }
     if (form.points < 0) {
-      setError('奖励积分不能小于0');
+      toast.error('奖励积分不能小于0');
       return;
     }
-    setError('');
     setSubmitting(true);
     try {
       if (isEdit && id) {
         await growthService.updateAchievement(Number(id), form);
+        toast.success('勋章修改成功');
       } else {
         await growthService.createAchievement({
           ...form,
           family_id: authStore.family?.id || 0,
           created_by: authStore.user?.id || 0,
         });
+        toast.success('勋章创建成功');
       }
+      uiStore.setNeedRefreshAchievements(true);
       navigate(-1);
     } catch (e: any) {
-      setError(e.message || '保存失败');
+      toast.error(e.message || '保存失败');
     } finally {
       setSubmitting(false);
     }
@@ -137,12 +143,6 @@ export function AchievementEditPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl mb-4 text-sm">
-            {error}
-          </div>
-        )}
-
         <div className="bg-card rounded-2xl p-5 shadow-sm space-y-5">
           {isSystem && (
             <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-sm">

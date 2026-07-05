@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
+import { ToastContainer } from './components/Toast';
 import { HomePage } from './pages/HomePage';
 import { MallPage } from './pages/MallPage';
 import { GrowthPage } from './pages/GrowthPage';
@@ -43,6 +44,7 @@ function MainLayout() {
     <div className="min-h-screen bg-bg pb-20">
       <Outlet />
       <BottomNav activeTab={activeTab} onTabChange={handleTab} />
+      <ToastContainer />
     </div>
   );
 }
@@ -66,6 +68,7 @@ export default function App() {
         <Route path="tasks/new" element={<CreateTaskPage />} />
         <Route path="mall" element={<MallPage />} />
         <Route path="mall/new" element={<CreateItemPage />} />
+        <Route path="mall/:id/edit" element={<CreateItemPage />} />
         <Route path="growth" element={<GrowthPage />} />
         <Route path="achievements" element={<AchievementListPage />} />
         <Route path="family" element={<FamilyPage />} />

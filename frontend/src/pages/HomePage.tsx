@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, TrendingUp, Gift, Clock, CheckCircle, CheckCircle2, Inbox, FileText, XCircle, Minus, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import { useUIStore } from '../stores/uiStore';
+import { useToastStore } from '../stores/toastStore';
 import { ChildTabs } from '../components/ChildTabs';
+import { ScoreAnimation } from '../components/ScoreAnimation';
 import * as tasksService from '../services/tasks';
 import * as scoreService from '../services/score';
 import type { Task, TaskStatus } from '../services/tasks';
@@ -118,14 +121,17 @@ function StatusTabs({
   );
 }
 
-function TaskItem({ task, onClick, showStatus }: { task: Task; onClick: () => void; showStatus?: boolean }) {
+function TaskItem({ task, onClick, showStatus, highlight }: { task: Task; onClick: () => void; showStatus?: boolean; highlight?: boolean }) {
   const statusInfo = STATUS_TABS.find((t) => t.id === task.status) || STATUS_TABS[0];
   const Icon = statusInfo.icon;
 
   return (
     <div
       onClick={onClick}
-      className="cursor-pointer bg-card rounded-2xl p-4 shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
+      className={`cursor-pointer bg-card rounded-2xl p-4 shadow-sm hover:shadow-md transition-all active:scale-[0.98] ${
+        highlight ? 'ring-2 ring-primary ring-offset-2 animate-pulse' : ''
+      }`}
+      style={highlight ? { animation: 'highlightPulse 1.5s ease-in-out' } : undefined}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -170,12 +176,14 @@ function TaskBoard({
   onStatusChange,
   onTaskClick,
   onCreateTask,
+  highlightTaskId,
 }: {
   tasks: Task[];
   activeStatus: 'all' | TaskStatus;
   onStatusChange: (s: 'all' | TaskStatus) => void;
   onTaskClick: (taskId: number) => void;
   onCreateTask: () => void;
+  highlightTaskId?: number | null;
 }) {
   const filteredTasks = activeStatus === 'all' ? tasks : tasks.filter((t) => t.status === activeStatus);
   const showStatus = activeStatus === 'all';
@@ -209,9 +217,27 @@ function TaskBoard({
       <StatusTabs active={activeStatus} onChange={onStatusChange} tasks={tasks} />
       <div className="space-y-3 mt-3">
         {filteredTasks.map((task) => (
-          <TaskItem key={task.id} task={task} onClick={() => onTaskClick(task.id)} showStatus={showStatus} />
+          <TaskItem
+            key={task.id}
+            task={task}
+            onClick={() => onTaskClick(task.id)}
+            showStatus={showStatus}
+            highlight={highlightTaskId === task.id}
+          />
         ))}
       </div>
+      <style>{`
+        @keyframes highlightPulse {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(245, 158, 107, 0.4);
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 0 8px rgba(245, 158, 107, 0);
+            transform: scale(1.02);
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -221,6 +247,8 @@ import type { MonthlyStats } from '../services/score';
 export function HomePage() {
   const navigate = useNavigate();
   const childStore = useChildStore();
+  const uiStore = useUIStore();
+  const toast = useToastStore();
   const children = childStore.children;
 
   const [selectedChildId, setSelectedChildId] = useState<number | null>(childStore.currentChildId);
@@ -230,6 +258,9 @@ export function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
+  const [showScoreAnim, setShowScoreAnim] = useState(false);
+  const [scoreAnimData, setScoreAnimData] = useState<{ amount: number; type: 'add' | 'deduct' } | null>(null);
+  const taskBoardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!selectedChildId && children.length > 0) {
@@ -237,42 +268,73 @@ export function HomePage() {
     }
   }, [children, selectedChildId]);
 
+  const loadData = async () => {
+    if (!selectedChildId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [tasksResult, balanceResult, statsResult] = await Promise.all([
+        tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 50 }),
+        scoreService.getBalance(selectedChildId),
+        scoreService.getMonthlyStats(selectedChildId),
+      ]);
+      setTasks(tasksResult.items);
+      setBalance(balanceResult.balance);
+      setMonthlyStats(statsResult);
+    } catch (e: any) {
+      setError(e.message || '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
-    async function loadData() {
-      if (!selectedChildId) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const [tasksResult, balanceResult, statsResult] = await Promise.all([
-          tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 50 }),
-          scoreService.getBalance(selectedChildId),
-          scoreService.getMonthlyStats(selectedChildId),
-        ]);
-        if (mounted) {
-          setTasks(tasksResult.items);
-          setBalance(balanceResult.balance);
-          setMonthlyStats(statsResult);
-        }
-      } catch (e: any) {
-        if (mounted) setError(e.message || '加载失败');
-      } finally {
-        if (mounted) setLoading(false);
+    async function initLoad() {
+      if (children.length === 0) {
+        await childStore.fetchChildren();
+      }
+      if (mounted) {
+        loadData();
       }
     }
-
-    if (children.length === 0) {
-      childStore.fetchChildren().finally(() => {
-        if (mounted) loadData();
-      });
-    } else {
-      loadData();
-    }
-
+    initLoad();
     return () => {
       mounted = false;
     };
   }, [selectedChildId]);
+
+  useEffect(() => {
+    if (uiStore.needRefreshTasks || uiStore.needRefreshScore) {
+      if (uiStore.needRefreshTasks) uiStore.setNeedRefreshTasks(false);
+      if (uiStore.needRefreshScore) uiStore.setNeedRefreshScore(false);
+      loadData();
+    }
+  }, [uiStore.needRefreshTasks, uiStore.needRefreshScore]);
+
+  useEffect(() => {
+    if (uiStore.highlightTaskId !== null && tasks.length > 0) {
+      const hasTask = tasks.some((t) => t.id === uiStore.highlightTaskId);
+      if (hasTask) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        const timer = setTimeout(() => {
+          uiStore.setHighlightTaskId(null);
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [uiStore.highlightTaskId, tasks]);
+
+  useEffect(() => {
+    if (uiStore.scoreAnimation && uiStore.scoreAnimation.childId === selectedChildId) {
+      setScoreAnimData({
+        amount: uiStore.scoreAnimation.amount,
+        type: uiStore.scoreAnimation.type,
+      });
+      setShowScoreAnim(true);
+      uiStore.clearScoreAnimation();
+    }
+  }, [uiStore.scoreAnimation, selectedChildId]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
   const monthStats = monthlyStats.find((s) => s.month === currentMonth);
@@ -378,6 +440,7 @@ export function HomePage() {
           onStatusChange={setActiveStatus}
           onTaskClick={(id) => navigate(`/task/${id}`)}
           onCreateTask={() => navigate(`/tasks/new?child_id=${selectedChildId}`)}
+          highlightTaskId={uiStore.highlightTaskId}
         />
 
         <div className="h-4" />
@@ -389,6 +452,14 @@ export function HomePage() {
       >
         <Plus size={24} />
       </button>
+
+      {showScoreAnim && scoreAnimData && (
+        <ScoreAnimation
+          amount={scoreAnimData.amount}
+          type={scoreAnimData.type}
+          onComplete={() => setShowScoreAnim(false)}
+        />
+      )}
     </div>
   );
 }

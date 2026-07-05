@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Plus, Gift, CheckCircle2 } from 'lucide-react';
+import { Plus, Gift, CheckCircle2, Edit3, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import { useUIStore } from '../stores/uiStore';
+import { useToastStore } from '../stores/toastStore';
 import { ChildTabs } from '../components/ChildTabs';
 import * as redeemService from '../services/redeem';
 import type { RedeemItem } from '../services/redeem';
 
-function ItemCard({ item, child, onExchange }: { item: RedeemItem; child: { nickname: string; balance: number; id: number }; onExchange: () => void }) {
+function ItemCard({ item, child, onExchange, onEdit }: { item: RedeemItem; child: { nickname: string; balance: number; id: number }; onExchange: () => void; onEdit: () => void }) {
   const enough = child.balance >= item.points;
   const soldOut = item.stock === 0;
   const canExchange = enough && !soldOut;
@@ -31,6 +33,13 @@ function ItemCard({ item, child, onExchange }: { item: RedeemItem; child: { nick
             积分不足
           </div>
         )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="absolute top-2 left-2 w-7 h-7 bg-black/50 rounded-full flex items-center justify-center hover:bg-black/60 transition-colors"
+          title="编辑商品"
+        >
+          <Edit3 size={14} className="text-white" />
+        </button>
       </div>
 
       <div className="p-3">
@@ -134,6 +143,8 @@ export function MallPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const childStore = useChildStore();
+  const uiStore = useUIStore();
+  const toast = useToastStore();
   const [items, setItems] = useState<RedeemItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +196,26 @@ export function MallPage() {
     };
   }, [activeCategory]);
 
+  useEffect(() => {
+    if (uiStore.needRefreshItems) {
+      uiStore.setNeedRefreshItems(false);
+      const loadData = async () => {
+        try {
+          const params: { category?: number; page: number; pageSize: number } = {
+            page: 1,
+            pageSize: 50,
+          };
+          if (activeCategory !== 'all') params.category = activeCategory;
+          const result = await redeemService.getItems(params);
+          setItems(result.items);
+        } catch (e: any) {
+          toast.error(e.message || '刷新失败');
+        }
+      };
+      loadData();
+    }
+  }, [uiStore.needRefreshItems, activeCategory]);
+
   const handleChildSelect = (id: number) => {
     setSelectedChildId(id);
     childStore.setCurrentChildId(id);
@@ -200,8 +231,9 @@ export function MallPage() {
       );
       setItems(itemsResult.items);
       setExchangingItem(null);
+      toast.success('兑换成功');
     } catch (e: any) {
-      setError(e.message || '兑换失败');
+      toast.error(e.message || '兑换失败');
     }
   };
 
@@ -296,6 +328,7 @@ export function MallPage() {
                 item={item}
                 child={{ id: selectedChild.id, nickname: selectedChild.nickname, balance: selectedChild.balance }}
                 onExchange={() => setExchangingItem(item)}
+                onEdit={() => navigate(`/mall/${item.id}/edit`)}
               />
             ))}
           </div>

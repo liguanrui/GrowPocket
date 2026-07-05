@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, ImageIcon, Star, Calendar, User, Upload, CheckCircle2, XCircle, Edit3, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import { useToastStore } from '../stores/toastStore';
+import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
 import type { Task } from '../services/tasks';
 
@@ -164,6 +166,8 @@ export function TaskDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const childStore = useChildStore();
+  const toast = useToastStore();
+  const uiStore = useUIStore();
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -242,8 +246,9 @@ export function TaskDetailPage() {
     try {
       const updated = await tasksService.submitTask(task.id, photo);
       setTask(updated);
+      toast.success('任务已提交验收');
     } catch (e: any) {
-      setError(e.message || '提交失败');
+      toast.error(e.message || '提交失败');
     }
   };
 
@@ -252,8 +257,17 @@ export function TaskDetailPage() {
       const updated = await tasksService.reviewTask(task.id, true, points);
       setTask(updated);
       setShowReview(false);
+      childStore.updateBalance(task.child_id, updated.points);
+      childStore.setCurrentChildId(task.child_id);
+      uiStore.triggerScoreAnimation(task.child_id, points, 'add');
+      uiStore.setNeedRefreshScore(true);
+      uiStore.setNeedRefreshTasks(true);
+      toast.success(`验收通过，已发放 ${points} 积分`);
+      setTimeout(() => {
+        navigate('/home', { replace: true });
+      }, 800);
     } catch (e: any) {
-      setError(e.message || '验收失败');
+      toast.error(e.message || '验收失败');
     }
   };
 
@@ -262,8 +276,10 @@ export function TaskDetailPage() {
       const updated = await tasksService.reviewTask(task.id, false);
       setTask(updated);
       setShowReview(false);
+      uiStore.setNeedRefreshTasks(true);
+      toast.success('已拒绝任务');
     } catch (e: any) {
-      setError(e.message || '拒绝失败');
+      toast.error(e.message || '拒绝失败');
     }
   };
 
@@ -271,9 +287,11 @@ export function TaskDetailPage() {
     if (!confirm('确定要删除这个任务吗？')) return;
     try {
       await tasksService.deleteTask(task.id);
+      uiStore.setNeedRefreshTasks(true);
+      toast.success('任务已删除');
       navigate(-1);
     } catch (e: any) {
-      setError(e.message || '删除失败');
+      toast.error(e.message || '删除失败');
     }
   };
 

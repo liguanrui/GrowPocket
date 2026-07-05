@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, User, CalendarDays, Sparkles } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import { useToastStore } from '../stores/toastStore';
+import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
 import { listTaskTemplates } from '../services/taskTemplates';
 import type { TaskTemplate } from '../services/taskTemplates';
@@ -180,12 +182,14 @@ export function CreateTaskPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const childStore = useChildStore();
+  const toast = useToastStore();
+  const uiStore = useUIStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [points, setPoints] = useState(50);
   const [childId, setChildId] = useState<number | null>(null);
   const [deadline, setDeadline] = useState<string | undefined>(undefined);
-  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
@@ -207,7 +211,7 @@ export function CreateTaskPage() {
           }
         }
       } catch (e: any) {
-        if (mounted) setError(e.message || '加载失败');
+        if (mounted) toast.error(e.message || '加载失败');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -234,20 +238,20 @@ export function CreateTaskPage() {
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      setError('请填写任务标题');
+      toast.error('请填写任务标题');
       return;
     }
     if (points <= 0) {
-      setError('积分必须大于0');
+      toast.error('积分必须大于0');
       return;
     }
     if (!childId) {
-      setError('请选择一个孩子');
+      toast.error('请选择一个孩子');
       return;
     }
-    setError('');
+    setSubmitting(true);
     try {
-      await tasksService.createTask({
+      const createdTask = await tasksService.createTask({
         title: title.trim(),
         description: description.trim() || undefined,
         points,
@@ -255,9 +259,16 @@ export function CreateTaskPage() {
         deadline,
         status: 1,
       });
-      navigate('/home');
+      childStore.setCurrentChildId(childId);
+      uiStore.setNewTaskId(createdTask.id);
+      uiStore.setNeedRefreshTasks(true);
+      uiStore.setNeedRefreshScore(true);
+      toast.success('任务创建成功');
+      navigate('/home', { replace: true });
     } catch (e: any) {
-      setError(e.message || '创建失败');
+      toast.error(e.message || '创建失败');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -329,17 +340,13 @@ export function CreateTaskPage() {
           />
         </div>
 
-        {error && (
-          <div className="bg-danger/5 border border-danger/20 text-danger text-sm rounded-xl p-3">{error}</div>
-        )}
-
         <div className="sticky bottom-4 pt-2">
           <button
             onClick={handleSubmit}
-            disabled={!title.trim() || points <= 0 || !childId}
+            disabled={!title.trim() || points <= 0 || !childId || submitting}
             className="w-full py-4 bg-primary text-white rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            发布任务
+            {submitting ? '发布中...' : '发布任务'}
           </button>
         </div>
 
