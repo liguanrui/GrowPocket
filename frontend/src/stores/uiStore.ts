@@ -4,6 +4,7 @@ interface UIState {
   newTaskId: number | null;
   highlightTaskId: number | null;
   scoreAnimation: { childId: number; amount: number; type: 'add' | 'deduct' } | null;
+  previousBalance: number | null;
   needRefreshTasks: boolean;
   needRefreshScore: boolean;
   needRefreshTemplates: boolean;
@@ -14,6 +15,7 @@ interface UIState {
   setHighlightTaskId: (id: number | null) => void;
   triggerScoreAnimation: (childId: number, amount: number, type: 'add' | 'deduct') => void;
   clearScoreAnimation: () => void;
+  setPreviousBalance: (balance: number | null) => void;
   setNeedRefreshTasks: (need: boolean) => void;
   setNeedRefreshScore: (need: boolean) => void;
   setNeedRefreshTemplates: (need: boolean) => void;
@@ -25,6 +27,7 @@ export const useUIStore = create<UIState>((set) => ({
   newTaskId: null,
   highlightTaskId: null,
   scoreAnimation: null,
+  previousBalance: null,
   needRefreshTasks: false,
   needRefreshScore: false,
   needRefreshTemplates: false,
@@ -35,6 +38,7 @@ export const useUIStore = create<UIState>((set) => ({
   setHighlightTaskId: (id) => set({ highlightTaskId: id }),
   triggerScoreAnimation: (childId, amount, type) => set({ scoreAnimation: { childId, amount, type } }),
   clearScoreAnimation: () => set({ scoreAnimation: null }),
+  setPreviousBalance: (balance) => set({ previousBalance: balance }),
   setNeedRefreshTasks: (need) => set({ needRefreshTasks: need }),
   setNeedRefreshScore: (need) => set({ needRefreshScore: need }),
   setNeedRefreshTemplates: (need) => set({ needRefreshTemplates: need }),
