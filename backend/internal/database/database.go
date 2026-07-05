@@ -66,15 +66,30 @@ func Init(dbPath string) {
 }
 
 func migrateAchievementData(db *gorm.DB) error {
-	var count int64
-	db.Model(&model.Achievement{}).Where("counter_type = 1 AND counter_target = 0").Count(&count)
-	if count == 0 {
+	// 检查是否存在旧的 type 列（旧 schema 遗留）
+	type columnInfo struct {
+		Name string
+	}
+	var columns []columnInfo
+	if err := db.Raw("PRAGMA table_info(achievements)").Scan(&columns).Error; err != nil {
+		return err
+	}
+	hasOldTypeColumn := false
+	for _, col := range columns {
+		if col.Name == "type" {
+			hasOldTypeColumn = true
+			break
+		}
+	}
+
+	// 仅当存在旧列时才执行数据迁移并删除旧列
+	if !hasOldTypeColumn {
 		return nil
 	}
 
 	type oldTypeMapping struct {
-		OldType  int
-		NewType  int
+		OldType int
+		NewType int
 	}
 	mappings := []oldTypeMapping{
 		{1, 1},
@@ -99,7 +114,20 @@ func migrateAchievementData(db *gorm.DB) error {
 		}
 	}
 
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+
+	// 迁移完成后删除旧的 type 和 target_value 列
+	// 旧列带有 NOT NULL 约束，会导致新记录插入失败（NOT NULL constraint failed: achievements.type）
+	if err := db.Exec("ALTER TABLE achievements DROP COLUMN type").Error; err != nil {
+		log.Printf("删除 achievements.type 列失败（可忽略若列不存在）: %v", err)
+	}
+	if err := db.Exec("ALTER TABLE achievements DROP COLUMN target_value").Error; err != nil {
+		log.Printf("删除 achievements.target_value 列失败（可忽略若列不存在）: %v", err)
+	}
+
+	return nil
 }
 
 func seedCommunityData(db *gorm.DB) error {
