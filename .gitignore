@@ -63,3 +63,5 @@ demo/.vite/
 .env
 .env.local
 .env.*.local
+
+.trae/documents/todo.md
