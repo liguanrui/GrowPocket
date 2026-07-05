@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
+import { AnimatedNumberComponent as AnimatedNumber } from '../components/AnimatedNumber';
 import * as scoreService from '../services/score';
 
 function AmountInput({ amount, onChange, mode }: { amount: number; onChange: (n: number) => void; mode: 'add' | 'deduct' }) {
@@ -149,8 +150,7 @@ export function ScoreAdjustPage() {
       const result = isAdd
         ? await scoreService.addPoints(childId, amount, title.trim(), description.trim() || undefined, photo || undefined)
         : await scoreService.deductPoints(childId, amount, title.trim(), description.trim() || undefined, photo || undefined);
-      childStore.updateBalance(childId, result.balance);
-      uiStore.triggerScoreAnimation(childId, amount, isAdd ? 'add' : 'deduct');
+      uiStore.setPreviousBalance(balance);
       uiStore.setNeedRefreshScore(true);
       uiStore.setNeedRefreshTasks(false);
       childStore.setCurrentChildId(childId);
@@ -189,7 +189,7 @@ export function ScoreAdjustPage() {
             <div className="w-10 h-10" />
           </div>
           <p className="text-white/80 text-sm">
-            {childName} 当前余额 <span className="font-bold">{balance.toLocaleString()}</span> 积分
+            {childName} 当前余额 <span className="font-bold"><AnimatedNumber value={balance} /></span> 积分
           </p>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { useChildStore } from '../stores/childStore';
 import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
 import { ChildTabs } from '../components/ChildTabs';
-import { ScoreAnimation } from '../components/ScoreAnimation';
+import { AnimatedNumberComponent as AnimatedNumber } from '../components/AnimatedNumber';
 import * as tasksService from '../services/tasks';
 import * as scoreService from '../services/score';
 import type { Task, TaskStatus } from '../services/tasks';
@@ -18,13 +18,13 @@ const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any; color: st
   { id: 4, label: '已拒绝', icon: XCircle, color: 'text-danger' },
 ];
 
-function PointsCard({ balance, nickname, monthIncome, monthExpense, onAdd, onDeduct, onClick }: { balance: number; nickname: string; monthIncome: number; monthExpense: number; onAdd: () => void; onDeduct: () => void; onClick: () => void }) {
+function PointsCard({ balance, previousBalance, nickname, monthIncome, monthExpense, onAdd, onDeduct, onClick, onAnimationComplete }: { balance: number; previousBalance: number | null; nickname: string; monthIncome: number; monthExpense: number; onAdd: () => void; onDeduct: () => void; onClick: () => void; onAnimationComplete?: () => void }) {
   return (
     <div className="bg-card rounded-2xl p-5 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow" onClick={onClick}>
       <div className="text-center">
         <div className="text-text-tertiary text-sm">{nickname} 的积分余额</div>
         <div className="text-5xl font-bold bg-gradient-to-r from-primary to-warm-light bg-clip-text text-transparent mt-2 tracking-tight">
-          {balance.toLocaleString()}
+          <AnimatedNumber value={balance} startFrom={previousBalance} onComplete={onAnimationComplete} />
         </div>
         <div className="flex justify-center gap-4 mt-4">
           <div className="flex items-center gap-1 text-text-tertiary text-sm">
@@ -254,13 +254,13 @@ export function HomePage() {
   const [selectedChildId, setSelectedChildId] = useState<number | null>(childStore.currentChildId);
   const [activeStatus, setActiveStatus] = useState<'all' | TaskStatus>('all');
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [balance, setBalance] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const hasPrevBalance = uiStore.previousBalance != null;
+  const [balance, setBalance] = useState(hasPrevBalance ? uiStore.previousBalance! : 0);
+  const [loading, setLoading] = useState(!hasPrevBalance);
   const [error, setError] = useState<string | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
-  const [showScoreAnim, setShowScoreAnim] = useState(false);
-  const [scoreAnimData, setScoreAnimData] = useState<{ amount: number; type: 'add' | 'deduct' } | null>(null);
   const taskBoardRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     if (!selectedChildId && children.length > 0) {
@@ -268,9 +268,15 @@ export function HomePage() {
     }
   }, [children, selectedChildId]);
 
-  const loadData = async () => {
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const loadData = async (showLoading = true) => {
     if (!selectedChildId) return;
-    setLoading(true);
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const [tasksResult, balanceResult, statsResult] = await Promise.all([
@@ -280,11 +286,13 @@ export function HomePage() {
       ]);
       setTasks(tasksResult.items);
       setBalance(balanceResult.balance);
+      childStore.updateBalance(selectedChildId!, balanceResult.balance);
       setMonthlyStats(statsResult);
     } catch (e: any) {
       setError(e.message || '加载失败');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
+      loadingRef.current = false;
     }
   };
 
@@ -295,7 +303,8 @@ export function HomePage() {
         await childStore.fetchChildren();
       }
       if (mounted) {
-        loadData();
+        const shouldShowLoading = uiStore.previousBalance == null;
+        loadData(shouldShowLoading);
       }
     }
     initLoad();
@@ -308,7 +317,7 @@ export function HomePage() {
     if (uiStore.needRefreshTasks || uiStore.needRefreshScore) {
       if (uiStore.needRefreshTasks) uiStore.setNeedRefreshTasks(false);
       if (uiStore.needRefreshScore) uiStore.setNeedRefreshScore(false);
-      loadData();
+      loadData(false);
     }
   }, [uiStore.needRefreshTasks, uiStore.needRefreshScore]);
 
@@ -324,17 +333,6 @@ export function HomePage() {
       }
     }
   }, [uiStore.highlightTaskId, tasks]);
-
-  useEffect(() => {
-    if (uiStore.scoreAnimation && uiStore.scoreAnimation.childId === selectedChildId) {
-      setScoreAnimData({
-        amount: uiStore.scoreAnimation.amount,
-        type: uiStore.scoreAnimation.type,
-      });
-      setShowScoreAnim(true);
-      uiStore.clearScoreAnimation();
-    }
-  }, [uiStore.scoreAnimation, selectedChildId]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
   const monthStats = monthlyStats.find((s) => s.month === currentMonth);
@@ -422,12 +420,14 @@ export function HomePage() {
           <div className="mt-4">
             <PointsCard
               balance={balance}
+              previousBalance={uiStore.previousBalance}
               nickname={selectedChild.nickname}
               monthIncome={monthIncome}
               monthExpense={monthExpense}
               onAdd={() => navigate(`/score/adjust?mode=add&child_id=${selectedChildId}`)}
               onDeduct={() => navigate(`/score/adjust?mode=deduct&child_id=${selectedChildId}`)}
               onClick={() => navigate(`/score?child_id=${selectedChildId}`)}
+              onAnimationComplete={() => uiStore.setPreviousBalance(null)}
             />
           </div>
         </div>
@@ -452,14 +452,6 @@ export function HomePage() {
       >
         <Plus size={24} />
       </button>
-
-      {showScoreAnim && scoreAnimData && (
-        <ScoreAnimation
-          amount={scoreAnimData.amount}
-          type={scoreAnimData.type}
-          onComplete={() => setShowScoreAnim(false)}
-        />
-      )}
     </div>
   );
 }
