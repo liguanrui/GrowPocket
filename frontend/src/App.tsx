@@ -16,6 +16,7 @@ import { AchievementEditPage } from './pages/AchievementEditPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { FamilySettingsPage } from './pages/FamilySettingsPage';
 import { TemplateSettingsPage } from './pages/TemplateSettingsPage';
+import { TemplateEditPage } from './pages/TemplateEditPage';
 import { AchievementSettingsPage } from './pages/AchievementSettingsPage';
 import { AchievementListPage } from './pages/AchievementListPage';
 import LoginPage from './pages/LoginPage';
@@ -76,6 +77,8 @@ export default function App() {
         <Route path="settings/account" element={<AccountSettingsPage />} />
         <Route path="settings/family" element={<FamilySettingsPage />} />
         <Route path="settings/templates" element={<TemplateSettingsPage />} />
+        <Route path="settings/templates/new" element={<TemplateEditPage />} />
+        <Route path="settings/templates/:id/edit" element={<TemplateEditPage />} />
         <Route path="settings/achievements" element={<AchievementSettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -17,23 +17,23 @@ function AchievementCard({ achievement }: { achievement: UserAchievement }) {
 
   return (
     <div
-      className={`relative rounded-2xl p-4 transition-all ${
+      className={`relative rounded-2xl p-3 transition-all ${
         unlocked
           ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 shadow-lg shadow-amber-100/50'
           : 'bg-gray-50 border-2 border-gray-100'
       }`}
     >
       {unlocked && (
-        <div className="absolute top-3 right-3">
-          <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm">
+        <div className="absolute top-2.5 right-2.5">
+          <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full shadow-sm">
             {award_count > 1 ? `已获得 x${award_count}` : '已获得'}
           </div>
         </div>
       )}
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-2.5">
         <div className="relative">
           <div
-            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 ${
+            className={`w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
               unlocked
                 ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-200/50'
                 : 'bg-gray-200'
@@ -42,66 +42,50 @@ function AchievementCard({ achievement }: { achievement: UserAchievement }) {
             {unlocked ? (
               <span className="drop-shadow">{Achievement.icon}</span>
             ) : (
-              <Lock size={22} className="text-gray-400" />
+              <Lock size={18} className="text-gray-400" />
             )}
           </div>
           {unlocked && award_count > 1 && (
-            <div className="absolute -bottom-1 -right-1 bg-amber-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm min-w-[20px] text-center">
+            <div className="absolute -bottom-1 -right-1 bg-amber-600 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full shadow-sm min-w-[18px] text-center">
               x{award_count}
             </div>
           )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`font-semibold text-base ${unlocked ? 'text-amber-900' : 'text-text-secondary'}`}>
+            <span className={`font-semibold text-sm ${unlocked ? 'text-amber-900' : 'text-text-secondary'}`}>
               {Achievement.name}
             </span>
           </div>
           <p className="text-xs text-text-tertiary mt-0.5 line-clamp-1">{Achievement.description}</p>
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex items-center gap-3 mt-1.5">
             <span className={`text-xs font-bold ${unlocked ? 'text-amber-600' : 'text-primary'}`}>
               +{Achievement.points} 积分
             </span>
             {Achievement.is_custom && (
-              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+              <span className="text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
                 自定义
               </span>
             )}
           </div>
         </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0 w-20">
+          <div className="text-xs text-text-tertiary">
+            <span className="font-medium text-text-secondary">{current_value}</span>
+            <span className="text-text-tertiary">/{targetValue}</span>
+          </div>
+          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 rounded-full ${
+                unlocked
+                  ? 'bg-gradient-to-r from-amber-400 to-yellow-500'
+                  : 'bg-gradient-to-r from-primary to-amber-400'
+              }`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
       </div>
-      {!unlocked && (
-        <div className="mt-3">
-          <div className="flex justify-between text-xs text-text-tertiary mb-1.5">
-            <span>完成进度</span>
-            <span className="font-medium text-text-secondary">
-              {current_value}/{targetValue}
-            </span>
-          </div>
-          <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-primary to-amber-400 transition-all duration-500 rounded-full"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      )}
-      {unlocked && award_count > 0 && (
-        <div className="mt-3">
-          <div className="flex justify-between text-xs text-text-tertiary mb-1.5">
-            <span>累计进度</span>
-            <span className="font-medium text-text-secondary">
-              {current_value}/{targetValue}
-            </span>
-          </div>
-          <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-amber-400 to-yellow-500 transition-all duration-500 rounded-full"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
