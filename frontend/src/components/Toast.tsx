@@ -10,10 +10,10 @@ const TOAST_ICONS = {
 };
 
 const TOAST_STYLES = {
-  success: 'bg-success text-white',
-  error: 'bg-danger text-white',
-  info: 'bg-primary text-white',
-  warning: 'bg-yellow-500 text-white',
+  success: 'bg-white/80 backdrop-blur-md text-success border border-success/20',
+  error: 'bg-white/80 backdrop-blur-md text-danger border border-danger/20',
+  info: 'bg-white/80 backdrop-blur-md text-primary border border-primary/20',
+  warning: 'bg-white/80 backdrop-blur-md text-yellow-600 border border-yellow-500/20',
 };
 
 function ToastItem({ toast }: { toast: Toast }) {
@@ -34,7 +34,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       <span className="flex-1 text-sm font-medium">{toast.message}</span>
       <button
         onClick={() => removeToast(toast.id)}
-        className="flex-shrink-0 hover:bg-white/20 rounded-full p-0.5 transition-colors"
+        className="flex-shrink-0 hover:bg-black/5 rounded-full p-0.5 transition-colors"
       >
         <X size={16} />
       </button>
