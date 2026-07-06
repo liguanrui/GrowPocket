@@ -5,6 +5,7 @@ import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
+import * as scoreService from '../services/score';
 import type { Task } from '../services/tasks';
 
 const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> = {
@@ -173,6 +174,7 @@ export function TaskDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>(undefined);
+  const [currentBalance, setCurrentBalance] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -189,6 +191,11 @@ export function TaskDetailPage() {
         if (mounted) {
           setTask(t);
           setPhoto(t.photo);
+        }
+        const bal = await scoreService.getBalance(t.child_id);
+        if (mounted) {
+          setCurrentBalance(bal.balance);
+          childStore.updateBalance(t.child_id, bal.balance);
         }
       } catch (e: any) {
         if (mounted) setError(e.message || '加载失败');
@@ -257,11 +264,10 @@ export function TaskDetailPage() {
       const updated = await tasksService.reviewTask(task.id, true, points);
       setTask(updated);
       setShowReview(false);
-      childStore.updateBalance(task.child_id, updated.points);
-      childStore.setCurrentChildId(task.child_id);
-      uiStore.triggerScoreAnimation(task.child_id, points, 'add');
+      uiStore.setPreviousBalance(currentBalance);
       uiStore.setNeedRefreshScore(true);
       uiStore.setNeedRefreshTasks(true);
+      childStore.setCurrentChildId(task.child_id);
       toast.success(`验收通过，已发放 ${points} 积分`);
       setTimeout(() => {
         navigate('/home', { replace: true });

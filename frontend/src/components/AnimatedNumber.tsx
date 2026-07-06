@@ -13,14 +13,20 @@ export function AnimatedNumberComponent({ value, startFrom, className, duration 
   const [displayValue, setDisplayValue] = useState(initialValue);
   const rafRef = useRef<number | null>(null);
   const animatingRef = useRef(false);
+  const hasMountedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
   useEffect(() => {
     if (displayValue === value) {
-      onCompleteRef.current?.();
+      if (hasMountedRef.current) {
+        onCompleteRef.current?.();
+      } else {
+        hasMountedRef.current = true;
+      }
       return;
     }
+    hasMountedRef.current = true;
     if (animatingRef.current) return;
 
     animatingRef.current = true;
