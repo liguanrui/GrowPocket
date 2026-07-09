@@ -1,6 +1,7 @@
 package service
 
 import (
+	"growpocket/internal/database"
 	"growpocket/internal/model"
 	"testing"
 	"time"
@@ -19,6 +20,82 @@ func TestGetBalance(t *testing.T) {
 	}
 	if nickname != "小明" {
 		t.Errorf("Nickname got %s want 小明", nickname)
+	}
+}
+
+func TestAdjust_AddPoints_CountersAccumulate(t *testing.T) {
+	_, family, parent, child := setupTestDB(t)
+	service := NewScoreService()
+	achSvc := &AchievementService{}
+
+	// 第一次加 100 分
+	_, err := service.Adjust(child.ID, family.ID, parent.ID, 100, "认真学习", "完成作业", "")
+	if err != nil {
+		t.Fatalf("第一次 Adjust 失败: %v", err)
+	}
+
+	// 验证 TaskCount 计数器 = 1
+	taskCount, err := achSvc.GetCounterValue(child.ID, model.CounterTypeTaskCount, 0)
+	if err != nil {
+		t.Fatalf("GetCounterValue(TaskCount) 失败: %v", err)
+	}
+	if taskCount != 1 {
+		t.Errorf("TaskCount got %d want 1", taskCount)
+	}
+
+	// 验证 TotalPoints 计数器 = 100
+	totalPoints, err := achSvc.GetCounterValue(child.ID, model.CounterTypeTotalPoints, 0)
+	if err != nil {
+		t.Fatalf("GetCounterValue(TotalPoints) 失败: %v", err)
+	}
+	if totalPoints != 100 {
+		t.Errorf("TotalPoints got %d want 100", totalPoints)
+	}
+
+	// 第二次加 200 分
+	_, err = service.Adjust(child.ID, family.ID, parent.ID, 200, "做家务", "", "")
+	if err != nil {
+		t.Fatalf("第二次 Adjust 失败: %v", err)
+	}
+
+	// 验证 TaskCount 计数器 = 2（累加）
+	taskCount, err = achSvc.GetCounterValue(child.ID, model.CounterTypeTaskCount, 0)
+	if err != nil {
+		t.Fatalf("GetCounterValue(TaskCount) 失败: %v", err)
+	}
+	if taskCount != 2 {
+		t.Errorf("TaskCount after 2nd got %d want 2", taskCount)
+	}
+
+	// 验证 TotalPoints 计数器 = 300（累加：100+200）
+	totalPoints, err = achSvc.GetCounterValue(child.ID, model.CounterTypeTotalPoints, 0)
+	if err != nil {
+		t.Fatalf("GetCounterValue(TotalPoints) 失败: %v", err)
+	}
+	if totalPoints != 300 {
+		t.Errorf("TotalPoints after 2nd got %d want 300", totalPoints)
+	}
+
+	// 第三次加 250 分，TotalPoints 达到 550
+	_, err = service.Adjust(child.ID, family.ID, parent.ID, 250, "考试满分", "", "")
+	if err != nil {
+		t.Fatalf("第三次 Adjust 失败: %v", err)
+	}
+
+	totalPoints, err = achSvc.GetCounterValue(child.ID, model.CounterTypeTotalPoints, 0)
+	if err != nil {
+		t.Fatalf("GetCounterValue(TotalPoints) 失败: %v", err)
+	}
+	if totalPoints != 550 {
+		t.Errorf("TotalPoints after 3rd got %d want 550", totalPoints)
+	}
+
+	taskCount, err = achSvc.GetCounterValue(child.ID, model.CounterTypeTaskCount, 0)
+	if err != nil {
+		t.Fatalf("GetCounterValue(TaskCount) 失败: %v", err)
+	}
+	if taskCount != 3 {
+		t.Errorf("TaskCount after 3rd got %d want 3", taskCount)
 	}
 }
 
@@ -178,3 +255,6 @@ func TestGetTrend(t *testing.T) {
 		}
 	}
 }
+
+// 确保 tests 引用 database 包以避免 unused import 错误
+var _ = database.DB

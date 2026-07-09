@@ -27,6 +27,18 @@ func setupTestDB(t *testing.T) (*gorm.DB, *model.Family, *model.User, *model.Use
 		&model.Transaction{},
 		&model.RedeemItem{},
 		&model.Redeem{},
+		&model.Achievement{},
+		&model.UserAchievement{},
+		&model.UserCounter{},
+		&model.AchievementAward{},
+		&model.TaskTemplate{},
+		&model.CommunityShare{},
+		&model.CommunityLike{},
+		&model.CommunityComment{},
+		&model.CharityProject{},
+		&model.CharityDonation{},
+		&model.CharityActivity{},
+		&model.ActivityParticipant{},
 	)
 	if err != nil {
 		t.Fatalf("数据库迁移失败: %v", err)

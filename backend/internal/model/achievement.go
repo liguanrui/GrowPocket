@@ -46,17 +46,18 @@ type UserAchievement struct {
 	AchievementID uint        `gorm:"not null" json:"achievement_id"`
 	AwardCount    int         `gorm:"not null;default:0" json:"award_count"` // 获得次数
 	CurrentValue  int         `gorm:"not null;default:0" json:"current_value"`
+	Unlocked      bool        `gorm:"-" json:"unlocked"`                    // 是否已解锁（非持久化字段）
 	Achievement   Achievement `gorm:"foreignKey:AchievementID" json:"Achievement"`
 }
 
 // UserCounter 用户计数器表
 type UserCounter struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
-	ChildID      uint      `gorm:"index;not null" json:"child_id"`
-	CounterType  int       `gorm:"not null;index" json:"counter_type"`
-	TemplateID   uint      `gorm:"index" json:"template_id"`           // 模板任务ID（CounterTypeTemplateTaskCount时使用）
+	ChildID      uint      `gorm:"not null;uniqueIndex:idx_child_counter_template" json:"child_id"`
+	CounterType  int       `gorm:"not null;uniqueIndex:idx_child_counter_template" json:"counter_type"`
+	TemplateID   uint      `gorm:"uniqueIndex:idx_child_counter_template" json:"template_id"` // 模板任务ID（CounterTypeTemplateTaskCount时使用）
 	CurrentValue int       `gorm:"not null;default:0" json:"current_value"`
-	LastDate     string    `gorm:"size:10" json:"last_date"`           // 最后更新日期（用于连续天数判断）
+	LastDate     string    `gorm:"size:10" json:"last_date"` // 最后更新日期（用于连续天数判断）
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 

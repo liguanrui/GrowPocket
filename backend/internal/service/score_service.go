@@ -4,6 +4,7 @@ import (
 	"errors"
 	"growpocket/internal/database"
 	"growpocket/internal/model"
+	"log"
 	"time"
 )
 
@@ -145,15 +146,29 @@ func (s *ScoreService) Adjust(childID, familyID, createdBy uint, delta int, titl
 		return 0, errors.New("创建积分记录失败")
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return 0, errors.New("提交事务失败")
+	}
 
 	achievementService := &AchievementService{}
-	achievementService.IncrementCounter(childID, model.CounterTypeTaskCount, 0, 1)
-	achievementService.CheckAchievements(childID, model.CounterTypeTaskCount, 0)
+	if _, err := achievementService.IncrementCounter(childID, model.CounterTypeTaskCount, 0, 1); err != nil {
+		log.Printf("[Achievement] IncrementCounter(TaskCount) child=%d failed: %v", childID, err)
+	} else {
+		achievementService.CheckAchievementsForFamily(childID, familyID, model.CounterTypeTaskCount, 0)
+	}
+
+	if _, err := achievementService.IncrementCounter(childID, model.CounterTypeConsecutiveDays, 0, 1); err != nil {
+		log.Printf("[Achievement] IncrementCounter(ConsecutiveDays) child=%d failed: %v", childID, err)
+	} else {
+		achievementService.CheckAchievementsForFamily(childID, familyID, model.CounterTypeConsecutiveDays, 0)
+	}
 
 	if delta > 0 {
-		achievementService.IncrementCounter(childID, model.CounterTypeTotalPoints, 0, delta)
-		achievementService.CheckAchievements(childID, model.CounterTypeTotalPoints, 0)
+		if _, err := achievementService.IncrementCounter(childID, model.CounterTypeTotalPoints, 0, delta); err != nil {
+			log.Printf("[Achievement] IncrementCounter(TotalPoints) child=%d delta=%d failed: %v", childID, delta, err)
+		} else {
+			achievementService.CheckAchievementsForFamily(childID, familyID, model.CounterTypeTotalPoints, 0)
+		}
 	}
 
 	return newBalance, nil
