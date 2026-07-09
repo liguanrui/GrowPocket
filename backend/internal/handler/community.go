@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"growpocket/internal/middleware"
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
@@ -22,13 +23,14 @@ func NewCommunityHandler() *CommunityHandler {
 // ===== 分享 =====
 
 type createShareReq struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Photo       string `json:"photo"`
-	TaskID      uint   `json:"task_id"`
-	TaskTitle   string `json:"task_title"`
-	TaskPoints  int    `json:"task_points"`
-	Tag         string `json:"tag"`
+	ShareType  string   `json:"share_type"`
+	Content    string   `json:"content"`
+	Photos     []string `json:"photos"`
+	TaskID     uint     `json:"task_id"`
+	TaskTitle  string   `json:"task_title"`
+	TaskPoints int      `json:"task_points"`
+	ChildName  string   `json:"child_name"`
+	Tag        string   `json:"tag"`
 }
 
 func (h *CommunityHandler) CreateShare(c *gin.Context) {
@@ -42,17 +44,32 @@ func (h *CommunityHandler) CreateShare(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	nickname := middleware.GetNickname(c)
 
+	var photosJSON string
+	if len(req.Photos) > 0 {
+		data, err := json.Marshal(req.Photos)
+		if err != nil {
+			util.FailBadRequest(c, "图片数据错误")
+			return
+		}
+		photosJSON = string(data)
+	}
+
+	if req.ShareType == "" {
+		req.ShareType = "text"
+	}
+
 	share, err := h.service.CreateShare(service.CreateShareInput{
-		FamilyID:    familyID,
-		UserID:      userID,
-		Nickname:    nickname,
-		Title:       req.Title,
-		Description: req.Description,
-		Photo:       req.Photo,
-		TaskID:      req.TaskID,
-		TaskTitle:   req.TaskTitle,
-		TaskPoints:  req.TaskPoints,
-		Tag:         req.Tag,
+		FamilyID:   familyID,
+		UserID:     userID,
+		Nickname:   nickname,
+		ShareType:  req.ShareType,
+		Content:    req.Content,
+		Photos:     photosJSON,
+		TaskID:     req.TaskID,
+		TaskTitle:  req.TaskTitle,
+		TaskPoints: req.TaskPoints,
+		ChildName:  req.ChildName,
+		Tag:        req.Tag,
 	})
 	if err != nil {
 		util.FailBadRequest(c, err.Error())
@@ -117,7 +134,7 @@ func (h *CommunityHandler) DeleteShare(c *gin.Context) {
 
 // ===== 点赞 =====
 
-func (h *CommunityHandler) AddLike(c *gin.Context) {
+func (h *CommunityHandler) ToggleLike(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		util.FailBadRequest(c, "无效的 ID")
@@ -127,25 +144,7 @@ func (h *CommunityHandler) AddLike(c *gin.Context) {
 	familyID := middleware.GetFamilyID(c)
 	userID := middleware.GetUserID(c)
 
-	liked, count, err := h.service.AddLike(uint(id), familyID, userID)
-	if err != nil {
-		util.FailBadRequest(c, err.Error())
-		return
-	}
-
-	util.OK(c, gin.H{"liked": liked, "like_count": count})
-}
-
-func (h *CommunityHandler) RemoveLike(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		util.FailBadRequest(c, "无效的 ID")
-		return
-	}
-
-	familyID := middleware.GetFamilyID(c)
-
-	liked, count, err := h.service.RemoveLike(uint(id), familyID)
+	liked, count, err := h.service.ToggleLike(uint(id), familyID, userID)
 	if err != nil {
 		util.FailBadRequest(c, err.Error())
 		return
@@ -213,34 +212,54 @@ func (h *CommunityHandler) ListProjects(c *gin.Context) {
 	util.OK(c, gin.H{"items": projects, "total": len(projects)})
 }
 
-type joinProjectReq struct {
-	ChildID uint   `json:"child_id"`
-	Details string `json:"details"`
-	Photo   string `json:"photo"`
+type createDonationReq struct {
+	ChildID      uint    `json:"child_id"`
+	Weight       float64 `json:"weight"`
+	Details      string  `json:"details"`
+	ContactName  string  `json:"contact_name"`
+	ContactPhone string  `json:"contact_phone"`
+	Address      string  `json:"address"`
+	Photo        string  `json:"photo"`
 }
 
-func (h *CommunityHandler) JoinProject(c *gin.Context) {
+func (h *CommunityHandler) CreateDonation(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		util.FailBadRequest(c, "无效的 ID")
+		util.FailBadRequest(c, "无效的项目 ID")
 		return
 	}
 
-	var req joinProjectReq
+	var req createDonationReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		util.FailBadRequest(c, "参数错误")
 		return
 	}
 
 	if req.ChildID == 0 {
-		util.FailBadRequest(c, "请选择孩子")
+		util.FailBadRequest(c, "请选择捐赠人（孩子）")
 		return
 	}
 
 	familyID := middleware.GetFamilyID(c)
-	childName := "孩子"
 
-	donation, err := h.service.JoinProject(uint(id), familyID, req.ChildID, childName, req.Details, req.Photo)
+	child, err := h.service.GetChildByID(req.ChildID)
+	if err != nil {
+		util.FailBadRequest(c, "孩子信息不存在")
+		return
+	}
+
+	donation, err := h.service.CreateDonation(service.CreateDonationInput{
+		ProjectID:    uint(id),
+		FamilyID:     familyID,
+		ChildID:      req.ChildID,
+		ChildName:    child.Nickname,
+		Weight:       req.Weight,
+		Details:      req.Details,
+		ContactName:  req.ContactName,
+		ContactPhone: req.ContactPhone,
+		Address:      req.Address,
+		Photo:        req.Photo,
+	})
 	if err != nil {
 		util.FailBadRequest(c, err.Error())
 		return

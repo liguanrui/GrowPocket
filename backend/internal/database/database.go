@@ -131,14 +131,13 @@ func migrateAchievementData(db *gorm.DB) error {
 }
 
 func seedCommunityData(db *gorm.DB) error {
-	// Seed 公益项目
 	var projectCount int64
 	db.Model(&model.CharityProject{}).Count(&projectCount)
 	if projectCount == 0 {
 		projects := []model.CharityProject{
-			{Title: "捐书", Icon: "book", Description: "为偏远地区的孩子们捐赠图书，帮助他们打开知识的大门。", Points: 50},
-			{Title: "捐衣服", Icon: "shirt", Description: "捐赠干净的衣物，让温暖传递给需要帮助的家庭。", Points: 80},
-			{Title: "捐玩具", Icon: "gift", Description: "捐赠闲置的玩具，给更多孩子带来快乐。", Points: 60},
+			{Title: "捐书", Icon: "book", Description: "为偏远地区的孩子们捐赠图书，帮助他们打开知识的大门。每公斤图书可获得积分奖励。", PointsPerKg: 30},
+			{Title: "捐衣服", Icon: "shirt", Description: "捐赠干净的衣物，让温暖传递给需要帮助的家庭。每公斤衣物可获得积分奖励。", PointsPerKg: 20},
+			{Title: "捐玩具", Icon: "gift", Description: "捐赠闲置的玩具，给更多孩子带来快乐。每公斤玩具可获得积分奖励。", PointsPerKg: 25},
 		}
 		for i := range projects {
 			if err := db.Create(&projects[i]).Error; err != nil {

@@ -119,14 +119,13 @@ func main() {
 		authorized.GET("/community/shares", communityHandler.ListShares)
 		authorized.GET("/community/shares/:id", communityHandler.GetShare)
 		authorized.DELETE("/community/shares/:id", communityHandler.DeleteShare)
-		authorized.POST("/community/shares/:id/like", communityHandler.AddLike)
-		authorized.DELETE("/community/shares/:id/like", communityHandler.RemoveLike)
+		authorized.POST("/community/shares/:id/like", communityHandler.ToggleLike)
 		authorized.POST("/community/shares/:id/comments", communityHandler.AddComment)
 		authorized.GET("/community/shares/:id/comments", communityHandler.ListComments)
 
 		// 社区 - 公益项目
 		authorized.GET("/community/charity-projects", communityHandler.ListProjects)
-		authorized.POST("/community/charity-projects/:id/join", communityHandler.JoinProject)
+		authorized.POST("/community/charity-projects/:id/donate", communityHandler.CreateDonation)
 		authorized.GET("/community/charity-projects/my", communityHandler.ListMyDonations)
 
 		// 社区 - 公益活动

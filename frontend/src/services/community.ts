@@ -1,16 +1,20 @@
 import { request } from './api';
 
+export type ShareType = 'text' | 'text_image' | 'text_task';
+
 export interface CommunityShare {
   id: number;
   family_id: number;
   user_id: number;
   nickname: string;
-  title: string;
-  description: string;
-  photo?: string;
+  share_type: ShareType;
+  content: string;
+  photos?: string;
+  photo_list?: string[];
   task_id?: number;
   task_title?: string;
   task_points?: number;
+  child_name?: string;
   tag?: string;
   like_count: number;
   comment_count: number;
@@ -33,9 +37,11 @@ export interface CharityProject {
   title: string;
   icon: string;
   description: string;
-  points: number;
+  points_per_kg: number;
   created_at: string;
 }
+
+export type DonationStatus = 1 | 2 | 3;
 
 export interface CharityDonation {
   id: number;
@@ -44,10 +50,17 @@ export interface CharityDonation {
   child_name: string;
   project_id: number;
   project_title: string;
+  weight: number;
   details?: string;
+  contact_name?: string;
+  contact_phone?: string;
+  address?: string;
   photo?: string;
   points: number;
+  status: DonationStatus;
   created_at: string;
+  received_at?: string;
+  completed_at?: string;
 }
 
 export interface CharityActivity {
@@ -91,12 +104,13 @@ export interface ListResponse<T> {
 
 // ===== 社区分享 =====
 export async function createShare(data: {
-  title: string;
-  description?: string;
-  photo?: string;
+  share_type: ShareType;
+  content: string;
+  photos?: string[];
   task_id?: number;
   task_title?: string;
   task_points?: number;
+  child_name?: string;
   tag?: string;
 }): Promise<CommunityShare> {
   return request<CommunityShare>({
@@ -162,13 +176,17 @@ export async function fetchCharityProjects(): Promise<ListResponse<CharityProjec
   });
 }
 
-export async function joinCharityProject(projectId: number, data: {
+export async function createDonation(projectId: number, data: {
   child_id: number;
+  weight: number;
   details?: string;
+  contact_name: string;
+  contact_phone: string;
+  address: string;
   photo?: string;
 }): Promise<CharityDonation> {
   return request<CharityDonation>({
-    url: `/community/charity-projects/${projectId}/join`,
+    url: `/community/charity-projects/${projectId}/donate`,
     method: 'POST',
     data,
   });

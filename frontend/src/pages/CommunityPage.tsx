@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Heart, MessageCircle, Plus, X, Image as ImageIcon, MapPin, Users, Calendar, Gift, BookOpen, Trophy, Trash2, CheckCircle } from 'lucide-react';
 import { useChildStore } from '../stores/childStore';
 import * as communityService from '../services/community';
-import type { CommunityShare, CommunityComment, CharityProject, CharityActivity } from '../services/community';
+import type { CommunityShare, CommunityComment, CharityProject, CharityActivity, CharityDonation } from '../services/community';
 
 // 活动类型映射
 const activityTypeLabels: Record<number, string> = {
@@ -135,6 +136,36 @@ function ShareFeed({ onShowShareModal }: { onShowShareModal: () => void }) {
 }
 
 // ============ 分享卡片 ============
+function PhotoGrid({ photos }: { photos: string[] }) {
+  if (!photos || photos.length === 0) return null;
+
+  if (photos.length === 1) {
+    return (
+      <div className="aspect-video bg-gray-100 overflow-hidden">
+        <img src={photos[0]} alt="" className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+
+  const displayCount = Math.min(photos.length, 9);
+  const cols = displayCount === 2 || displayCount === 4 ? 2 : 3;
+
+  return (
+    <div className={`grid gap-0.5 p-0.5 bg-gray-100`} style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+      {photos.slice(0, displayCount).map((photo, idx) => (
+        <div key={idx} className="aspect-square bg-gray-200 overflow-hidden relative">
+          <img src={photo} alt="" className="w-full h-full object-cover" />
+          {idx === 8 && photos.length > 9 && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <span className="text-white text-xl font-bold">+{photos.length - 9}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () => void }) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(share.like_count);
@@ -143,11 +174,25 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
   const [newComment, setNewComment] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // 从 childStore 获取 familyId
   const child = useChildStore.getState().getCurrentChild();
   const familyId = child?.familyId || 0;
 
   const isMine = share.family_id === familyId;
+
+  let photos: string[] = [];
+  if (share.photo_list && share.photo_list.length > 0) {
+    photos = share.photo_list;
+  } else if (share.photos) {
+    try {
+      const parsed = JSON.parse(share.photos);
+      if (Array.isArray(parsed)) {
+        photos = parsed;
+      }
+    } catch (e) {
+      // ignore parse error
+    }
+  }
+  const displayContent = share.content;
 
   async function handleLike() {
     try {
@@ -202,9 +247,16 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
     return date.toLocaleDateString();
   };
 
+  const getTypeLabel = () => {
+    if (share.share_type === 'text_task') return '任务完成';
+    if (share.share_type === 'text_image') return '图文分享';
+    return null;
+  };
+
+  const typeLabel = getTypeLabel();
+
   return (
     <div className="bg-card rounded-2xl shadow-sm overflow-hidden">
-      {/* 发布者信息 */}
       <div className="flex items-center gap-2 p-3">
         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
           <span className="text-xs font-bold text-primary">{share.nickname?.charAt(0) || 'U'}</span>
@@ -212,8 +264,11 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="text-text-primary text-sm font-medium">{share.nickname}</span>
+            {typeLabel && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">{typeLabel}</span>
+            )}
             {share.tag && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">{share.tag}</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-text-secondary">{share.tag}</span>
             )}
           </div>
           <span className="text-text-tertiary text-xs">{formatTime(share.created_at)}</span>
@@ -228,28 +283,18 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
         )}
       </div>
 
-      {/* 图片 */}
-      {share.photo && (
-        <div className="aspect-video bg-gray-100 overflow-hidden">
-          <img src={share.photo} alt="" className="w-full h-full object-cover" />
-        </div>
-      )}
+      <PhotoGrid photos={photos} />
 
-      {/* 标题和描述 */}
       <div className="p-3">
-        <h3 className="text-text-primary font-medium">{share.title}</h3>
-        {share.description && (
-          <p className="text-sm text-text-tertiary mt-1 line-clamp-2">{share.description}</p>
-        )}
-        {share.task_points && share.task_points > 0 && (
+        <p className="text-sm text-text-primary whitespace-pre-wrap">{displayContent}</p>
+        {share.share_type === 'text_task' && share.task_points && share.task_points > 0 && (
           <div className="flex items-center gap-1 mt-2">
             <Trophy size={14} className="text-primary" />
-            <span className="text-sm text-primary font-medium">+{share.task_points} 积分</span>
+            <span className="text-sm text-primary font-medium">获得 +{share.task_points} 积分</span>
           </div>
         )}
       </div>
 
-      {/* 互动栏 */}
       <div className="border-t border-gray-100 p-3 flex items-center justify-between">
         <button
           onClick={handleLike}
@@ -267,7 +312,6 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
         </button>
       </div>
 
-      {/* 评论区 */}
       {showComments && (
         <div className="border-t border-gray-100 p-3 bg-gray-50/50">
           <div className="space-y-3 max-h-60 overflow-y-auto">
@@ -310,7 +354,6 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
         </div>
       )}
 
-      {/* 删除确认 */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl p-6 max-w-sm w-full">
@@ -339,20 +382,19 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
 
 // ============ 发布分享 Modal ============
 function ShareModal({ onClose }: { onClose: () => void }) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [content, setContent] = useState('');
   const [tag, setTag] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const tags = ['日常', '学习打卡', '家务', '亲子时光', '活动参与'];
 
   async function submit() {
-    if (!title.trim()) return;
+    if (!content.trim()) return;
     try {
       setSubmitting(true);
       await communityService.createShare({
-        title: title.trim(),
-        description: description.trim(),
+        share_type: 'text',
+        content: content.trim(),
         tag,
       });
       onClose();
@@ -367,7 +409,6 @@ function ShareModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
       <div className="bg-card rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        {/* 头部 */}
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <button onClick={onClose} className="p-2 -ml-2 text-text-tertiary">
             <X size={20} />
@@ -375,35 +416,22 @@ function ShareModal({ onClose }: { onClose: () => void }) {
           <h2 className="text-lg font-bold text-text-primary">发布成长分享</h2>
           <button
             onClick={submit}
-            disabled={!title.trim() || submitting}
+            disabled={!content.trim() || submitting}
             className="px-3 py-1.5 bg-primary text-white rounded-xl text-sm font-medium disabled:bg-gray-300"
           >
             {submitting ? '发布中...' : '发布'}
           </button>
         </div>
 
-        {/* 内容 */}
         <div className="p-4 space-y-4">
           <div>
-            <label className="text-sm font-medium text-text-primary block mb-2">标题</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="给这份分享起个标题..."
-              maxLength={50}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-text-primary block mb-2">描述</label>
+            <label className="text-sm font-medium text-text-primary block mb-2">分享内容</label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="分享你和孩子的成长故事..."
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="分享你和孩子的成长故事...（图文、任务分享请前往成长模块发布）"
               maxLength={500}
-              rows={4}
+              rows={5}
               className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary resize-none"
             />
           </div>
@@ -431,14 +459,194 @@ function ShareModal({ onClose }: { onClose: () => void }) {
 }
 
 // ============ 公益项目 ============
+
+function getDonationStatus(status: number): { text: string; color: string; bg: string } {
+  switch (status) {
+    case 1:
+      return { text: '待取件', color: 'text-yellow-700', bg: 'bg-yellow-100' };
+    case 2:
+      return { text: '已收件', color: 'text-blue-700', bg: 'bg-blue-100' };
+    case 3:
+      return { text: '已完成', color: 'text-green-700', bg: 'bg-green-100' };
+    default:
+      return { text: '未知', color: 'text-gray-700', bg: 'bg-gray-100' };
+  }
+}
+
+function DonationModal({ project, onClose, onSuccess }: { project: CharityProject; onClose: () => void; onSuccess: () => void }) {
+  const { children } = useChildStore();
+  const [selectedChildId, setSelectedChildId] = useState<number>(children[0]?.id || 0);
+  const [weight, setWeight] = useState<string>('');
+  const [details, setDetails] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const weightNum = parseFloat(weight) || 0;
+  const estimatedPoints = Math.floor(weightNum * (project.points_per_kg || 10));
+
+  const handleSubmit = async () => {
+    if (!selectedChildId) {
+      alert('请选择捐赠人（孩子）');
+      return;
+    }
+    if (weightNum <= 0) {
+      alert('请输入捐赠重量');
+      return;
+    }
+    if (!contactName.trim()) {
+      alert('请填写联系人姓名');
+      return;
+    }
+    if (!contactPhone.trim()) {
+      alert('请填写联系电话');
+      return;
+    }
+    if (!address.trim()) {
+      alert('请填写上门回收地址');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await communityService.createDonation(project.id, {
+        child_id: selectedChildId,
+        weight: weightNum,
+        details: details.trim() || undefined,
+        contact_name: contactName.trim(),
+        contact_phone: contactPhone.trim(),
+        address: address.trim(),
+      });
+      alert('捐赠申请已提交，等待上门取件');
+      onClose();
+      onSuccess();
+    } catch (e: any) {
+      alert(e?.message || '提交失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-card rounded-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-text-primary text-lg">捐赠 - {project.title}</h3>
+            <p className="text-xs text-text-tertiary mt-0.5">{project.points_per_kg || 10}积分/公斤</p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
+            <X size={20} className="text-text-tertiary" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div>
+            <label className="text-sm font-medium text-text-primary block mb-2">捐赠人（孩子）*</label>
+            <div className="flex gap-2 flex-wrap">
+              {children.map((child) => (
+                <button
+                  key={child.id}
+                  onClick={() => setSelectedChildId(child.id)}
+                  className={`px-4 py-2 rounded-full border text-sm font-medium transition ${
+                    selectedChildId === child.id
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-white text-text-secondary border-gray-200'
+                  }`}
+                >
+                  {child.nickname}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-text-primary block mb-2">捐赠重量（公斤）*</label>
+            <input
+              type="number"
+              min="0.1"
+              step="0.1"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              placeholder="请输入预计捐赠重量"
+              className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
+            />
+            {weightNum > 0 && (
+              <p className="mt-1 text-sm text-primary font-medium">预计可获得 {estimatedPoints} 积分</p>
+            )}
+          </div>
+          <div>
+            <label className="text-sm font-medium text-text-primary block mb-2">捐赠说明（选填）</label>
+            <textarea
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              placeholder="简单描述捐赠物品（如：衣物、书本等）"
+              rows={2}
+              className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary resize-none"
+            />
+          </div>
+          <div className="border-t border-gray-100 pt-4">
+            <h4 className="font-medium text-text-primary mb-3">上门取件信息</h4>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-text-tertiary block mb-1">联系人*</label>
+                <input
+                  type="text"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  placeholder="请输入联系人姓名"
+                  className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-text-tertiary block mb-1">联系电话*</label>
+                <input
+                  type="tel"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  placeholder="请输入联系电话"
+                  className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-text-tertiary block mb-1">回收地址*</label>
+                <textarea
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="请填写详细的上门回收地址"
+                  rows={2}
+                  className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary resize-none"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="bg-primary/5 rounded-xl p-3 text-sm">
+            <p className="font-medium text-primary mb-1">📋 捐赠流程</p>
+            <ol className="text-xs text-text-secondary space-y-0.5 list-decimal list-inside">
+              <li>提交申请后等待机构上门取件</li>
+              <li>机构收到捐赠后确认收件</li>
+              <li>积分将发放到选中孩子的账户</li>
+            </ol>
+          </div>
+        </div>
+        <div className="p-4 border-t border-gray-100 bg-card">
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full py-3 bg-primary text-white rounded-xl font-medium disabled:opacity-50"
+          >
+            {submitting ? '提交中...' : '提交捐赠申请'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CharityProjects() {
   const [projects, setProjects] = useState<CharityProject[]>([]);
+  const [donations, setDonations] = useState<CharityDonation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [donations, setDonations] = useState<any[]>([]);
   const [activeProject, setActiveProject] = useState<CharityProject | null>(null);
-  const [joinStep, setJoinStep] = useState<1 | 2 | 3 | null>(null);
-  const [joinDetails, setJoinDetails] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [showMyDonations, setShowMyDonations] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -460,199 +668,95 @@ function CharityProjects() {
     }
   }
 
-  function handleJoin(project: CharityProject) {
-    setActiveProject(project);
-    setJoinStep(1);
-  }
-
-  async function submitDonation() {
-    if (!activeProject) return;
-    const child = useChildStore.getState().getCurrentChild();
-    if (!child) {
-      alert('请先添加孩子档案');
-      return;
-    }
-    try {
-      setSubmitting(true);
-      await communityService.joinCharityProject(activeProject.id, {
-        child_id: child.id,
-        details: joinDetails,
-      });
-      setJoinStep(3);
-    } catch (e: any) {
-      console.log('提交失败:', e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function closeModal() {
-    setJoinStep(null);
-    setActiveProject(null);
-    setJoinDetails('');
-    if (joinStep === 3) {
-      window.location.reload();
-    }
-  }
-
   if (loading) return <div className="text-center text-text-tertiary py-10">加载中...</div>;
 
   return (
     <>
-      {/* 项目卡片列表 */}
-      {projects.map((project) => (
-        <div key={project.id} className="bg-card rounded-2xl shadow-sm p-4">
-          <div className="flex items-start gap-3">
-            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-              {project.icon === 'shirt' ? (
-                <Gift size={24} className="text-primary" />
-              ) : project.icon === 'gift' ? (
-                <Gift size={24} className="text-primary" />
-              ) : (
-                <BookOpen size={24} className="text-primary" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-text-primary font-bold text-lg">{project.title}</h3>
-              <p className="text-sm text-text-tertiary mt-1 line-clamp-2">{project.description}</p>
-            </div>
-            <div className="text-right flex-shrink-0">
-              <span className="text-xl font-bold text-primary">+{project.points}</span>
-              <p className="text-xs text-text-tertiary">积分</p>
-            </div>
-          </div>
-          <button
-            onClick={() => handleJoin(project)}
-            className="w-full mt-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium"
-          >
-            参与项目
-          </button>
-        </div>
-      ))}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-text-primary">公益项目</h3>
+        <button
+          onClick={() => setShowMyDonations(!showMyDonations)}
+          className="text-sm text-primary font-medium"
+        >
+          {showMyDonations ? '← 查看项目' : `我的捐赠 (${donations.length})`}
+        </button>
+      </div>
 
-      {/* 我的捐赠记录 */}
-      {donations.length > 0 && (
-        <div className="mt-4">
-          <h3 className="text-text-primary font-bold mb-3">我的参与记录</h3>
-          <div className="space-y-2">
-            {donations.map((don) => (
-              <div key={don.id} className="bg-card rounded-xl p-3 shadow-sm flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-text-primary">{don.project_title}</p>
-                  <p className="text-xs text-text-tertiary mt-0.5">
-                    {new Date(don.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <span className="text-primary font-bold text-sm">+{don.points}</span>
-              </div>
-            ))}
+      {showMyDonations ? (
+        donations.length === 0 ? (
+          <div className="text-center py-10">
+            <p className="text-4xl mb-2">🎁</p>
+            <p className="text-text-secondary font-medium">暂无捐赠记录</p>
+            <p className="text-text-tertiary text-sm mt-1">参与公益项目，献出一份爱心</p>
           </div>
+        ) : (
+          <div className="space-y-3">
+            {donations.map((don) => {
+              const status = getDonationStatus(don.status);
+              return (
+                <div key={don.id} className="bg-card rounded-xl p-4 shadow-sm">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="font-medium text-text-primary">{don.project_title}</p>
+                      <p className="text-xs text-text-tertiary mt-0.5">
+                        捐赠人：{don.child_name} · {don.weight}kg
+                      </p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>
+                      {status.text}
+                    </span>
+                  </div>
+                  {don.details && <p className="text-sm text-text-secondary mb-2">{don.details}</p>}
+                  <div className="flex items-center justify-between text-xs text-text-tertiary">
+                    <span>{new Date(don.created_at).toLocaleDateString()}</span>
+                    {don.status === 3 && (
+                      <span className="text-success font-bold">+{don.points}积分</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        <div className="space-y-3">
+          {projects.map((project) => (
+            <div key={project.id} className="bg-card rounded-2xl shadow-sm p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  {project.icon === 'shirt' ? (
+                    <Gift size={24} className="text-primary" />
+                  ) : project.icon === 'gift' ? (
+                    <Gift size={24} className="text-primary" />
+                  ) : (
+                    <BookOpen size={24} className="text-primary" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-text-primary font-bold text-lg">{project.title}</h3>
+                  <p className="text-sm text-text-tertiary mt-1 line-clamp-2">{project.description}</p>
+                  <p className="text-xs text-primary mt-1 font-medium">{project.points_per_kg || 10}积分/公斤</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveProject(project)}
+                className="w-full mt-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium"
+              >
+                我要捐赠
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* 参与流程 Modal */}
-      {joinStep && activeProject && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl p-6 max-w-sm w-full">
-            {/* 步骤指示器 */}
-            <div className="flex justify-center gap-2 mb-5">
-              {[1, 2, 3].map((s) => (
-                <div
-                  key={s}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                    s === joinStep
-                      ? 'bg-primary text-white'
-                      : s < joinStep
-                      ? 'bg-success text-white'
-                      : 'bg-gray-100 text-text-tertiary'
-                  }`}
-                >
-                  {s < joinStep ? <CheckCircle size={16} /> : s}
-                </div>
-              ))}
-            </div>
-
-            {/* 步骤1: 介绍 */}
-            {joinStep === 1 && (
-              <>
-                <h3 className="text-xl font-bold text-text-primary text-center">{activeProject.title}</h3>
-                <p className="text-sm text-text-tertiary text-center mt-2">{activeProject.description}</p>
-                <div className="text-center mt-6">
-                  <span className="text-3xl font-bold text-primary">+{activeProject.points}</span>
-                  <p className="text-sm text-text-tertiary">积分奖励</p>
-                </div>
-                <button
-                  onClick={() => setJoinStep(2)}
-                  className="w-full mt-6 py-3 bg-primary text-white rounded-xl font-medium"
-                >
-                  开始填写
-                </button>
-                <button
-                  onClick={closeModal}
-                  className="w-full mt-2 py-3 bg-gray-100 text-text-secondary rounded-xl text-sm"
-                >
-                  取消
-                </button>
-              </>
-            )}
-
-            {/* 步骤2: 填写信息 */}
-            {joinStep === 2 && (
-              <>
-                <h3 className="text-lg font-bold text-text-primary text-center">填写信息</h3>
-                <div className="mt-5 space-y-4">
-                  <div>
-                    <label className="text-sm font-medium text-text-primary block mb-2">简要说明</label>
-                    <textarea
-                      value={joinDetails}
-                      onChange={(e) => setJoinDetails(e.target.value)}
-                      placeholder="请描述捐赠内容/参与情况..."
-                      rows={4}
-                      className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary resize-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3 mt-6">
-                  <button
-                    onClick={() => setJoinStep(1)}
-                    className="flex-1 py-3 bg-gray-100 text-text-secondary rounded-xl font-medium"
-                  >
-                    上一步
-                  </button>
-                  <button
-                    onClick={submitDonation}
-                    disabled={submitting}
-                    className="flex-1 py-3 bg-primary text-white rounded-xl font-medium disabled:bg-gray-300"
-                  >
-                    {submitting ? '提交中...' : '提交'}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* 步骤3: 成功 */}
-            {joinStep === 3 && (
-              <>
-                <div className="flex justify-center mb-4">
-                  <div className="w-20 h-20 rounded-full bg-success flex items-center justify-center">
-                    <CheckCircle size={40} className="text-white" />
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold text-text-primary text-center">恭喜完成！</h3>
-                <div className="text-center mt-3">
-                  <span className="text-3xl font-bold text-primary">+{activeProject.points}</span>
-                  <p className="text-sm text-text-tertiary mt-1">积分已加入你的账户</p>
-                </div>
-                <button
-                  onClick={closeModal}
-                  className="w-full mt-6 py-3 bg-primary text-white rounded-xl font-medium"
-                >
-                  继续浏览
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+      {activeProject && (
+        <DonationModal
+          project={activeProject}
+          onClose={() => setActiveProject(null)}
+          onSuccess={() => {
+            loadData();
+          }}
+        />
       )}
     </>
   );
@@ -660,11 +764,11 @@ function CharityProjects() {
 
 // ============ 公益活动 ============
 function Activities() {
+  const navigate = useNavigate();
   const childStore = useChildStore();
   const [activities, setActivities] = useState<CharityActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState(0);
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<CharityActivity | null>(null);
   const [participants, setParticipants] = useState<any[]>([]);
   const [activityDetails, setActivityDetails] = useState<any>(null);
@@ -757,7 +861,7 @@ function Activities() {
     <>
       {/* 发起按钮 */}
       <button
-        onClick={() => setShowCreateModal(true)}
+        onClick={() => navigate('/community/activities/new')}
         className="w-full py-3 bg-blue-500 text-white rounded-2xl font-medium shadow-sm hover:bg-blue-600 transition-all flex items-center justify-center gap-2"
       >
         <Plus size={18} />
@@ -990,16 +1094,6 @@ function Activities() {
           </div>
         </div>
       )}
-
-      {/* 创建活动 Modal */}
-      {showCreateModal && (
-        <CreateActivityModal
-          onClose={() => {
-            setShowCreateModal(false);
-            loadActivities();
-          }}
-        />
-      )}
     </>
   );
 }
@@ -1020,155 +1114,6 @@ function TreePine(props: any) {
       <path d="m18 8 2 10h-5.5l1.3-4.3L17 10h-3.5l2-3H11L9 7.3 8 4h8l2 4Z" />
       <path d="M10 8H8l1.5 3H7l3 4h3" />
     </svg>
-  );
-}
-
-// ============ 创建活动 Modal ============
-function CreateActivityModal({ onClose }: { onClose: () => void }) {
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState(1);
-  const [description, setDescription] = useState('');
-  const [location, setLocation] = useState('');
-  const [eventTime, setEventTime] = useState('');
-  const [maxParticipants, setMaxParticipants] = useState(10);
-  const [points, setPoints] = useState(80);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function submit() {
-    if (!title.trim() || !eventTime) {
-      alert('请填写标题和时间');
-      return;
-    }
-    try {
-      setSubmitting(true);
-      await communityService.createActivity({
-        title: title.trim(),
-        activity_type: type,
-        description: description.trim(),
-        location: location.trim(),
-        event_time: new Date(eventTime).toISOString(),
-        max_participants: maxParticipants,
-        points,
-      });
-      onClose();
-    } catch (e: any) {
-      console.log('创建失败:', e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-card rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-5">
-          <div className="flex items-center justify-between mb-5">
-            <button onClick={onClose} className="p-2 -ml-2 text-text-tertiary">
-              <X size={20} />
-            </button>
-            <h2 className="text-lg font-bold text-text-primary">发起公益活动</h2>
-            <button
-              onClick={submit}
-              disabled={submitting || !title.trim() || !eventTime}
-              className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium disabled:bg-gray-300"
-            >
-              发布
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-text-primary block mb-2">活动标题</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="例如：周末公园捡垃圾"
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-text-primary block mb-2">活动类型</label>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { id: 1, label: '捡垃圾' },
-                  { id: 2, label: '老人院' },
-                  { id: 3, label: '植树' },
-                  { id: 4, label: '博弈游戏' },
-                  { id: 5, label: '其他' },
-                ].map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setType(t.id)}
-                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                      type === t.id ? 'bg-primary text-white' : 'bg-gray-100 text-text-secondary'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-text-primary block mb-2">活动描述</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="简要描述活动内容..."
-                rows={3}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary resize-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-text-primary block mb-2">活动地点</label>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="活动地点"
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-text-primary block mb-2">活动时间</label>
-              <input
-                type="datetime-local"
-                value={eventTime}
-                onChange={(e) => setEventTime(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-text-primary block mb-2">人数上限</label>
-                <input
-                  type="number"
-                  value={maxParticipants}
-                  onChange={(e) => setMaxParticipants(parseInt(e.target.value) || 10)}
-                  min={1}
-                  className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-text-primary block mb-2">积分奖励</label>
-                <input
-                  type="number"
-                  value={points}
-                  onChange={(e) => setPoints(parseInt(e.target.value) || 80)}
-                  min={10}
-                  className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

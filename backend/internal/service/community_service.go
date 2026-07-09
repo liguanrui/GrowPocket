@@ -1,9 +1,12 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"growpocket/internal/database"
 	"growpocket/internal/model"
+	"strings"
 	"time"
 )
 
@@ -16,41 +19,48 @@ func NewCommunityService() *CommunityService {
 // ========== 分享相关 ==========
 
 type CreateShareInput struct {
-	FamilyID uint
-	UserID   uint
-	Nickname string
-	Title    string
-	Description string
-	Photo    string
-	TaskID   uint
-	TaskTitle string
+	FamilyID   uint
+	UserID     uint
+	Nickname   string
+	ShareType  string
+	Content    string
+	Photos     string
+	TaskID     uint
+	TaskTitle  string
 	TaskPoints int
-	Tag      string
+	ChildName  string
+	Tag        string
+}
+
+type ShareResponse struct {
+	model.CommunityShare
+	PhotoList []string `json:"photo_list"`
 }
 
 func (s *CommunityService) CreateShare(in CreateShareInput) (*model.CommunityShare, error) {
-	if in.Title == "" {
-		return nil, errors.New("标题不能为空")
+	if strings.TrimSpace(in.Content) == "" {
+		return nil, errors.New("分享内容不能为空")
 	}
-	if len(in.Title) > 100 {
-		return nil, errors.New("标题不能超过100字")
+	if len(in.Content) > 1000 {
+		return nil, errors.New("内容不能超过1000字")
 	}
-	if len(in.Description) > 1000 {
-		return nil, errors.New("描述不能超过1000字")
+	if in.ShareType == "" {
+		in.ShareType = "text"
 	}
 
 	share := &model.CommunityShare{
-		FamilyID:    in.FamilyID,
-		UserID:      in.UserID,
-		Nickname:    in.Nickname,
-		Title:       in.Title,
-		Description: in.Description,
-		Photo:       in.Photo,
-		TaskID:      in.TaskID,
-		TaskTitle:   in.TaskTitle,
-		TaskPoints:  in.TaskPoints,
-		Tag:         in.Tag,
-		LikeCount:   0,
+		FamilyID:     in.FamilyID,
+		UserID:       in.UserID,
+		Nickname:     in.Nickname,
+		ShareType:    in.ShareType,
+		Content:      in.Content,
+		Photos:       in.Photos,
+		TaskID:       in.TaskID,
+		TaskTitle:    in.TaskTitle,
+		TaskPoints:   in.TaskPoints,
+		ChildName:    in.ChildName,
+		Tag:          in.Tag,
+		LikeCount:    0,
 		CommentCount: 0,
 	}
 	if err := database.DB.Create(share).Error; err != nil {
@@ -59,13 +69,59 @@ func (s *CommunityService) CreateShare(in CreateShareInput) (*model.CommunitySha
 	return share, nil
 }
 
+func parsePhotos(photosJSON string) []string {
+	if photosJSON == "" {
+		return nil
+	}
+	var photos []string
+	if err := json.Unmarshal([]byte(photosJSON), &photos); err != nil {
+		return nil
+	}
+	return photos
+}
+
+func toShareResponse(share *model.CommunityShare) ShareResponse {
+	content := share.Content
+	photos := parsePhotos(share.Photos)
+
+	if content == "" {
+		if share.Title != "" {
+			content = share.Title
+			if share.Description != "" {
+				content = share.Title + "\n" + share.Description
+			}
+		} else {
+			content = share.Description
+		}
+	}
+
+	if len(photos) == 0 && share.Photo != "" {
+		photos = []string{share.Photo}
+	}
+
+	if share.ShareType == "" {
+		if len(photos) > 0 {
+			share.ShareType = "text_image"
+		} else {
+			share.ShareType = "text"
+		}
+	}
+
+	resp := ShareResponse{
+		CommunityShare: *share,
+		PhotoList:      photos,
+	}
+	resp.Content = content
+	return resp
+}
+
 type ListSharesParams struct {
 	Page     int
 	PageSize int
-	Sort     string // "latest" 或 "popular"
+	Sort     string
 }
 
-func (s *CommunityService) ListShares(p ListSharesParams) ([]model.CommunityShare, int64, error) {
+func (s *CommunityService) ListShares(p ListSharesParams) ([]ShareResponse, int64, error) {
 	if p.Page < 1 {
 		p.Page = 1
 	}
@@ -91,16 +147,26 @@ func (s *CommunityService) ListShares(p ListSharesParams) ([]model.CommunityShar
 		Offset((p.Page - 1) * p.PageSize).
 		Find(&shares).Error
 
-	return shares, total, err
+	if err != nil {
+		return nil, 0, err
+	}
+
+	resp := make([]ShareResponse, len(shares))
+	for i := range shares {
+		resp[i] = toShareResponse(&shares[i])
+	}
+
+	return resp, total, nil
 }
 
-func (s *CommunityService) GetShare(id uint) (*model.CommunityShare, error) {
+func (s *CommunityService) GetShare(id uint) (*ShareResponse, error) {
 	var share model.CommunityShare
 	err := database.DB.First(&share, id).Error
 	if err != nil {
 		return nil, errors.New("分享不存在")
 	}
-	return &share, nil
+	resp := toShareResponse(&share)
+	return &resp, nil
 }
 
 func (s *CommunityService) DeleteShare(id, familyID uint) error {
@@ -124,51 +190,31 @@ func (s *CommunityService) DeleteShare(id, familyID uint) error {
 
 // ========== 点赞相关 ==========
 
-func (s *CommunityService) AddLike(shareID, familyID, userID uint) (bool, int, error) {
+func (s *CommunityService) ToggleLike(shareID, familyID, userID uint) (bool, int, error) {
 	var existing model.CommunityLike
 	err := database.DB.Where("share_id = ? AND family_id = ?", shareID, familyID).First(&existing).Error
 
 	if err == nil {
-		// 已点赞，返回当前状态
-		var count int64
-		database.DB.Model(&model.CommunityLike{}).Where("share_id = ?", shareID).Count(&count)
-		return true, int(count), nil
+		database.DB.Delete(&existing)
+	} else {
+		like := &model.CommunityLike{
+			ShareID:  shareID,
+			FamilyID: familyID,
+			UserID:   userID,
+		}
+		if err := database.DB.Create(like).Error; err != nil {
+			return false, 0, err
+		}
 	}
 
-	// 未点赞，添加
-	like := &model.CommunityLike{
-		ShareID:  shareID,
-		FamilyID: familyID,
-		UserID:   userID,
-	}
-	if err := database.DB.Create(like).Error; err != nil {
-		return false, 0, err
-	}
-
-	// 获取新的计数
 	var count int64
 	database.DB.Model(&model.CommunityLike{}).Where("share_id = ?", shareID).Count(&count)
 	database.DB.Model(&model.CommunityShare{}).Where("id = ?", shareID).Update("like_count", int(count))
-	return true, int(count), nil
-}
 
-func (s *CommunityService) RemoveLike(shareID, familyID uint) (bool, int, error) {
-	var existing model.CommunityLike
-	err := database.DB.Where("share_id = ? AND family_id = ?", shareID, familyID).First(&existing).Error
+	var checkExisting model.CommunityLike
+	liked := database.DB.Where("share_id = ? AND family_id = ?", shareID, familyID).First(&checkExisting).Error == nil
 
-	if err != nil {
-		// 未点赞
-		var count int64
-		database.DB.Model(&model.CommunityLike{}).Where("share_id = ?", shareID).Count(&count)
-		return false, int(count), nil
-	}
-
-	// 取消点赞
-	database.DB.Delete(&existing)
-	var count int64
-	database.DB.Model(&model.CommunityLike{}).Where("share_id = ?", shareID).Count(&count)
-	database.DB.Model(&model.CommunityShare{}).Where("id = ?", shareID).Update("like_count", int(count))
-	return false, int(count), nil
+	return liked, int(count), nil
 }
 
 // ========== 评论相关 ==========
@@ -230,58 +276,145 @@ func (s *CommunityService) GetProject(id uint) (*model.CharityProject, error) {
 	return &project, nil
 }
 
-func (s *CommunityService) JoinProject(projectID, familyID, childID uint, childName string, details, photo string) (*model.CharityDonation, error) {
-	project, err := s.GetProject(projectID)
+type CreateDonationInput struct {
+	ProjectID    uint
+	FamilyID     uint
+	ChildID      uint
+	ChildName    string
+	Weight       float64
+	Details      string
+	ContactName  string
+	ContactPhone string
+	Address      string
+	Photo        string
+}
+
+func (s *CommunityService) CreateDonation(in CreateDonationInput) (*model.CharityDonation, error) {
+	project, err := s.GetProject(in.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 
-	if childName == "" {
-		return nil, errors.New("请选择孩子")
+	if in.ChildName == "" {
+		return nil, errors.New("请选择捐赠人（孩子）")
+	}
+	if in.Weight <= 0 {
+		return nil, errors.New("请填写捐赠重量")
+	}
+	if in.ContactName == "" {
+		return nil, errors.New("请填写联系人姓名")
+	}
+	if in.ContactPhone == "" {
+		return nil, errors.New("请填写联系电话")
+	}
+	if in.Address == "" {
+		return nil, errors.New("请填写上门回收地址")
 	}
 
+	points := int(float64(project.PointsPerKg) * in.Weight)
+
 	donation := &model.CharityDonation{
-		FamilyID:     familyID,
-		ChildID:      childID,
-		ChildName:    childName,
-		ProjectID:    projectID,
+		FamilyID:     in.FamilyID,
+		ChildID:      in.ChildID,
+		ChildName:    in.ChildName,
+		ProjectID:    in.ProjectID,
 		ProjectTitle: project.Title,
-		Details:      details,
-		Photo:        photo,
-		Points:       project.Points,
+		Weight:       in.Weight,
+		Details:      in.Details,
+		ContactName:  in.ContactName,
+		ContactPhone: in.ContactPhone,
+		Address:      in.Address,
+		Photo:        in.Photo,
+		Points:       points,
+		Status:       model.DonationStatusPending,
 	}
 
 	if err := database.DB.Create(donation).Error; err != nil {
 		return nil, err
 	}
 
-	// 更新孩子余额并创建 Transaction
+	return donation, nil
+}
+
+func (s *CommunityService) ConfirmDonationReceived(donationID, familyID uint) error {
+	var donation model.CharityDonation
+	if err := database.DB.First(&donation, donationID).Error; err != nil {
+		return errors.New("捐赠记录不存在")
+	}
+	if donation.FamilyID != familyID {
+		return errors.New("无权限操作")
+	}
+	if donation.Status != model.DonationStatusPending {
+		return errors.New("当前状态不支持此操作")
+	}
+
+	now := time.Now()
+	donation.Status = model.DonationStatusReceived
+	donation.ReceivedAt = &now
+	return database.DB.Save(&donation).Error
+}
+
+func (s *CommunityService) CompleteDonation(donationID uint) error {
+	var donation model.CharityDonation
+	if err := database.DB.First(&donation, donationID).Error; err != nil {
+		return errors.New("捐赠记录不存在")
+	}
+	if donation.Status != model.DonationStatusReceived {
+		return errors.New("请先确认收件")
+	}
+
 	var child model.User
-	if err := database.DB.First(&child, childID).Error; err != nil {
-		return nil, errors.New("孩子档案不存在")
+	if err := database.DB.First(&child, donation.ChildID).Error; err != nil {
+		return errors.New("孩子档案不存在")
 	}
 
-	newBalance := child.Balance + project.Points
-	database.DB.Model(&child).Update("balance", newBalance)
+	newBalance := child.Balance + donation.Points
+	now := time.Now()
 
-	// 创建 Transaction 记录
-	tx := &model.Transaction{
-		ChildID:     childID,
-		Type:        model.TransactionTypeIncome,
-		Amount:      project.Points,
-		Reason:      "参与公益项目: " + project.Title,
+	tx := database.DB.Begin()
+
+	if err := tx.Model(&child).Update("balance", newBalance).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	transaction := &model.Transaction{
+		ChildID:      donation.ChildID,
+		Type:         model.TransactionTypeIncome,
+		Amount:       donation.Points,
+		Reason:       fmt.Sprintf("公益捐赠: %s (%.1fkg)", donation.ProjectTitle, donation.Weight),
 		BalanceAfter: newBalance,
-		CreatedAt:   time.Now(),
+		CreatedAt:    now,
 	}
-	if err := database.DB.Create(tx).Error; err != nil {
-		return nil, err
+	if err := tx.Create(transaction).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	donation.Status = model.DonationStatusCompleted
+	donation.CompletedAt = &now
+	if err := tx.Save(&donation).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return err
 	}
 
 	achievementService := &AchievementService{}
-	achievementService.IncrementCounter(childID, model.CounterTypeTotalPoints, 0, project.Points)
-	achievementService.CheckAchievements(childID, model.CounterTypeTotalPoints, 0)
+	achievementService.IncrementCounter(donation.ChildID, model.CounterTypeTotalPoints, 0, donation.Points)
+	achievementService.CheckAchievements(donation.ChildID, model.CounterTypeTotalPoints, 0)
 
-	return donation, nil
+	return nil
+}
+
+func (s *CommunityService) GetChildByID(childID uint) (*model.User, error) {
+	var child model.User
+	if err := database.DB.First(&child, childID).Error; err != nil {
+		return nil, errors.New("孩子不存在")
+	}
+	return &child, nil
 }
 
 func (s *CommunityService) ListMyDonations(familyID uint) ([]model.CharityDonation, error) {

@@ -103,23 +103,52 @@ function ShareModal({
 }) {
   const [shareType, setShareType] = useState<'text' | 'text_image' | 'text_task'>('text');
   const [content, setContent] = useState('');
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const MAX_IMAGES = 9;
+
+  const completedTasks = tasks.filter((t) => t.status === 3);
+
+  useEffect(() => {
+    if (shareType === 'text_task' && selectedTaskId) {
+      const task = completedTasks.find((t) => t.id === selectedTaskId);
+      if (task) {
+        const defaultContent = `我家宝宝（${child.nickname}）完成了${task.title}，表现棒棒哒`;
+        if (!content.trim() || content.startsWith('我家宝宝（')) {
+          setContent(defaultContent);
+        }
+        if (task.photo && !selectedImages.includes(task.photo)) {
+          setSelectedImages([task.photo]);
+        }
+      }
+    }
+  }, [shareType, selectedTaskId, child.nickname, completedTasks]);
+
+  const toggleImage = (photo: string) => {
+    if (selectedImages.includes(photo)) {
+      setSelectedImages(selectedImages.filter((p) => p !== photo));
+    } else if (selectedImages.length < MAX_IMAGES) {
+      setSelectedImages([...selectedImages, photo]);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!content.trim()) return;
 
     setSubmitting(true);
     try {
-      let photo = selectedImage || undefined;
-      let taskId = selectedTaskId || undefined;
+      const task = selectedTaskId ? completedTasks.find((t) => t.id === selectedTaskId) : null;
 
       await communityService.createShare({
-        title: content.slice(0, 50),
-        description: content,
-        photo,
-        task_id: taskId,
+        share_type: shareType,
+        content: content.trim(),
+        photos: selectedImages.length > 0 ? selectedImages : undefined,
+        task_id: task?.id,
+        task_title: task?.title,
+        task_points: task?.points,
+        child_name: child.nickname,
       });
 
       onClose();
@@ -130,11 +159,22 @@ function ShareModal({
     }
   };
 
-  const completedTasks = tasks.filter((t) => t.status === 3);
+  const handleTypeChange = (type: 'text' | 'text_image' | 'text_task') => {
+    setShareType(type);
+    if (type === 'text') {
+      setSelectedImages([]);
+      setSelectedTaskId(null);
+    } else if (type === 'text_image') {
+      setSelectedTaskId(null);
+    } else if (type === 'text_task') {
+      setSelectedImages([]);
+      setContent('');
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-      <div className="bg-white rounded-t-3xl w-full max-w-lg p-5 pb-24">
+      <div className="bg-white rounded-t-3xl w-full max-w-lg p-5 pb-24 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-text-primary text-lg">分享成长</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
@@ -153,11 +193,7 @@ function ShareModal({
             return (
               <button
                 key={type.id}
-                onClick={() => {
-                  setShareType(type.id);
-                  if (type.id !== 'text_image') setSelectedImage(null);
-                  if (type.id !== 'text_task') setSelectedTaskId(null);
-                }}
+                onClick={() => handleTypeChange(type.id)}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl transition-colors ${
                   isActive ? 'bg-primary text-white' : 'bg-gray-100 text-text-secondary'
                 }`}
@@ -172,56 +208,87 @@ function ShareModal({
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="分享孩子的成长故事..."
+          placeholder={shareType === 'text_task' ? '分享孩子的成长喜悦...' : '分享孩子的成长故事...'}
           rows={4}
           className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary text-sm resize-none"
         />
 
         {shareType === 'text_image' && (
           <div className="mt-4">
-            <label className="block text-sm font-medium text-text-primary mb-2">选择图片</label>
-            <div className="grid grid-cols-4 gap-2">
-              {album.slice(0, 8).map((photo, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedImage(selectedImage === photo.photo ? null : photo.photo)}
-                  className={`aspect-square rounded-xl overflow-hidden border-2 transition-all ${
-                    selectedImage === photo.photo ? 'border-primary' : 'border-transparent'
-                  }`}
-                >
-                  <img src={photo.photo} alt="" className="w-full h-full object-cover" />
-                </button>
-              ))}
+            <label className="block text-sm font-medium text-text-primary mb-2">
+              选择图片 <span className="text-text-tertiary">({selectedImages.length}/{MAX_IMAGES})</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {album.map((photo, idx) => {
+                const isSelected = selectedImages.includes(photo.photo);
+                const selectedIndex = selectedImages.indexOf(photo.photo);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => toggleImage(photo.photo)}
+                    className={`aspect-square rounded-xl overflow-hidden border-2 transition-all relative ${
+                      isSelected ? 'border-primary' : 'border-transparent'
+                    }`}
+                  >
+                    <img src={photo.photo} alt="" className="w-full h-full object-cover" />
+                    {isSelected && (
+                      <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">{selectedIndex + 1}</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+            {album.length === 0 && (
+              <p className="text-sm text-text-tertiary text-center py-4">暂无图片，请先完成任务并上传照片</p>
+            )}
           </div>
         )}
 
         {shareType === 'text_task' && (
           <div className="mt-4">
-            <label className="block text-sm font-medium text-text-primary mb-2">选择任务</label>
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {completedTasks.map((task) => (
-                <button
-                  key={task.id}
-                  onClick={() => setSelectedTaskId(selectedTaskId === task.id ? null : task.id)}
-                  className={`w-full text-left p-3 rounded-xl transition-colors flex items-center justify-between ${
-                    selectedTaskId === task.id ? 'bg-primary/10 border border-primary' : 'bg-gray-50'
-                  }`}
-                >
-                  <div>
-                    <div className="text-sm font-medium text-text-primary">{task.title}</div>
-                    <div className="text-xs text-text-tertiary">+{task.points} 积分</div>
-                  </div>
-                  {selectedTaskId === task.id && <Star size={16} className="text-primary" />}
-                </button>
-              ))}
+            <label className="block text-sm font-medium text-text-primary mb-2">选择完成的任务</label>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {completedTasks.length === 0 ? (
+                <p className="text-sm text-text-tertiary text-center py-4">暂无已完成的任务</p>
+              ) : (
+                completedTasks.map((task) => (
+                  <button
+                    key={task.id}
+                    onClick={() => {
+                      if (selectedTaskId === task.id) {
+                        setSelectedTaskId(null);
+                        setContent('');
+                        setSelectedImages([]);
+                      } else {
+                        setSelectedTaskId(task.id);
+                      }
+                    }}
+                    className={`w-full text-left p-3 rounded-xl transition-colors flex items-center justify-between ${
+                      selectedTaskId === task.id ? 'bg-primary/10 border border-primary' : 'bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {task.photo && (
+                        <img src={task.photo} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                      )}
+                      <div>
+                        <div className="text-sm font-medium text-text-primary">{task.title}</div>
+                        <div className="text-xs text-text-tertiary">+{task.points} 积分</div>
+                      </div>
+                    </div>
+                    {selectedTaskId === task.id && <Star size={16} className="text-primary" />}
+                  </button>
+                ))
+              )}
             </div>
           </div>
         )}
 
         <button
           onClick={handleSubmit}
-          disabled={!content.trim() || submitting}
+          disabled={!content.trim() || submitting || (shareType === 'text_task' && !selectedTaskId)}
           className="w-full mt-6 py-3 bg-gradient-to-r from-primary to-amber-500 text-white rounded-xl font-medium shadow-lg shadow-primary/20 hover:shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
         >
           <Send size={16} />
