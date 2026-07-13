@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Plus, Clock, CheckCircle2, Inbox, FileText } from 'lucide-react';
+import { Plus, Clock, CheckCircle2, Inbox, FileText, BookOpen, Home, Smile, Dumbbell, MoreHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import * as tasksService from '../services/tasks';
 import type { Task, TaskStatus } from '../services/tasks';
+import type { TaskCategory } from '../types';
 
 const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any }[] = [
   { id: 'all', label: '全部', icon: FileText },
@@ -13,10 +14,20 @@ const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any }[] = [
   { id: 4, label: '已拒绝', icon: CheckCircle2 },
 ];
 
+const CATEGORY_TABS: { id: 'all' | TaskCategory; label: string; icon: any; color: string }[] = [
+  { id: 'all', label: '全部', icon: FileText, color: 'text-text-secondary' },
+  { id: '学习', label: '学习', icon: BookOpen, color: 'text-blue-500' },
+  { id: '家务', label: '家务', icon: Home, color: 'text-emerald-500' },
+  { id: '行为习惯', label: '习惯', icon: Smile, color: 'text-amber-500' },
+  { id: '运动', label: '运动', icon: Dumbbell, color: 'text-rose-500' },
+  { id: '其他', label: '其他', icon: MoreHorizontal, color: 'text-purple-500' },
+];
+
 export function TaskListPage() {
   const navigate = useNavigate();
   const childStore = useChildStore();
   const [statusTab, setStatusTab] = useState<'all' | TaskStatus>('all');
+  const [categoryTab, setCategoryTab] = useState<'all' | TaskCategory>('all');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,12 +70,23 @@ export function TaskListPage() {
     };
   }, [statusTab]);
 
+  const filteredTasks = tasks.filter((task) => {
+    if (categoryTab === 'all') return true;
+    return task.category === categoryTab;
+  });
+
   const currentChild = useChildStore.getState().getCurrentChild();
   const childrenList = useChildStore.getState().children;
 
   const inProgressCount = tasks.filter((t) => t.status === 1).length;
   const submittedCount = tasks.filter((t) => t.status === 2).length;
   const completedCount = tasks.filter((t) => t.status === 3).length;
+
+  const categoryStats = tasks.reduce((acc, task) => {
+    const cat = task.category || '其他';
+    acc[cat] = (acc[cat] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   if (loading) {
     return (
@@ -171,21 +193,73 @@ export function TaskListPage() {
         </div>
       </div>
 
+      <div className="px-4 mb-4">
+        <div className="max-w-lg mx-auto">
+          <div className="flex gap-2 overflow-x-auto bg-bg rounded-xl p-1">
+            {CATEGORY_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = categoryTab === tab.id;
+              return (
+                <button
+                  key={String(tab.id)}
+                  onClick={() => setCategoryTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg whitespace-nowrap text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-white shadow-sm text-text-primary'
+                      : 'text-text-tertiary hover:text-text-secondary hover:bg-white/50'
+                  }`}
+                >
+                  <Icon size={14} className={isActive ? tab.color : ''} />
+                  <span>{tab.label}</span>
+                  {tab.id !== 'all' && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${isActive ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-text-tertiary'}`}>
+                      {categoryStats[tab.id] || 0}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       <div className="px-4 max-w-lg mx-auto">
-        {tasks.length > 0 ? (
+        {filteredTasks.length > 0 ? (
           <div className="space-y-3">
-            {tasks.map((task) => (
+            {filteredTasks.map((task) => (
               <div
                 key={task.id}
                 onClick={() => navigate(`/task/${task.id}`)}
-                className="cursor-pointer bg-card rounded-2xl p-4 shadow-sm"
+                className="cursor-pointer bg-card rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow"
               >
-                <div className="font-medium text-text-primary">{task.title}</div>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-sm text-text-tertiary">{task.points} 积分</span>
-                  <span className="text-xs text-text-tertiary">
-                    {task.status === 1 ? '进行中' : task.status === 2 ? '待验收' : task.status === 3 ? '已完成' : '已拒绝'}
-                  </span>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="font-medium text-text-primary">{task.title}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {task.category && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${(() => {
+                          const catConfig = CATEGORY_TABS.find((c) => c.id === task.category);
+                          if (catConfig) {
+                            if (catConfig.id === '学习') return 'bg-blue-50 text-blue-500';
+                            if (catConfig.id === '家务') return 'bg-emerald-50 text-emerald-500';
+                            if (catConfig.id === '行为习惯') return 'bg-amber-50 text-amber-500';
+                            if (catConfig.id === '运动') return 'bg-rose-50 text-rose-500';
+                            return 'bg-purple-50 text-purple-500';
+                          }
+                          return 'bg-gray-100 text-text-tertiary';
+                        })()}`}>
+                          {task.category}
+                        </span>
+                      )}
+                      <span className="text-xs text-text-tertiary">
+                        {task.status === 1 ? '进行中' : task.status === 2 ? '待验收' : task.status === 3 ? '已完成' : '已拒绝'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right ml-3">
+                    <span className="text-sm font-semibold text-primary">+{task.points}</span>
+                    <span className="text-xs text-text-tertiary">积分</span>
+                  </div>
                 </div>
               </div>
             ))}

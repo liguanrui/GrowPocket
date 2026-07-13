@@ -124,6 +124,12 @@ type createTaskTemplateReq struct {
 	Icon        string `json:"icon" binding:"max=50"`
 	Category    string `json:"category" binding:"max=50"`
 	SortOrder   int    `json:"sort_order"`
+	MinAge      int    `json:"min_age"`
+	MaxAge      int    `json:"max_age"`
+	EstimatedTime int `json:"estimated_time"`
+	Difficulty  string `json:"difficulty"`
+	Frequency   string `json:"frequency"`
+	Tags        string `json:"tags"`
 }
 
 func (h *TaskTemplateHandler) CreateTemplate(c *gin.Context) {
@@ -142,6 +148,12 @@ func (h *TaskTemplateHandler) CreateTemplate(c *gin.Context) {
 		req.Category,
 		req.Points,
 		req.SortOrder,
+		req.MinAge,
+		req.MaxAge,
+		req.EstimatedTime,
+		req.Difficulty,
+		req.Frequency,
+		req.Tags,
 	)
 	if err != nil {
 		util.FailInternal(c, err.Error())
@@ -151,13 +163,19 @@ func (h *TaskTemplateHandler) CreateTemplate(c *gin.Context) {
 }
 
 type updateTaskTemplateReq struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	Points      *int    `json:"points"`
-	Icon        *string `json:"icon"`
-	Category    *string `json:"category"`
-	SortOrder   *int    `json:"sort_order"`
-	IsActive    *bool   `json:"is_active"`
+	Title        *string `json:"title"`
+	Description  *string `json:"description"`
+	Points       *int    `json:"points"`
+	Icon         *string `json:"icon"`
+	Category     *string `json:"category"`
+	Difficulty   *string `json:"difficulty"`
+	Frequency    *string `json:"frequency"`
+	Tags         *string `json:"tags"`
+	SortOrder    *int    `json:"sort_order"`
+	MinAge       *int    `json:"min_age"`
+	MaxAge       *int    `json:"max_age"`
+	EstimatedTime *int   `json:"estimated_time"`
+	IsActive     *bool   `json:"is_active"`
 }
 
 func (h *TaskTemplateHandler) UpdateTemplate(c *gin.Context) {
@@ -180,8 +198,14 @@ func (h *TaskTemplateHandler) UpdateTemplate(c *gin.Context) {
 		req.Description,
 		req.Icon,
 		req.Category,
+		req.Difficulty,
+		req.Frequency,
+		req.Tags,
 		req.Points,
 		req.SortOrder,
+		req.MinAge,
+		req.MaxAge,
+		req.EstimatedTime,
 		req.IsActive,
 	)
 	if err != nil {

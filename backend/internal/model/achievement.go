@@ -74,16 +74,43 @@ type AchievementAward struct {
 // TaskTemplate 常见任务模板表
 // 用户可以自定义任务模板，方便快速创建同类任务
 type TaskTemplate struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	FamilyID    uint      `gorm:"index;not null" json:"family_id"`
-	Title       string    `gorm:"size:200;not null" json:"title"`
-	Description string    `gorm:"type:text" json:"description"`
-	Points      int       `gorm:"not null;default:10" json:"points"` // 默认奖励分数
-	Icon        string    `gorm:"size:50;default:'⭐'" json:"icon"`  // 图标 emoji
-	Category    string    `gorm:"size:50;default:'学习'" json:"category"` // 分类：学习/家务/行为习惯/运动/其他
-	SortOrder   int       `gorm:"not null;default:0" json:"sort_order"`  // 排序
-	IsActive    bool      `gorm:"not null;default:true" json:"is_active"` // 是否启用
-	CreatedBy   uint      `gorm:"not null" json:"created_by"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	FamilyID      uint      `gorm:"index;not null" json:"family_id"`
+	Title         string    `gorm:"size:200;not null" json:"title"`
+	Description   string    `gorm:"type:text" json:"description"`
+	Points        int       `gorm:"not null;default:10" json:"points"` // 默认奖励分数
+	Icon          string    `gorm:"size:50;default:'⭐'" json:"icon"`  // 图标 emoji
+	Category      string    `gorm:"size:50;default:'学习'" json:"category"` // 分类：学习/家务/行为习惯/运动/其他
+	SortOrder     int       `gorm:"not null;default:0" json:"sort_order"`  // 排序
+	IsActive      bool      `gorm:"not null;default:true" json:"is_active"` // 是否启用
+	CreatedBy     uint      `gorm:"not null" json:"created_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	MinAge        int       `gorm:"default:3" json:"min_age"`           // 最小适龄
+	MaxAge        int       `gorm:"default:12" json:"max_age"`          // 最大适龄
+	Difficulty    string    `gorm:"size:20;default:'medium'" json:"difficulty"` // 难度：easy/medium/hard
+	Frequency     string    `gorm:"size:20;default:'once'" json:"frequency"`    // 频次：daily/weekly/monthly/once
+	EstimatedTime int       `gorm:"default:15" json:"estimated_time"`   // 预计完成时间（分钟）
+	Tags          string    `gorm:"size:200" json:"tags,omitempty"`     // 标签，逗号分隔
+	IsSystem      bool      `gorm:"default:false" json:"is_system"`     // 是否系统内置模板
+}
+
+// TaskRecurringConfig 循环任务配置表
+// 用于定义每日/每周/每月重复的任务
+type TaskRecurringConfig struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	FamilyID        uint      `gorm:"index;not null" json:"family_id"`
+	TemplateID      uint      `gorm:"index" json:"template_id"`
+	ChildID         uint      `gorm:"index;not null" json:"child_id"`
+	ChildName       string    `gorm:"size:50;not null" json:"child_name"`
+	Title           string    `gorm:"size:200;not null" json:"title"`
+	Description     string    `gorm:"type:text" json:"description"`
+	Points          int       `gorm:"not null;default:10" json:"points"`
+	Frequency       string    `gorm:"size:20;not null" json:"frequency"` // daily/weekly/monthly
+	WeekDays        string    `gorm:"size:20" json:"week_days"`          // 每周哪几天，如 "1,3,5" 表示周一三五（周日=0）
+	IsActive        bool      `gorm:"not null;default:true" json:"is_active"`
+	NextGenerateAt  time.Time `json:"next_generate_at"`
+	CreatedBy       uint      `gorm:"not null" json:"created_by"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }

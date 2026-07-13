@@ -18,6 +18,10 @@ export interface Task {
   deadline?: string;
   created_at: string;
   updated_at: string;
+  category?: string;
+  difficulty?: string;
+  frequency?: string;
+  recurring_id?: number;
 }
 
 export interface CreateTaskInput {

@@ -33,6 +33,9 @@ export interface Family {
 // - 普通任务：status 从 in_progress → submitted → completed/rejected
 // - 手动积分调整（奖惩类）：创建时 status 直接 = completed，points 为正数奖励，负数表示扣除
 export type TaskStatus = 'in_progress' | 'submitted' | 'completed' | 'rejected';
+export type TaskDifficulty = 'easy' | 'medium' | 'hard';
+export type TaskFrequency = 'daily' | 'weekly' | 'monthly' | 'once';
+export type TaskCategory = '学习' | '家务' | '行为习惯' | '运动' | '其他';
 
 export interface Task {
   id: string;
@@ -48,6 +51,56 @@ export interface Task {
   deadline?: Date;
   createdAt: Date;
   updatedAt: Date;
+  category?: TaskCategory;
+  difficulty?: TaskDifficulty;
+  frequency?: TaskFrequency;
+  recurringId?: string;
+}
+
+export interface TaskTemplate {
+  id: number;
+  familyId: number;
+  title: string;
+  description: string;
+  points: number;
+  icon: string;
+  category: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+  minAge: number;
+  maxAge: number;
+  difficulty: TaskDifficulty;
+  frequency: TaskFrequency;
+  estimatedTime: number;
+  tags?: string;
+  isSystem: boolean;
+}
+
+export interface RecommendedTask extends TaskTemplate {
+  reason: string;
+  score: number;
+  ageMatch: boolean;
+}
+
+export interface TaskRecurringConfig {
+  id: number;
+  familyId: number;
+  templateId: number;
+  childId: number;
+  childName: string;
+  title: string;
+  description: string;
+  points: number;
+  frequency: TaskFrequency;
+  weekDays: string;
+  isActive: boolean;
+  nextGenerateAt: string;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // 积分变动记录

@@ -113,6 +113,19 @@ func main() {
 		authorized.DELETE("/task-templates/:id", taskTemplateHandler.DeleteTemplate)
 		authorized.POST("/task-templates/:id/create-task", taskTemplateHandler.CreateTaskFromTemplate)
 
+		// AI 智能推荐
+		taskRecommendHandler := handler.NewTaskRecommendHandler()
+		authorized.GET("/task-recommendations", taskRecommendHandler.GetRecommendations)
+
+		// 循环任务配置
+		taskRecurringHandler := handler.NewTaskRecurringHandler()
+		authorized.POST("/task-recurring-configs", taskRecurringHandler.CreateRecurringConfig)
+		authorized.GET("/task-recurring-configs", taskRecurringHandler.ListRecurringConfigs)
+		authorized.GET("/task-recurring-configs/:id", taskRecurringHandler.GetRecurringConfig)
+		authorized.PUT("/task-recurring-configs/:id", taskRecurringHandler.UpdateRecurringConfig)
+		authorized.DELETE("/task-recurring-configs/:id", taskRecurringHandler.DeleteRecurringConfig)
+		authorized.POST("/task-recurring-configs/generate", taskRecurringHandler.GenerateTasks)
+
 		// 社区 - 分享
 		communityHandler := handler.NewCommunityHandler()
 		authorized.POST("/community/shares", communityHandler.CreateShare)
