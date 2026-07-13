@@ -8,6 +8,8 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	_ "modernc.org/sqlite"
 )
 
 var DB *gorm.DB
@@ -21,7 +23,10 @@ func Init(dbPath string) {
 		}
 	}
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Dialector{
+		DSN:        dbPath,
+		DriverName: "sqlite",
+	}, &gorm.Config{})
 	if err != nil {
 		log.Fatalf("打开 SQLite 数据库失败: %v", err)
 	}

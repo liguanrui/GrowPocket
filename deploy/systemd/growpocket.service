@@ -1,0 +1,20 @@
+[Unit]
+Description=GrowPocket Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/growpocket/backend
+ExecStart=/opt/growpocket/backend/growpocket
+Restart=on-failure
+RestartSec=5
+
+Environment="PORT=8080"
+Environment="DB_PATH=/opt/growpocket/backend/data/growpocket.db"
+Environment="UPLOAD_DIR=/opt/growpocket/backend/uploads"
+Environment="JWT_SECRET=growpocket-secret-key-change-in-production"
+Environment="JWT_DURATION_HOUR=24"
+
+[Install]
+WantedBy=multi-user.target

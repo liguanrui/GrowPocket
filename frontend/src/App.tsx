@@ -12,7 +12,7 @@ import { ScorePage } from './pages/ScorePage';
 import { ScoreAdjustPage } from './pages/ScoreAdjustPage';
 import { CreateTaskPage } from './pages/CreateTaskPage';
 import { CreateItemPage } from './pages/CreateItemPage';
-import { CreateActivityPage } from './pages/CreateActivityPage';
+import CreateActivityPage from './pages/CreateActivityPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AchievementEditPage } from './pages/AchievementEditPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
@@ -22,7 +22,6 @@ import { TemplateEditPage } from './pages/TemplateEditPage';
 import { AchievementSettingsPage } from './pages/AchievementSettingsPage';
 import { AchievementListPage } from './pages/AchievementListPage';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 type PageKey = 'home' | 'mall' | 'growth' | 'community' | 'settings';
@@ -54,7 +53,6 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
       <Route
         path="/"
         element={
