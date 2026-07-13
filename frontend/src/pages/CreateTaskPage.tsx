@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, User, CalendarDays, Sparkles } from 'lucide-react';
+import { ArrowLeft, Star, User, CalendarDays, Sparkles, Bot, RefreshCw } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
 import { listTaskTemplates } from '../services/taskTemplates';
+import { getTaskRecommendations } from '../services/taskRecommend';
 import type { TaskTemplate } from '../services/taskTemplates';
+import type { RecommendedTask } from '../types';
 
 function PointsInput({ points, onChange }: { points: number; onChange: (n: number) => void }) {
   const presets = [20, 50, 100, 200];
@@ -178,6 +180,117 @@ function TaskTemplates({
   );
 }
 
+function RecommendedTasks({
+  recommendations,
+  loading,
+  childName,
+  onRefresh,
+  onPick,
+}: {
+  recommendations: RecommendedTask[];
+  loading: boolean;
+  childName: string;
+  onRefresh: () => void;
+  onPick: (title: string, desc: string, points: number) => void;
+}) {
+  const difficultyLabels: Record<string, string> = {
+    easy: '简单',
+    medium: '适中',
+    hard: '困难',
+  };
+
+  const difficultyColors: Record<string, string> = {
+    easy: 'text-emerald-500 bg-emerald-50',
+    medium: 'text-amber-500 bg-amber-50',
+    hard: 'text-rose-500 bg-rose-50',
+  };
+
+  const frequencyLabels: Record<string, string> = {
+    daily: '每日',
+    weekly: '每周',
+    monthly: '每月',
+    once: '一次',
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
+            <Bot size={16} className="text-white" />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-text-primary">AI 智能推荐</label>
+            <label className="block text-xs text-text-tertiary">为 {childName} 量身推荐</label>
+          </div>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="p-2 rounded-lg hover:bg-white/50 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={16} className={loading ? 'animate-spin text-text-tertiary' : 'text-text-secondary'} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="bg-white rounded-xl p-4 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gray-200" />
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-200 rounded w-1/2 mb-1" />
+                  <div className="h-3 bg-gray-100 rounded w-1/3" />
+                </div>
+                <div className="w-12 h-6 bg-gray-200 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : recommendations.length === 0 ? (
+        <div className="text-center py-6 text-sm text-text-tertiary">
+          暂无推荐任务，请选择孩子后重试
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {recommendations.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => onPick(t.title, t.description, t.points)}
+              className="w-full text-left bg-white rounded-xl p-4 hover:shadow-md transition-all"
+            >
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">{t.icon}</div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-text-primary">{t.title}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${difficultyColors[t.difficulty]}`}>
+                      {difficultyLabels[t.difficulty]}
+                    </span>
+                    {t.frequency !== 'once' && (
+                      <span className="px-1.5 py-0.5 rounded text-xs font-medium text-blue-500 bg-blue-50">
+                        {frequencyLabels[t.frequency]}
+                      </span>
+                    )}
+                  </div>
+                  {t.reason && (
+                    <div className="text-xs text-text-tertiary mt-1">{t.reason}</div>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-semibold text-primary">+{t.points}</span>
+                  <span className="text-xs text-text-tertiary">积分</span>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CreateTaskPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -193,6 +306,8 @@ export function CreateTaskPage() {
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [recommendations, setRecommendations] = useState<RecommendedTask[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -202,7 +317,6 @@ export function CreateTaskPage() {
         await childStore.fetchChildren();
         const children = useChildStore.getState().children;
         if (children.length > 0) {
-          // 优先从URL参数获取，其次使用currentChildId，最后使用第一个孩子
           const urlChildId = searchParams.get('child_id');
           const targetId = urlChildId ? Number(urlChildId) : useChildStore.getState().currentChildId;
           const validId = targetId && children.some((c) => c.id === targetId) ? targetId : children[0].id;
@@ -216,7 +330,6 @@ export function CreateTaskPage() {
         if (mounted) setLoading(false);
       }
 
-      // 拉取任务模板列表
       setTemplatesLoading(true);
       try {
         const list = await listTaskTemplates();
@@ -224,7 +337,6 @@ export function CreateTaskPage() {
           setTemplates(list.filter((t) => t.is_active));
         }
       } catch (e: any) {
-        // 模板加载失败不阻断页面
         if (mounted) setTemplates([]);
       } finally {
         if (mounted) setTemplatesLoading(false);
@@ -235,6 +347,25 @@ export function CreateTaskPage() {
       mounted = false;
     };
   }, [searchParams]);
+
+  useEffect(() => {
+    if (childId) {
+      fetchRecommendations();
+    }
+  }, [childId]);
+
+  async function fetchRecommendations() {
+    if (!childId) return;
+    setRecommendationsLoading(true);
+    try {
+      const list = await getTaskRecommendations({ childId, count: 5 });
+      setRecommendations(list);
+    } catch (e: any) {
+      setRecommendations([]);
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -281,6 +412,7 @@ export function CreateTaskPage() {
   }
 
   const children = useChildStore.getState().children;
+  const currentChild = children.find((c) => c.id === childId);
 
   return (
     <div className="min-h-screen bg-bg pb-24">
@@ -327,6 +459,20 @@ export function CreateTaskPage() {
 
           <DeadlinePicker deadline={deadline} onChange={setDeadline} />
         </div>
+
+        {childId && currentChild && (
+          <RecommendedTasks
+            recommendations={recommendations}
+            loading={recommendationsLoading}
+            childName={currentChild.nickname}
+            onRefresh={fetchRecommendations}
+            onPick={(t, d, p) => {
+              setTitle(t);
+              setDescription(d);
+              setPoints(p);
+            }}
+          />
+        )}
 
         <div className="bg-card rounded-2xl p-5 shadow-sm">
           <TaskTemplates

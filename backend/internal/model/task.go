@@ -20,6 +20,10 @@ type Task struct {
 	Deadline    *time.Time `json:"deadline,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Category    string    `gorm:"size:50" json:"category"`           // 任务分类：学习/家务/行为习惯/运动/其他
+	Difficulty  string    `gorm:"size:20" json:"difficulty"`         // 难度：easy/medium/hard
+	Frequency   string    `gorm:"size:20" json:"frequency"`          // 频次：daily/weekly/monthly/once
+	RecurringID *uint     `gorm:"index" json:"recurring_id"`         // 关联循环任务配置ID
 }
 
 const (
