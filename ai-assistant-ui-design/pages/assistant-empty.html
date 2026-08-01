@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI助理 · 空状态</title>
+    <style id="theme-vars">
+/* ===== GrowPocket AI Assistant — Design Tokens ===== */
+/* Brand prefix: gp | Single primary hue: warm orange #F59E6B */
+
+:root {
+  /* --- Surfaces --- */
+  --gp-background: #FFFAF4;
+  --gp-foreground: #2D2A26;
+
+  --gp-card: #FFFFFF;
+  --gp-card-foreground: #2D2A26;
+
+  --gp-popover: #FFFFFF;
+  --gp-popover-foreground: #2D2A26;
+
+  --gp-muted: #FFF1E6;
+  --gp-muted-foreground: #7A7168;
+
+  /* --- Brand primary (single hue) --- */
+  --gp-primary: #F59E6B;
+  --gp-primary-foreground: #FFFFFF;
+
+  /* --- Lines & inputs --- */
+  --gp-border: #F5E6D3;
+  --gp-input: #F5E6D3;
+  --gp-ring: #F59E6B;
+
+  /* --- State colors (semantic only, not brand) --- */
+  --gp-state-success: #6DBF7B;
+  --gp-state-warning: #F0B848;
+  --gp-state-error: #E87461;
+  --gp-state-info: #5B9BD5;
+
+  /* --- Radius scale --- */
+  --gp-radius-sm: 8px;
+  --gp-radius-md: 12px;
+  --gp-radius-lg: 16px;
+  --gp-radius-pill: 999px;
+
+  /* --- Typography --- */
+  --gp-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--gp-background);
+    --color-foreground: var(--gp-foreground);
+    --color-card: var(--gp-card);
+    --color-card-foreground: var(--gp-card-foreground);
+    --color-popover: var(--gp-popover);
+    --color-popover-foreground: var(--gp-popover-foreground);
+    --color-primary: var(--gp-primary);
+    --color-primary-foreground: var(--gp-primary-foreground);
+    --color-muted: var(--gp-muted);
+    --color-muted-foreground: var(--gp-muted-foreground);
+    --color-border: var(--gp-border);
+    --color-input: var(--gp-input);
+    --color-ring: var(--gp-ring);
+    --radius-sm: var(--gp-radius-sm);
+    --radius-md: var(--gp-radius-md);
+    --radius-lg: var(--gp-radius-lg);
+  }
+  @layer base {
+    body { background: var(--gp-background); color: var(--gp-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--gp-background); }
+      .text-background { color: var(--gp-background); }
+      .border-background { border-color: var(--gp-background); }
+      .ring-background { --tw-ring-color: var(--gp-background); }
+      .bg-foreground { background-color: var(--gp-foreground); }
+      .text-foreground { color: var(--gp-foreground); }
+      .border-foreground { border-color: var(--gp-foreground); }
+      .ring-foreground { --tw-ring-color: var(--gp-foreground); }
+      .bg-card { background-color: var(--gp-card); }
+      .text-card { color: var(--gp-card); }
+      .border-card { border-color: var(--gp-card); }
+      .ring-card { --tw-ring-color: var(--gp-card); }
+      .bg-card-foreground { background-color: var(--gp-card-foreground); }
+      .text-card-foreground { color: var(--gp-card-foreground); }
+      .border-card-foreground { border-color: var(--gp-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--gp-card-foreground); }
+      .bg-popover { background-color: var(--gp-popover); }
+      .text-popover { color: var(--gp-popover); }
+      .border-popover { border-color: var(--gp-popover); }
+      .ring-popover { --tw-ring-color: var(--gp-popover); }
+      .bg-popover-foreground { background-color: var(--gp-popover-foreground); }
+      .text-popover-foreground { color: var(--gp-popover-foreground); }
+      .border-popover-foreground { border-color: var(--gp-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--gp-popover-foreground); }
+      .bg-primary { background-color: var(--gp-primary); }
+      .text-primary { color: var(--gp-primary); }
+      .border-primary { border-color: var(--gp-primary); }
+      .ring-primary { --tw-ring-color: var(--gp-primary); }
+      .bg-primary-foreground { background-color: var(--gp-primary-foreground); }
+      .text-primary-foreground { color: var(--gp-primary-foreground); }
+      .border-primary-foreground { border-color: var(--gp-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--gp-primary-foreground); }
+      .bg-muted { background-color: var(--gp-muted); }
+      .text-muted { color: var(--gp-muted); }
+      .border-muted { border-color: var(--gp-muted); }
+      .ring-muted { --tw-ring-color: var(--gp-muted); }
+      .bg-muted-foreground { background-color: var(--gp-muted-foreground); }
+      .text-muted-foreground { color: var(--gp-muted-foreground); }
+      .border-muted-foreground { border-color: var(--gp-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--gp-muted-foreground); }
+      .bg-border { background-color: var(--gp-border); }
+      .text-border { color: var(--gp-border); }
+      .border-border { border-color: var(--gp-border); }
+      .ring-border { --tw-ring-color: var(--gp-border); }
+      .bg-input { background-color: var(--gp-input); }
+      .text-input { color: var(--gp-input); }
+      .border-input { border-color: var(--gp-input); }
+      .ring-input { --tw-ring-color: var(--gp-input); }
+      .bg-ring { background-color: var(--gp-ring); }
+      .text-ring { color: var(--gp-ring); }
+      .border-ring { border-color: var(--gp-ring); }
+      .ring-ring { --tw-ring-color: var(--gp-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+    <style id="critical-layout">
+      /* === Responsive-safe static layout for the mobile chat frame === */
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body { max-width: 100%; overflow-x: clip; }
+      .app-shell {
+        max-width: 448px;
+        margin: 0 auto;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--gp-background);
+        position: relative;
+      }
+      .app-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        background: rgba(255, 255, 255, 0.85);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--gp-border);
+      }
+      .app-body {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: calc(100vh - 56px - 80px);
+        padding: 32px 24px;
+      }
+      .app-input {
+        position: sticky;
+        bottom: 0;
+        z-index: 40;
+        background: rgba(255, 255, 255, 0.95);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid var(--gp-border);
+        padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+      }
+      .icon-20 { width: 20px; height: 20px; }
+      .icon-18 { width: 18px; height: 18px; }
+      .icon-10 { width: 10px; height: 10px; }
+      .keep-all { word-break: keep-all; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <div class="app-shell">
+      <!-- ===== Section 1: Fixed Header (sticky top, z-50) ===== -->
+      <header class="app-header" data-region="fixed-header">
+        <div class="flex items-center gap-2">
+          <button data-dom-id="drawer-toggle" type="button" aria-label="打开侧边栏" class="w-10 h-10 rounded-lg bg-muted/50 hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors">
+            <i data-lucide="panel-left" class="icon-20"></i>
+          </button>
+          <!-- new-session button hidden: no chat history -->
+        </div>
+        <div class="flex items-center gap-2">
+          <button data-dom-id="child-switch" type="button" aria-label="切换孩子" class="relative flex items-center">
+            <span class="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center">
+              <span class="font-bold text-primary text-sm">明</span>
+            </span>
+            <span class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground">
+              <i data-lucide="chevron-down" class="icon-10"></i>
+            </span>
+          </button>
+          <button data-dom-id="voice-toggle" type="button" aria-label="语音" class="w-10 h-10 rounded-lg bg-muted/50 hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors">
+            <i data-lucide="volume-2" class="icon-20"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- ===== Section 2: Body — Empty State (flex-1, centered) ===== -->
+      <main class="app-body" data-region="empty-body">
+        <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-32 h-32 rounded-2xl object-cover shadow-md mb-6" />
+        <h1 class="text-2xl font-bold text-foreground mb-2 text-balance keep-all">下午好，我是小萌芽</h1>
+        <p class="text-sm text-muted-foreground mb-8 keep-all">有什么我可以帮你的吗？</p>
+        <div class="flex flex-col gap-3 w-full max-w-xs">
+          <button data-dom-id="quick-phrase-1" type="button" class="bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/50 transition-colors">
+            <span class="bg-primary/10 rounded-lg w-9 h-9 flex items-center justify-center text-primary shrink-0">
+              <i data-lucide="star" class="icon-20"></i>
+            </span>
+            <span class="text-sm text-foreground font-medium keep-all">我的积分是多少？</span>
+          </button>
+          <button data-dom-id="quick-phrase-2" type="button" class="bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/50 transition-colors">
+            <span class="bg-primary/10 rounded-lg w-9 h-9 flex items-center justify-center text-primary shrink-0">
+              <i data-lucide="check-square" class="icon-20"></i>
+            </span>
+            <span class="text-sm text-foreground font-medium keep-all">今日任务是什么？</span>
+          </button>
+          <button data-dom-id="quick-phrase-3" type="button" class="bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/50 transition-colors">
+            <span class="bg-primary/10 rounded-lg w-9 h-9 flex items-center justify-center text-primary shrink-0">
+              <i data-lucide="trending-up" class="icon-20"></i>
+            </span>
+            <span class="text-sm text-foreground font-medium keep-all">帮我看看成长报告</span>
+          </button>
+          <button data-dom-id="quick-phrase-4" type="button" class="bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/50 transition-colors">
+            <span class="bg-primary/10 rounded-lg w-9 h-9 flex items-center justify-center text-primary shrink-0">
+              <i data-lucide="gift" class="icon-20"></i>
+            </span>
+            <span class="text-sm text-foreground font-medium keep-all">最近有什么奖励？</span>
+          </button>
+        </div>
+      </main>
+
+      <!-- ===== Section 3: Bottom Input Bar (sticky bottom, z-40) ===== -->
+      <footer class="app-input" data-region="bottom-input">
+        <div class="flex items-center gap-2 max-w-md mx-auto">
+          <input type="text" placeholder="对小萌芽说点什么..." class="flex-1 h-11 px-4 bg-muted rounded-lg border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary keep-all" />
+          <button data-dom-id="input-mode-toggle" type="button" aria-label="切换为语音输入" class="w-11 h-11 shrink-0 rounded-lg bg-muted/50 hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors">
+            <i data-lucide="keyboard" class="icon-20"></i>
+          </button>
+          <button data-dom-id="send-btn" type="button" aria-label="发送" class="w-11 h-11 shrink-0 bg-primary text-primary-foreground rounded-lg flex items-center justify-center hover:opacity-90 transition-opacity">
+            <i data-lucide="send" class="icon-18"></i>
+          </button>
+        </div>
+      </footer>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

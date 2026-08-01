@@ -19,6 +19,52 @@ func NewGrowthStoryHandler(svc *service.GrowthStoryService) *GrowthStoryHandler 
 	return &GrowthStoryHandler{service: svc}
 }
 
+// ListStories GET /api/growth-stories?child_id=xxx&page=1&page_size=20
+// 查询儿童所有成长故事历史（按时间倒序）
+func (h *GrowthStoryHandler) ListStories(c *gin.Context) {
+	childID64, err := strconv.ParseUint(c.Query("child_id"), 10, 32)
+	if err != nil || childID64 == 0 {
+		util.FailBadRequest(c, "请提供 child_id")
+		return
+	}
+	childID := uint(childID64)
+	familyID := middleware.GetFamilyID(c)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+
+	stories, total, err := h.service.ListStories(childID, familyID, page, pageSize)
+	if err != nil {
+		util.FailInternal(c, "查询成长故事失败")
+		return
+	}
+	util.OK(c, gin.H{
+		"items": stories,
+		"total": total,
+		"page":  page,
+		"page_size": pageSize,
+	})
+}
+
+// GetCycleTasks GET /api/growth-stories/:cycle_id/tasks
+// 查询周期内所有已完成任务（子任务时间线）
+func (h *GrowthStoryHandler) GetCycleTasks(c *gin.Context) {
+	cycleID64, err := strconv.ParseUint(c.Param("cycle_id"), 10, 32)
+	if err != nil || cycleID64 == 0 {
+		util.FailBadRequest(c, "无效的周期 ID")
+		return
+	}
+	cycleID := uint(cycleID64)
+	familyID := middleware.GetFamilyID(c)
+
+	tasks, err := h.service.GetCycleTasks(cycleID, familyID)
+	if err != nil {
+		util.FailNotFound(c, err.Error())
+		return
+	}
+	util.OK(c, tasks)
+}
+
 // GenerateStory POST /api/growth-stories/:cycle_id
 func (h *GrowthStoryHandler) GenerateStory(c *gin.Context) {
 	cycleID64, err := strconv.ParseUint(c.Param("cycle_id"), 10, 32)

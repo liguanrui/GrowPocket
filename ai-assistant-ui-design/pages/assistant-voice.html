@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI助理 · 语音输入</title>
+    <style id="theme-vars">
+/* ===== GrowPocket AI Assistant — Design Tokens ===== */
+/* Brand prefix: gp | Single primary hue: warm orange #F59E6B */
+
+:root {
+  /* --- Surfaces --- */
+  --gp-background: #FFFAF4;
+  --gp-foreground: #2D2A26;
+
+  --gp-card: #FFFFFF;
+  --gp-card-foreground: #2D2A26;
+
+  --gp-popover: #FFFFFF;
+  --gp-popover-foreground: #2D2A26;
+
+  --gp-muted: #FFF1E6;
+  --gp-muted-foreground: #7A7168;
+
+  /* --- Brand primary (single hue) --- */
+  --gp-primary: #F59E6B;
+  --gp-primary-foreground: #FFFFFF;
+
+  /* --- Lines & inputs --- */
+  --gp-border: #F5E6D3;
+  --gp-input: #F5E6D3;
+  --gp-ring: #F59E6B;
+
+  /* --- State colors (semantic only, not brand) --- */
+  --gp-state-success: #6DBF7B;
+  --gp-state-warning: #F0B848;
+  --gp-state-error: #E87461;
+  --gp-state-info: #5B9BD5;
+
+  /* --- Radius scale --- */
+  --gp-radius-sm: 8px;
+  --gp-radius-md: 12px;
+  --gp-radius-lg: 16px;
+  --gp-radius-pill: 999px;
+
+  /* --- Typography --- */
+  --gp-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--gp-background);
+    --color-foreground: var(--gp-foreground);
+    --color-card: var(--gp-card);
+    --color-card-foreground: var(--gp-card-foreground);
+    --color-popover: var(--gp-popover);
+    --color-popover-foreground: var(--gp-popover-foreground);
+    --color-primary: var(--gp-primary);
+    --color-primary-foreground: var(--gp-primary-foreground);
+    --color-muted: var(--gp-muted);
+    --color-muted-foreground: var(--gp-muted-foreground);
+    --color-border: var(--gp-border);
+    --color-input: var(--gp-input);
+    --color-ring: var(--gp-ring);
+    --radius-sm: var(--gp-radius-sm);
+    --radius-md: var(--gp-radius-md);
+    --radius-lg: var(--gp-radius-lg);
+  }
+  @layer base {
+    body { background: var(--gp-background); color: var(--gp-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--gp-background); }
+      .text-background { color: var(--gp-background); }
+      .border-background { border-color: var(--gp-background); }
+      .ring-background { --tw-ring-color: var(--gp-background); }
+      .bg-foreground { background-color: var(--gp-foreground); }
+      .text-foreground { color: var(--gp-foreground); }
+      .border-foreground { border-color: var(--gp-foreground); }
+      .ring-foreground { --tw-ring-color: var(--gp-foreground); }
+      .bg-card { background-color: var(--gp-card); }
+      .text-card { color: var(--gp-card); }
+      .border-card { border-color: var(--gp-card); }
+      .ring-card { --tw-ring-color: var(--gp-card); }
+      .bg-card-foreground { background-color: var(--gp-card-foreground); }
+      .text-card-foreground { color: var(--gp-card-foreground); }
+      .border-card-foreground { border-color: var(--gp-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--gp-card-foreground); }
+      .bg-popover { background-color: var(--gp-popover); }
+      .text-popover { color: var(--gp-popover); }
+      .border-popover { border-color: var(--gp-popover); }
+      .ring-popover { --tw-ring-color: var(--gp-popover); }
+      .bg-popover-foreground { background-color: var(--gp-popover-foreground); }
+      .text-popover-foreground { color: var(--gp-popover-foreground); }
+      .border-popover-foreground { border-color: var(--gp-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--gp-popover-foreground); }
+      .bg-primary { background-color: var(--gp-primary); }
+      .text-primary { color: var(--gp-primary); }
+      .border-primary { border-color: var(--gp-primary); }
+      .ring-primary { --tw-ring-color: var(--gp-primary); }
+      .bg-primary-foreground { background-color: var(--gp-primary-foreground); }
+      .text-primary-foreground { color: var(--gp-primary-foreground); }
+      .border-primary-foreground { border-color: var(--gp-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--gp-primary-foreground); }
+      .bg-muted { background-color: var(--gp-muted); }
+      .text-muted { color: var(--gp-muted); }
+      .border-muted { border-color: var(--gp-muted); }
+      .ring-muted { --tw-ring-color: var(--gp-muted); }
+      .bg-muted-foreground { background-color: var(--gp-muted-foreground); }
+      .text-muted-foreground { color: var(--gp-muted-foreground); }
+      .border-muted-foreground { border-color: var(--gp-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--gp-muted-foreground); }
+      .bg-border { background-color: var(--gp-border); }
+      .text-border { color: var(--gp-border); }
+      .border-border { border-color: var(--gp-border); }
+      .ring-border { --tw-ring-color: var(--gp-border); }
+      .bg-input { background-color: var(--gp-input); }
+      .text-input { color: var(--gp-input); }
+      .border-input { border-color: var(--gp-input); }
+      .ring-input { --tw-ring-color: var(--gp-input); }
+      .bg-ring { background-color: var(--gp-ring); }
+      .text-ring { color: var(--gp-ring); }
+      .border-ring { border-color: var(--gp-ring); }
+      .ring-ring { --tw-ring-color: var(--gp-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main>
+    <style id="critical-layout">
+      /* ===== Frame geometry (mobile, max-w-md) ===== */
+      .app-frame {
+        max-width: 448px;
+        margin-inline: auto;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        background: var(--gp-background);
+        position: relative;
+        overflow-x: hidden;
+      }
+      .app-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        height: 56px;
+      }
+      .app-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 1.25rem 1rem 1.5rem;
+      }
+      .voice-bar {
+        position: sticky;
+        bottom: 0;
+        z-index: 40;
+      }
+
+      /* ===== Voice input animations ===== */
+      @keyframes mic-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.1); opacity: 0.8; }
+      }
+      @keyframes waveform {
+        0%, 100% { transform: scaleY(0.4); }
+        50% { transform: scaleY(1); }
+      }
+      @keyframes ping-ring {
+        0% { transform: scale(1); opacity: 0.6; }
+        100% { transform: scale(1.5); opacity: 0; }
+      }
+      .anim-mic-pulse { animation: mic-pulse 2s ease-in-out infinite; }
+      .anim-waveform {
+        transform-origin: center;
+        animation: waveform 0.8s ease-in-out infinite;
+      }
+      .anim-ping-ring { animation: ping-ring 1.6s ease-out infinite; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .anim-mic-pulse,
+        .anim-waveform,
+        .anim-ping-ring {
+          animation: none !important;
+        }
+      }
+    </style>
+
+    <div class="app-frame">
+      <!-- ===== Section 1: Fixed Header ===== -->
+      <header class="app-header border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div class="flex h-14 items-center justify-between px-3">
+          <!-- Left cluster -->
+          <div class="flex items-center gap-1">
+            <button data-dom-id="drawer-toggle" class="flex h-9 w-9 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted active:scale-95" aria-label="打开侧栏">
+              <i data-lucide="panel-left" class="h-5 w-5"></i>
+            </button>
+            <button data-dom-id="new-session" class="flex h-9 w-9 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted active:scale-95" aria-label="新建会话">
+              <i data-lucide="square-pen" class="h-5 w-5"></i>
+            </button>
+          </div>
+          <!-- Right cluster -->
+          <div class="flex items-center gap-2">
+            <button data-dom-id="child-switch" class="flex items-center gap-1 rounded-full py-1 pl-1 pr-2 transition-colors hover:bg-muted active:scale-95" aria-label="切换孩子">
+              <span class="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">明</span>
+              <i data-lucide="chevron-down" class="h-4 w-4 text-muted-foreground"></i>
+            </button>
+            <button data-dom-id="voice-toggle" class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors active:scale-95" aria-label="语音模式">
+              <i data-lucide="volume-2" class="h-5 w-5"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ===== Section 2: Chat Body ===== -->
+      <section class="app-body">
+        <div class="flex flex-col gap-4">
+          <!-- AI message 1 -->
+          <div class="flex items-end gap-2">
+            <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="h-8 w-8 flex-shrink-0 rounded-full object-cover" />
+            <div class="max-w-[78%] rounded-2xl rounded-bl-md bg-card px-3.5 py-2.5 text-sm leading-relaxed text-card-foreground shadow-sm border border-border">
+              你好小明！今天有什么需要帮忙的吗？
+            </div>
+          </div>
+
+          <!-- Child message (right, primary bubble) -->
+          <div class="flex items-end justify-end gap-2">
+            <div class="max-w-[78%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-sm">
+              帮我看看今日任务
+            </div>
+          </div>
+
+          <!-- AI message 2 -->
+          <div class="flex items-end gap-2">
+            <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="h-8 w-8 flex-shrink-0 rounded-full object-cover" />
+            <div class="max-w-[78%] rounded-2xl rounded-bl-md bg-card px-3.5 py-2.5 text-sm leading-relaxed text-card-foreground shadow-sm border border-border">
+              今天还有2个待完成任务，整理房间和洗碗，完成后记得拍照哦！
+            </div>
+          </div>
+
+          <!-- Recording status hint -->
+          <div class="flex items-center justify-center gap-1.5 pt-1 text-xs text-muted-foreground">
+            <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-state-error"></span>
+            <span>正在录音</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 3: Bottom Voice Input Bar ===== -->
+      <div class="voice-bar border-t border-border bg-card/95 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur">
+        <div class="flex flex-col items-center gap-3">
+          <!-- Top row: recognized text preview -->
+          <div class="flex min-h-[40px] w-full items-center justify-center rounded-lg bg-muted px-4 py-2 text-center">
+            <span class="text-sm text-muted-foreground">正在聆听...</span>
+          </div>
+
+          <!-- Middle row: waveform visualization -->
+          <div class="flex h-10 items-center justify-center gap-1" aria-hidden="true">
+            <span class="anim-waveform w-1.5 rounded-full bg-primary" style="height:12px;animation-delay:0s"></span>
+            <span class="anim-waveform w-1.5 rounded-full bg-primary" style="height:24px;animation-delay:0.1s"></span>
+            <span class="anim-waveform w-1.5 rounded-full bg-primary" style="height:16px;animation-delay:0.2s"></span>
+            <span class="anim-waveform w-1.5 rounded-full bg-primary" style="height:32px;animation-delay:0.3s"></span>
+            <span class="anim-waveform w-1.5 rounded-full bg-primary" style="height:20px;animation-delay:0.4s"></span>
+            <span class="anim-waveform w-1.5 rounded-full bg-primary" style="height:28px;animation-delay:0.5s"></span>
+            <span class="anim-waveform w-1.5 rounded-full bg-primary" style="height:12px;animation-delay:0.6s"></span>
+          </div>
+
+          <!-- Bottom row: controls -->
+          <div class="flex items-center justify-center gap-6">
+            <!-- Cancel -->
+            <button data-dom-id="voice-cancel" class="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-border active:scale-95" aria-label="取消录音">
+              <i data-lucide="x" class="h-[22px] w-[22px]"></i>
+            </button>
+
+            <!-- Microphone (large) -->
+            <button data-dom-id="voice-mic" class="anim-mic-pulse relative flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform active:scale-95" aria-label="麦克风">
+              <i data-lucide="mic" class="h-7 w-7"></i>
+              <span class="anim-ping-ring absolute inset-0 rounded-full border-2 border-primary/40"></span>
+            </button>
+
+            <!-- Keyboard toggle -->
+            <button data-dom-id="input-mode-toggle" class="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-border active:scale-95" aria-label="切换到键盘输入">
+              <i data-lucide="keyboard" class="h-[22px] w-[22px]"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </main>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

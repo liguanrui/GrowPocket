@@ -1,0 +1,41 @@
+/* ===== GrowPocket AI Assistant — Design Tokens ===== */
+/* Brand prefix: gp | Single primary hue: warm orange #F59E6B */
+
+:root {
+  /* --- Surfaces --- */
+  --gp-background: #FFFAF4;
+  --gp-foreground: #2D2A26;
+
+  --gp-card: #FFFFFF;
+  --gp-card-foreground: #2D2A26;
+
+  --gp-popover: #FFFFFF;
+  --gp-popover-foreground: #2D2A26;
+
+  --gp-muted: #FFF1E6;
+  --gp-muted-foreground: #7A7168;
+
+  /* --- Brand primary (single hue) --- */
+  --gp-primary: #F59E6B;
+  --gp-primary-foreground: #FFFFFF;
+
+  /* --- Lines & inputs --- */
+  --gp-border: #F5E6D3;
+  --gp-input: #F5E6D3;
+  --gp-ring: #F59E6B;
+
+  /* --- State colors (semantic only, not brand) --- */
+  --gp-state-success: #6DBF7B;
+  --gp-state-warning: #F0B848;
+  --gp-state-error: #E87461;
+  --gp-state-info: #5B9BD5;
+
+  /* --- Radius scale --- */
+  --gp-radius-sm: 8px;
+  --gp-radius-md: 12px;
+  --gp-radius-lg: 16px;
+  --gp-radius-pill: 999px;
+
+  /* --- Typography --- */
+  --gp-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}

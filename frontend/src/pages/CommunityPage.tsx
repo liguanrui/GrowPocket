@@ -295,7 +295,7 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
               <div className="flex flex-wrap gap-1 mb-2">
                 {parseAbilitySummary(share.ability_summary).map((item, idx) => (
                   <span key={idx} className="text-xs px-2 py-0.5 bg-white text-purple-700 rounded-full">
-                    {item.dimension} +{item.delta}
+                    {item.dimension_name} +{item.delta}
                   </span>
                 ))}
               </div>

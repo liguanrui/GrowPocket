@@ -1,13 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
-import { Camera, Calendar, Trophy, Star, ChevronLeft, ChevronRight, Share2, Sparkles, Image, FileText, Send, X, ChevronDown, Plus, Target, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Trophy, Star, ChevronLeft, ChevronRight, Share2, Sparkles, Image, FileText, Send, X, ChevronDown, Plus, Target, Check } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
 import { useAuthStore } from '../stores/authStore';
 import { ChildTabs } from '../components/ChildTabs';
-import * as growthService from '../services/growth';
-import type { AlbumPhoto, TimelineEvent, TimelineDay } from '../services/growth';
 import * as tasksService from '../services/tasks';
 import type { Task } from '../services/tasks';
 import * as communityService from '../services/community';
@@ -16,18 +14,20 @@ import type { ChildAbilityScore, AbilityDimension } from '../services/ability';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { getCurrentCycle, setGoal, createCycle, updateCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
+import { listStories, parseAbilitySummary } from '../services/growthStory';
+import type { GrowthStory } from '../services/growthStory';
 import { useToastStore } from '../stores/toastStore';
 
 function ShareModal({
   onClose,
   child,
   tasks,
-  album,
+  photos,
 }: {
   onClose: () => void;
   child: Child;
   tasks: Task[];
-  album: AlbumPhoto[];
+  photos: string[];
 }) {
   const [shareType, setShareType] = useState<'text' | 'text_image' | 'text_task'>('text');
   const [content, setContent] = useState('');
@@ -147,18 +147,18 @@ function ShareModal({
               选择图片 <span className="text-text-tertiary">({selectedImages.length}/{MAX_IMAGES})</span>
             </label>
             <div className="grid grid-cols-3 gap-2">
-              {album.map((photo, idx) => {
-                const isSelected = selectedImages.includes(photo.photo);
-                const selectedIndex = selectedImages.indexOf(photo.photo);
+              {photos.map((url, idx) => {
+                const isSelected = selectedImages.includes(url);
+                const selectedIndex = selectedImages.indexOf(url);
                 return (
                   <button
                     key={idx}
-                    onClick={() => toggleImage(photo.photo)}
+                    onClick={() => toggleImage(url)}
                     className={`aspect-square rounded-xl overflow-hidden border-2 transition-all relative ${
                       isSelected ? 'border-primary' : 'border-transparent'
                     }`}
                   >
-                    <img src={photo.photo} alt="" className="w-full h-full object-cover" />
+                    <img src={url} alt="" className="w-full h-full object-cover" />
                     {isSelected && (
                       <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
                         <span className="text-white text-xs font-bold">{selectedIndex + 1}</span>
@@ -168,7 +168,7 @@ function ShareModal({
                 );
               })}
             </div>
-            {album.length === 0 && (
+            {photos.length === 0 && (
               <p className="text-sm text-text-tertiary text-center py-4">暂无图片，请先完成任务并上传照片</p>
             )}
           </div>
@@ -268,14 +268,12 @@ export function GrowthPage() {
   const childStore = useChildStore();
   const authStore = useAuthStore();
   const isParent = authStore.user?.role === 'parent';
-  const [album, setAlbum] = useState<AlbumPhoto[]>([]);
-  const [timeline, setTimeline] = useState<TimelineDay[]>([]);
   const [scores, setScores] = useState<ChildAbilityScore[]>([]);
   const [growthIndex, setGrowthIndex] = useState(0);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksTotal, setTasksTotal] = useState(0);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [albumExpanded, setAlbumExpanded] = useState(false);
-  const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const [stories, setStories] = useState<GrowthStory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // 阶段目标相关
@@ -323,21 +321,20 @@ export function GrowthPage() {
       setLoading(true);
       setError(null);
       try {
-        const [albumResult, timelineResult, scoresResult, growthIndexResult, tasksResult, cycleResult, dimsResult] = await Promise.all([
-          growthService.getAlbum(selectedChildId, 1, 12),
-          growthService.getTimeline(selectedChildId),
+        const [scoresResult, growthIndexResult, tasksResult, cycleResult, dimsResult, storiesResult] = await Promise.all([
           getChildScores(selectedChildId),
           getGrowthIndex(selectedChildId),
           tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 20 }),
           getCurrentCycle(selectedChildId),
           getAbilities(),
+          listStories(selectedChildId, 1, 20),
         ]);
         if (mounted) {
-          setAlbum(albumResult.items);
-          setTimeline(timelineResult);
           setScores(scoresResult);
           setGrowthIndex(growthIndexResult);
           setTasks(tasksResult.items);
+          setTasksTotal(tasksResult.total);
+          setStories(storiesResult.items);
           setDimensions(dimsResult);
           // 阶段目标数据
           if (cycleResult.cycle) {
@@ -446,8 +443,9 @@ export function GrowthPage() {
     }
   };
 
-  const DEFAULT_ALBUM_COUNT = 6;
-  const DEFAULT_TIMELINE_COUNT = 3;
+  const cycleDays = cycleStartDate && cycleEndDate
+    ? Math.max(1, Math.ceil((new Date(cycleEndDate).getTime() - new Date(cycleStartDate).getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
 
   if (loading) {
     return (
@@ -479,9 +477,6 @@ export function GrowthPage() {
       </div>
     );
   }
-
-  const displayAlbum = albumExpanded ? album : album.slice(0, DEFAULT_ALBUM_COUNT);
-  const displayTimeline = timelineExpanded ? timeline : timeline.slice(0, DEFAULT_TIMELINE_COUNT);
 
   return (
     <div className="min-h-screen bg-bg pb-24">
@@ -520,12 +515,12 @@ export function GrowthPage() {
                 <div className="text-white/70 text-xs">成长指数</div>
               </div>
               <div className="flex-1 text-center">
-                <div className="text-white font-bold text-lg">{album.length}</div>
-                <div className="text-white/70 text-xs">图集</div>
+                <div className="text-white font-bold text-lg">{tasksTotal}</div>
+                <div className="text-white/70 text-xs">累计任务</div>
               </div>
               <div className="flex-1 text-center">
-                <div className="text-white font-bold text-lg">{timeline.length}</div>
-                <div className="text-white/70 text-xs">天数</div>
+                <div className="text-white font-bold text-lg">{cycleDays}</div>
+                <div className="text-white/70 text-xs">阶段天数</div>
               </div>
             </div>
           </div>
@@ -644,74 +639,6 @@ export function GrowthPage() {
           )}
         </div>
 
-        {/* 图集 Section */}
-        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <SectionHeader
-            icon={Camera}
-            title="图集"
-            count={album.length}
-            onToggle={album.length > DEFAULT_ALBUM_COUNT ? () => setAlbumExpanded(!albumExpanded) : undefined}
-            expanded={albumExpanded}
-          />
-          {album.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2">
-              {displayAlbum.map((photo, idx) => (
-                <div key={idx} className="aspect-square rounded-xl bg-gray-100 overflow-hidden relative group">
-                  <img src={photo.photo} alt="" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                    <div className="text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                      +{photo.points} 积分
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-text-tertiary text-sm">
-              <Image size={32} className="mx-auto mb-2 text-gray-300" />
-              暂无照片
-            </div>
-          )}
-        </div>
-
-        {/* 任务时间线 Section */}
-        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <SectionHeader
-            icon={Calendar}
-            title="任务时间线"
-            count={timeline.length}
-            onToggle={timeline.length > DEFAULT_TIMELINE_COUNT ? () => setTimelineExpanded(!timelineExpanded) : undefined}
-            expanded={timelineExpanded}
-          />
-          {timeline.length > 0 ? (
-            <div className="space-y-4">
-              {displayTimeline.map((day, idx) => (
-                <div key={idx}>
-                  <div className="text-xs text-text-tertiary font-medium mb-2">{day.date}</div>
-                  <div className="space-y-2">
-                    {day.events.map((event, eIdx) => (
-                      <div key={eIdx} className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center flex-shrink-0">
-                          {event.type === 'task' ? <Star size={14} /> : event.type === 'redeem' ? <Camera size={14} /> : <Trophy size={14} />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-text-primary">{event.title}</div>
-                          <div className="text-xs text-primary mt-1">+{event.points} 积分</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-text-tertiary text-sm">
-              <Calendar size={32} className="mx-auto mb-2 text-gray-300" />
-              暂无时间线记录
-            </div>
-          )}
-        </div>
-
         {/* 积分兑换入口 */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
           <button
@@ -752,6 +679,51 @@ export function GrowthPage() {
           </div>
         )}
 
+        {/* 成长回顾历史时间轴 */}
+        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
+          <SectionHeader
+            icon={FileText}
+            title="成长回顾历史"
+            count={stories.length}
+          />
+          {stories.length > 0 ? (
+            <div className="space-y-3">
+              {stories.map((s) => {
+                const deltas = parseAbilitySummary(s.ability_summary);
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => navigate(`/growth/story?cycle_id=${s.cycle_id}`)}
+                    className="w-full text-left p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-text-primary line-clamp-1">{s.title}</span>
+                      <ChevronRight size={16} className="text-text-tertiary flex-shrink-0 ml-2" />
+                    </div>
+                    <div className="text-xs text-text-tertiary">
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </div>
+                    {deltas.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {deltas.slice(0, 3).map((d, idx) => (
+                          <span key={idx} className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full">
+                            {d.dimension_name} {d.delta >= 0 ? '+' : ''}{d.delta}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-text-tertiary text-sm">
+              <FileText size={32} className="mx-auto mb-2 text-gray-300" />
+              还没有成长回顾记录
+            </div>
+          )}
+        </div>
+
         {/* 分享悬浮按钮 */}
         <button
           onClick={() => setShowShareModal(true)}
@@ -768,7 +740,7 @@ export function GrowthPage() {
           onClose={() => setShowShareModal(false)}
           child={selectedChild}
           tasks={tasks}
-          album={album}
+          photos={tasks.filter((t) => t.photo).map((t) => t.photo!)}
         />
       )}
 

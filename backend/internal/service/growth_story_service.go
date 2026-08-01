@@ -63,11 +63,30 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		familyID, childID, model.TaskStatusCompleted, cycle.StartDate, cycle.EndDate).
 		Order("created_at ASC").Find(&tasks)
 
-	// 3. 查询当前能力维度得分
-	scores, _ := s.ability.GetChildScores(childID, familyID)
+	// 3. 查询能力维度列表
 	dimensions, _ := s.ability.ListDimensions()
 
-	// 4. 查询周期内相册精选（取前 5 张）
+	// 4. 【新增】AI 重新评定能力得分
+	abilityDeltas, _ := s.ability.ReassessScores(s.aiService, childID, familyID, tasks, dimensions)
+	// 查询周期目标，填充 TargetScore
+	var goals []model.Goal
+	database.DB.Where("cycle_id = ?", cycleID).Find(&goals)
+	goalMap := make(map[uint]int)
+	for _, g := range goals {
+		goalMap[g.DimensionID] = g.TargetScore
+	}
+	for i := range abilityDeltas {
+		abilityDeltas[i].TargetScore = goalMap[abilityDeltas[i].DimensionID]
+	}
+	// 将能力变化序列化为 ability_summary
+	abilitySummaryJSON := ""
+	if len(abilityDeltas) > 0 {
+		if data, err := json.Marshal(abilityDeltas); err == nil {
+			abilitySummaryJSON = string(data)
+		}
+	}
+
+	// 5. 查询周期内相册精选（取前 5 张）
 	var albumTasks []model.Task
 	database.DB.Where("family_id = ? AND child_id = ? AND photo IS NOT NULL AND photo != '' AND created_at BETWEEN ? AND ?",
 		familyID, childID, cycle.StartDate, cycle.EndDate).
@@ -77,19 +96,18 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		photoURLs = append(photoURLs, t.Photo)
 	}
 
-	// 5. 构造 system prompt
-	prompt := s.buildStoryPrompt(childName, cycle, tasks, scores, dimensions, photoURLs)
+	// 6. 构造 system prompt（使用评定后的能力变化）
+	prompt := s.buildStoryPrompt(childName, cycle, tasks, abilityDeltas, photoURLs)
 
-	// 6. 调用 AI
+	// 7. 调用 AI
 	reply, err := s.aiService.Chat(prompt, nil, "请根据上述信息生成阶段成长故事，返回 JSON 格式")
 	if err != nil {
 		log.Printf("[GrowthStory] AI 调用失败 cycle=%d: %v", cycleID, err)
 	}
 
-	// 7. 解析 AI 返回（解析失败时降级）
+	// 8. 解析 AI 返回（解析失败时降级）
 	title := "周期成长故事"
 	content := ""
-	abilitySummary := ""
 	if reply != "" {
 		cleaned := cleanJSONResponse(reply)
 		if strings.HasPrefix(cleaned, "{") {
@@ -101,18 +119,15 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 				if result.Content != "" {
 					content = result.Content
 				}
-				abilitySummary = result.AbilitySummary
 			} else {
-				// JSON 解析失败，降级为 AI 原始返回
 				content = reply
 			}
 		} else {
-			// 非 JSON 格式，降级为 AI 原始返回
 			content = reply
 		}
 	}
 
-	// 8. 创建 GrowthStory 记录
+	// 9. 创建 GrowthStory 记录
 	photosJSON := ""
 	if len(photoURLs) > 0 {
 		data, _ := json.Marshal(photoURLs)
@@ -124,14 +139,14 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		ChildID:        childID,
 		Title:          title,
 		Content:        content,
-		AbilitySummary: abilitySummary,
+		AbilitySummary: abilitySummaryJSON,
 		PhotoUrls:      photosJSON,
 	}
 	if err := database.DB.Create(story).Error; err != nil {
 		return nil, errors.New("保存成长故事失败")
 	}
 
-	// 9. 标记周期 status=completed
+	// 10. 标记周期 status=completed
 	cycle.Status = "completed"
 	database.DB.Save(&cycle)
 
@@ -148,8 +163,39 @@ func (s *GrowthStoryService) GetStory(cycleID uint) (*model.GrowthStory, error) 
 	return &story, nil
 }
 
+// ListStories 查询儿童所有成长故事（按时间倒序）
+func (s *GrowthStoryService) ListStories(childID, familyID uint, page, pageSize int) ([]model.GrowthStory, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 50 {
+		pageSize = 20
+	}
+	var stories []model.GrowthStory
+	var total int64
+	db := database.DB.Where("child_id = ? AND family_id = ?", childID, familyID)
+	db.Model(&model.GrowthStory{}).Count(&total)
+	if err := db.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&stories).Error; err != nil {
+		return nil, 0, err
+	}
+	return stories, total, nil
+}
+
+// GetCycleTasks 查询周期内所有任务（按时间正序），供故事详情页展示子任务时间线
+func (s *GrowthStoryService) GetCycleTasks(cycleID, familyID uint) ([]model.Task, error) {
+	var cycle model.GrowthCycle
+	if err := database.DB.Where("id = ? AND family_id = ?", cycleID, familyID).First(&cycle).Error; err != nil {
+		return nil, errors.New("周期不存在")
+	}
+	var tasks []model.Task
+	database.DB.Where("family_id = ? AND child_id = ? AND status = ? AND created_at BETWEEN ? AND ?",
+		familyID, cycle.ChildID, model.TaskStatusCompleted, cycle.StartDate, cycle.EndDate).
+		Order("created_at ASC").Find(&tasks)
+	return tasks, nil
+}
+
 // buildStoryPrompt 构造成长故事生成提示词
-func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.GrowthCycle, tasks []model.Task, scores []model.ChildAbilityScore, dims []model.AbilityDimension, photos []string) string {
+func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.GrowthCycle, tasks []model.Task, deltas []AbilityDelta, photos []string) string {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("你是儿童成长记录师。请为儿童 %s 在周期 [%s]（%s ~ %s）内生成一段成长故事。",
 		childName, cycle.Name,
@@ -170,20 +216,19 @@ func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.Grow
 		parts = append(parts, "周期内暂无完成的任务记录。")
 	}
 
-	// 能力维度得分
-	if len(scores) > 0 && len(dims) > 0 {
-		var scoreStrs []string
-		for _, sc := range scores {
-			for _, d := range dims {
-				if d.ID == sc.DimensionID {
-					scoreStrs = append(scoreStrs, fmt.Sprintf("%s=%d", d.Name, sc.Score))
-					break
-				}
+	// 能力维度变化
+	if len(deltas) > 0 {
+		var deltaStrs []string
+		for _, d := range deltas {
+			if d.Delta > 0 {
+				deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d→%d（+%d）", d.DimensionName, d.OldScore, d.NewScore, d.Delta))
+			} else if d.Delta < 0 {
+				deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d→%d（%d）", d.DimensionName, d.OldScore, d.NewScore, d.Delta))
+			} else {
+				deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d（持平）", d.DimensionName, d.NewScore))
 			}
 		}
-		if len(scoreStrs) > 0 {
-			parts = append(parts, fmt.Sprintf("当前能力维度得分：%s。", strings.Join(scoreStrs, "，")))
-		}
+		parts = append(parts, fmt.Sprintf("能力维度变化：%s。", strings.Join(deltaStrs, "，")))
 	}
 
 	// 精选照片
@@ -191,7 +236,7 @@ func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.Grow
 		parts = append(parts, fmt.Sprintf("周期内共有 %d 张精选成果照片。", len(photos)))
 	}
 
-	parts = append(parts, "要求：生成富有温度的成长故事，包含标题、正文（300-600 字）、能力提升摘要（简述各维度成长亮点）。")
-	parts = append(parts, "返回纯 JSON（不要 markdown 代码块），格式：{\"title\":\"...\",\"content\":\"...\",\"ability_summary\":\"...\"}")
+	parts = append(parts, "要求：生成富有温度的成长故事，包含标题、正文（300-600 字）。")
+	parts = append(parts, "返回纯 JSON（不要 markdown 代码块），格式：{\"title\":\"...\",\"content\":\"...\"}")
 	return strings.Join(parts, "\n")
 }

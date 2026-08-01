@@ -15,7 +15,7 @@ const navItems = [
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md shadow-[0_-1px_12px_rgba(0,0,0,0.08)] px-4 py-2 z-50 pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md shadow-[0_-1px_12px_rgba(0,0,0,0.08)] px-4 z-50 pb-[env(safe-area-inset-bottom)]">
       <div className="max-w-lg mx-auto flex justify-around items-center relative">
         {navItems.map((item) => {
           const Icon = item.icon;

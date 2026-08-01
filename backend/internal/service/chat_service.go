@@ -5,6 +5,9 @@ import (
 	"growpocket/internal/database"
 	"growpocket/internal/model"
 	"strings"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 type ChatService struct {
@@ -62,13 +65,32 @@ func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, fami
 	}
 	database.DB.Create(aiMsg)
 
+	// 更新会话的 last_message / last_message_at / message_count / title
+	now := time.Now()
+	updates := map[string]interface{}{
+		"last_message":    truncateForPreview(userMessage),
+		"last_message_at": now,
+	}
+	database.DB.Model(&model.ChatSession{}).Where("id = ?", sessionID).
+		UpdateColumn("message_count", gorm.Expr("message_count + 2")).
+		Updates(updates)
+
+	// 首次消息时生成会话标题（兜底：首条用户消息前 20 字符）
+	var session model.ChatSession
+	if err := database.DB.Select("id, title, message_count").First(&session, sessionID).Error; err == nil {
+		if session.Title == "" {
+			title := truncateForTitle(userMessage)
+			database.DB.Model(&session).Update("title", title)
+		}
+	}
+
 	return reply, intent, nil
 }
 
 // buildSystemPrompt 构造系统提示词（含儿童上下文）
 func (s *ChatService) buildSystemPrompt(childID, familyID uint, userRole string) string {
 	var parts []string
-	parts = append(parts, "你是「小芽」，GrowPocket 的 AI 成长助理，一个温暖的种子精灵。你的角色是陪伴 6-12 岁儿童成长。")
+	parts = append(parts, "你是「小萌芽」，GrowPocket 的 AI 成长助理，一个温暖的种子精灵。你的角色是陪伴 6-12 岁儿童成长。")
 	parts = append(parts, fmt.Sprintf("当前对话者角色：%s（parent=家长，child=儿童）。", userRole))
 	parts = append(parts, "回答要简洁、温暖、富有鼓励性。如果家长请求设置目标或回顾，引导他们在成长页操作。")
 
@@ -136,8 +158,11 @@ func (s *ChatService) detectIntent(message string) string {
 		}
 		return "query_ability"
 	}
-	if strings.Contains(msg, "精灵") || strings.Contains(msg, "小芽") {
+	if strings.Contains(msg, "精灵") || strings.Contains(msg, "小萌芽") || strings.Contains(msg, "小芽") {
 		return "query_sprite"
+	}
+	if strings.Contains(msg, "奖励") || strings.Contains(msg, "兑换") || strings.Contains(msg, "商城") {
+		return "query_reward"
 	}
 	if strings.Contains(msg, "目标") || strings.Contains(msg, "设定") {
 		return "parent_set_goal"
@@ -164,4 +189,48 @@ func (s *ChatService) GetHistory(sessionID uint) ([]model.ChatMessage, error) {
 	var messages []model.ChatMessage
 	err := database.DB.Where("session_id = ?", sessionID).Order("created_at ASC").Limit(50).Find(&messages).Error
 	return messages, err
+}
+
+// ListSessions 获取儿童的会话列表（按最后消息时间倒序）
+func (s *ChatService) ListSessions(childID, familyID uint) ([]model.ChatSession, error) {
+	var sessions []model.ChatSession
+	err := database.DB.Where("child_id = ? AND family_id = ?", childID, familyID).
+		Order("last_message_at DESC").Find(&sessions).Error
+	return sessions, err
+}
+
+// SearchSessions 搜索会话（匹配标题或最后消息）
+func (s *ChatService) SearchSessions(childID, familyID uint, q string) ([]model.ChatSession, error) {
+	var sessions []model.ChatSession
+	like := "%" + q + "%"
+	err := database.DB.Where("child_id = ? AND family_id = ? AND (title LIKE ? OR last_message LIKE ?)", childID, familyID, like, like).
+		Order("last_message_at DESC").Find(&sessions).Error
+	return sessions, err
+}
+
+// GetSessionMessages 获取指定会话的全部消息
+func (s *ChatService) GetSessionMessages(sessionID, familyID uint) ([]model.ChatMessage, error) {
+	var session model.ChatSession
+	if err := database.DB.Where("id = ? AND family_id = ?", sessionID, familyID).First(&session).Error; err != nil {
+		return nil, fmt.Errorf("会话不存在")
+	}
+	return s.GetHistory(sessionID)
+}
+
+// truncateForPreview 截断最后消息预览（前 50 字符）
+func truncateForPreview(s string) string {
+	r := []rune(s)
+	if len(r) > 50 {
+		return string(r[:50]) + "..."
+	}
+	return s
+}
+
+// truncateForTitle 截断会话标题（前 20 字符）
+func truncateForTitle(s string) string {
+	r := []rune(s)
+	if len(r) > 20 {
+		return string(r[:20]) + "..."
+	}
+	return s
 }

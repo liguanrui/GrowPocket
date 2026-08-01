@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI助理 · 对话中</title>
+    <style id="theme-vars">
+/* ===== GrowPocket AI Assistant — Design Tokens ===== */
+/* Brand prefix: gp | Single primary hue: warm orange #F59E6B */
+
+:root {
+  /* --- Surfaces --- */
+  --gp-background: #FFFAF4;
+  --gp-foreground: #2D2A26;
+
+  --gp-card: #FFFFFF;
+  --gp-card-foreground: #2D2A26;
+
+  --gp-popover: #FFFFFF;
+  --gp-popover-foreground: #2D2A26;
+
+  --gp-muted: #FFF1E6;
+  --gp-muted-foreground: #7A7168;
+
+  /* --- Brand primary (single hue) --- */
+  --gp-primary: #F59E6B;
+  --gp-primary-foreground: #FFFFFF;
+
+  /* --- Lines & inputs --- */
+  --gp-border: #F5E6D3;
+  --gp-input: #F5E6D3;
+  --gp-ring: #F59E6B;
+
+  /* --- State colors (semantic only, not brand) --- */
+  --gp-state-success: #6DBF7B;
+  --gp-state-warning: #F0B848;
+  --gp-state-error: #E87461;
+  --gp-state-info: #5B9BD5;
+
+  /* --- Radius scale --- */
+  --gp-radius-sm: 8px;
+  --gp-radius-md: 12px;
+  --gp-radius-lg: 16px;
+  --gp-radius-pill: 999px;
+
+  /* --- Typography --- */
+  --gp-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--gp-background);
+    --color-foreground: var(--gp-foreground);
+    --color-card: var(--gp-card);
+    --color-card-foreground: var(--gp-card-foreground);
+    --color-popover: var(--gp-popover);
+    --color-popover-foreground: var(--gp-popover-foreground);
+    --color-primary: var(--gp-primary);
+    --color-primary-foreground: var(--gp-primary-foreground);
+    --color-muted: var(--gp-muted);
+    --color-muted-foreground: var(--gp-muted-foreground);
+    --color-border: var(--gp-border);
+    --color-input: var(--gp-input);
+    --color-ring: var(--gp-ring);
+    --radius-sm: var(--gp-radius-sm);
+    --radius-md: var(--gp-radius-md);
+    --radius-lg: var(--gp-radius-lg);
+  }
+  @layer base {
+    body { background: var(--gp-background); color: var(--gp-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--gp-background); }
+      .text-background { color: var(--gp-background); }
+      .border-background { border-color: var(--gp-background); }
+      .ring-background { --tw-ring-color: var(--gp-background); }
+      .bg-foreground { background-color: var(--gp-foreground); }
+      .text-foreground { color: var(--gp-foreground); }
+      .border-foreground { border-color: var(--gp-foreground); }
+      .ring-foreground { --tw-ring-color: var(--gp-foreground); }
+      .bg-card { background-color: var(--gp-card); }
+      .text-card { color: var(--gp-card); }
+      .border-card { border-color: var(--gp-card); }
+      .ring-card { --tw-ring-color: var(--gp-card); }
+      .bg-card-foreground { background-color: var(--gp-card-foreground); }
+      .text-card-foreground { color: var(--gp-card-foreground); }
+      .border-card-foreground { border-color: var(--gp-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--gp-card-foreground); }
+      .bg-popover { background-color: var(--gp-popover); }
+      .text-popover { color: var(--gp-popover); }
+      .border-popover { border-color: var(--gp-popover); }
+      .ring-popover { --tw-ring-color: var(--gp-popover); }
+      .bg-popover-foreground { background-color: var(--gp-popover-foreground); }
+      .text-popover-foreground { color: var(--gp-popover-foreground); }
+      .border-popover-foreground { border-color: var(--gp-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--gp-popover-foreground); }
+      .bg-primary { background-color: var(--gp-primary); }
+      .text-primary { color: var(--gp-primary); }
+      .border-primary { border-color: var(--gp-primary); }
+      .ring-primary { --tw-ring-color: var(--gp-primary); }
+      .bg-primary-foreground { background-color: var(--gp-primary-foreground); }
+      .text-primary-foreground { color: var(--gp-primary-foreground); }
+      .border-primary-foreground { border-color: var(--gp-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--gp-primary-foreground); }
+      .bg-muted { background-color: var(--gp-muted); }
+      .text-muted { color: var(--gp-muted); }
+      .border-muted { border-color: var(--gp-muted); }
+      .ring-muted { --tw-ring-color: var(--gp-muted); }
+      .bg-muted-foreground { background-color: var(--gp-muted-foreground); }
+      .text-muted-foreground { color: var(--gp-muted-foreground); }
+      .border-muted-foreground { border-color: var(--gp-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--gp-muted-foreground); }
+      .bg-border { background-color: var(--gp-border); }
+      .text-border { color: var(--gp-border); }
+      .border-border { border-color: var(--gp-border); }
+      .ring-border { --tw-ring-color: var(--gp-border); }
+      .bg-input { background-color: var(--gp-input); }
+      .text-input { color: var(--gp-input); }
+      .border-input { border-color: var(--gp-input); }
+      .ring-input { --tw-ring-color: var(--gp-input); }
+      .bg-ring { background-color: var(--gp-ring); }
+      .text-ring { color: var(--gp-ring); }
+      .border-ring { border-color: var(--gp-ring); }
+      .ring-ring { --tw-ring-color: var(--gp-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main>
+      <style id="critical-layout">
+        /* Responsive-safe static shell geometry — does not depend on Tailwind runtime */
+        .gp-shell {
+          width: 100%;
+          max-width: 448px;
+          margin-left: auto;
+          margin-right: auto;
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+          background-color: var(--gp-background);
+        }
+        .gp-header {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          height: 56px;
+          flex-shrink: 0;
+          background-color: var(--gp-card);
+          border-bottom: 1px solid var(--gp-border);
+        }
+        .gp-body {
+          flex: 1 1 auto;
+          min-height: 0;
+          overflow-x: hidden;
+        }
+        .gp-input-bar {
+          position: sticky;
+          bottom: 0;
+          z-index: 40;
+          flex-shrink: 0;
+          background-color: var(--gp-card);
+          border-top: 1px solid var(--gp-border);
+        }
+        .gp-bubble {
+          max-width: 75%;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        .gp-avatar-img {
+          width: 32px;
+          height: 32px;
+          border-radius: 999px;
+          object-fit: cover;
+          display: block;
+        }
+        @media (max-width: 380px) {
+          .gp-bubble { max-width: 82%; }
+        }
+      </style>
+      <div class="gp-shell">
+
+        <!-- Section 1: Fixed Header (sticky top, z-50) -->
+        <header class="gp-header flex justify-between items-center px-4 bg-card/95" style="backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);">
+          <!-- Left side -->
+          <div class="flex items-center gap-2">
+            <button type="button" data-dom-id="drawer-toggle" aria-label="打开侧边栏" class="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
+              <i data-lucide="panel-left" class="w-5 h-5"></i>
+            </button>
+            <button type="button" data-dom-id="new-session" aria-label="新建对话" class="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
+              <i data-lucide="square-pen" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <!-- Right side -->
+          <div class="flex items-center gap-2">
+            <button type="button" data-dom-id="child-switch" aria-label="切换孩子" class="relative w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center">
+              <span class="font-bold text-primary text-sm">明</span>
+              <span class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-card border border-border flex items-center justify-center">
+                <i data-lucide="chevron-down" class="w-2.5 h-2.5 text-muted-foreground"></i>
+              </span>
+            </button>
+            <button type="button" data-dom-id="voice-toggle" aria-label="语音" class="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
+              <i data-lucide="volume-2" class="w-5 h-5"></i>
+            </button>
+          </div>
+        </header>
+
+        <!-- Section 2: Body — Chat Messages -->
+        <div class="gp-body px-4 py-4 space-y-3">
+
+          <!-- Message 1 — AI (left) -->
+          <div class="flex justify-start items-start gap-2">
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="gp-avatar-img">
+            </div>
+            <div class="gp-bubble bg-card border border-border rounded-lg rounded-tl-sm px-4 py-2.5 shadow-sm">
+              <p class="text-sm text-foreground whitespace-pre-wrap">你好小明！今天你已经有3个任务完成了，真棒！还需要帮忙吗？</p>
+            </div>
+          </div>
+
+          <!-- Message 2 — Child (right) -->
+          <div class="flex justify-end items-start">
+            <div class="gp-bubble bg-primary text-primary-foreground rounded-lg rounded-tr-sm px-4 py-2.5">
+              <p class="text-sm">我的积分是多少？</p>
+            </div>
+          </div>
+
+          <!-- Message 3 — AI (left) -->
+          <div class="flex justify-start items-start gap-2">
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="gp-avatar-img">
+            </div>
+            <div class="gp-bubble bg-card border border-border rounded-lg rounded-tl-sm px-4 py-2.5 shadow-sm">
+              <p class="text-sm text-foreground">你当前有 <span class="font-bold text-primary">2850</span> 积分，继续保持哦！距离兑换「1小时游戏时间」还需要 500 积分。</p>
+            </div>
+          </div>
+
+          <!-- Message 4 — Child (right) -->
+          <div class="flex justify-end items-start">
+            <div class="gp-bubble bg-primary text-primary-foreground rounded-lg rounded-tr-sm px-4 py-2.5">
+              <p class="text-sm">今日任务是什么？</p>
+            </div>
+          </div>
+
+          <!-- Message 5 — AI (left) -->
+          <div class="flex justify-start items-start gap-2">
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="gp-avatar-img">
+            </div>
+            <div class="gp-bubble bg-card border border-border rounded-lg rounded-tl-sm px-4 py-2.5 shadow-sm">
+              <p class="text-sm text-foreground whitespace-pre-wrap">今天还有 2 个待完成任务：
+1. 整理房间（50积分）
+2. 洗碗（30积分）
+完成后记得拍照提交哦～</p>
+            </div>
+          </div>
+
+          <!-- Message 6 — AI Loading (left) -->
+          <div class="flex justify-start items-start gap-2">
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="gp-avatar-img">
+            </div>
+            <div class="gp-bubble bg-card border border-border rounded-lg rounded-tl-sm px-4 py-3 shadow-sm">
+              <div class="flex gap-1 items-center">
+                <span class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 0ms;"></span>
+                <span class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 150ms;"></span>
+                <span class="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style="animation-delay: 300ms;"></span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Section 3: Bottom Input Bar (sticky bottom, z-40) -->
+        <div class="gp-input-bar flex items-center gap-2 px-4 py-3 bg-card">
+          <input type="text" value="帮我看看成长报告" placeholder="对小萌芽说点什么..." class="flex-1 h-11 px-4 bg-muted rounded-lg border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring">
+          <button type="button" data-dom-id="input-mode-toggle" aria-label="切换输入方式" class="w-11 h-11 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground flex-shrink-0">
+            <i data-lucide="keyboard" class="w-5 h-5"></i>
+          </button>
+          <button type="button" data-dom-id="send-btn" aria-label="发送" class="w-11 h-11 rounded-lg bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+            <i data-lucide="send" class="w-[18px] h-[18px]"></i>
+          </button>
+        </div>
+
+      </div>
+    </main>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

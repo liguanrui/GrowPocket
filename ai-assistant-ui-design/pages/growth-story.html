@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成长故事</title>
+    <style id="theme-vars">
+/* ===== GrowPocket AI Assistant — Design Tokens ===== */
+/* Brand prefix: gp | Single primary hue: warm orange #F59E6B */
+
+:root {
+  /* --- Surfaces --- */
+  --gp-background: #FFFAF4;
+  --gp-foreground: #2D2A26;
+
+  --gp-card: #FFFFFF;
+  --gp-card-foreground: #2D2A26;
+
+  --gp-popover: #FFFFFF;
+  --gp-popover-foreground: #2D2A26;
+
+  --gp-muted: #FFF1E6;
+  --gp-muted-foreground: #7A7168;
+
+  /* --- Brand primary (single hue) --- */
+  --gp-primary: #F59E6B;
+  --gp-primary-foreground: #FFFFFF;
+
+  /* --- Lines & inputs --- */
+  --gp-border: #F5E6D3;
+  --gp-input: #F5E6D3;
+  --gp-ring: #F59E6B;
+
+  /* --- State colors (semantic only, not brand) --- */
+  --gp-state-success: #6DBF7B;
+  --gp-state-warning: #F0B848;
+  --gp-state-error: #E87461;
+  --gp-state-info: #5B9BD5;
+
+  /* --- Radius scale --- */
+  --gp-radius-sm: 8px;
+  --gp-radius-md: 12px;
+  --gp-radius-lg: 16px;
+  --gp-radius-pill: 999px;
+
+  /* --- Typography --- */
+  --gp-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--gp-background);
+    --color-foreground: var(--gp-foreground);
+    --color-card: var(--gp-card);
+    --color-card-foreground: var(--gp-card-foreground);
+    --color-popover: var(--gp-popover);
+    --color-popover-foreground: var(--gp-popover-foreground);
+    --color-primary: var(--gp-primary);
+    --color-primary-foreground: var(--gp-primary-foreground);
+    --color-muted: var(--gp-muted);
+    --color-muted-foreground: var(--gp-muted-foreground);
+    --color-border: var(--gp-border);
+    --color-input: var(--gp-input);
+    --color-ring: var(--gp-ring);
+    --radius-sm: var(--gp-radius-sm);
+    --radius-md: var(--gp-radius-md);
+    --radius-lg: var(--gp-radius-lg);
+  }
+  @layer base {
+    body { background: var(--gp-background); color: var(--gp-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--gp-background); }
+      .text-background { color: var(--gp-background); }
+      .border-background { border-color: var(--gp-background); }
+      .ring-background { --tw-ring-color: var(--gp-background); }
+      .bg-foreground { background-color: var(--gp-foreground); }
+      .text-foreground { color: var(--gp-foreground); }
+      .border-foreground { border-color: var(--gp-foreground); }
+      .ring-foreground { --tw-ring-color: var(--gp-foreground); }
+      .bg-card { background-color: var(--gp-card); }
+      .text-card { color: var(--gp-card); }
+      .border-card { border-color: var(--gp-card); }
+      .ring-card { --tw-ring-color: var(--gp-card); }
+      .bg-card-foreground { background-color: var(--gp-card-foreground); }
+      .text-card-foreground { color: var(--gp-card-foreground); }
+      .border-card-foreground { border-color: var(--gp-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--gp-card-foreground); }
+      .bg-popover { background-color: var(--gp-popover); }
+      .text-popover { color: var(--gp-popover); }
+      .border-popover { border-color: var(--gp-popover); }
+      .ring-popover { --tw-ring-color: var(--gp-popover); }
+      .bg-popover-foreground { background-color: var(--gp-popover-foreground); }
+      .text-popover-foreground { color: var(--gp-popover-foreground); }
+      .border-popover-foreground { border-color: var(--gp-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--gp-popover-foreground); }
+      .bg-primary { background-color: var(--gp-primary); }
+      .text-primary { color: var(--gp-primary); }
+      .border-primary { border-color: var(--gp-primary); }
+      .ring-primary { --tw-ring-color: var(--gp-primary); }
+      .bg-primary-foreground { background-color: var(--gp-primary-foreground); }
+      .text-primary-foreground { color: var(--gp-primary-foreground); }
+      .border-primary-foreground { border-color: var(--gp-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--gp-primary-foreground); }
+      .bg-muted { background-color: var(--gp-muted); }
+      .text-muted { color: var(--gp-muted); }
+      .border-muted { border-color: var(--gp-muted); }
+      .ring-muted { --tw-ring-color: var(--gp-muted); }
+      .bg-muted-foreground { background-color: var(--gp-muted-foreground); }
+      .text-muted-foreground { color: var(--gp-muted-foreground); }
+      .border-muted-foreground { border-color: var(--gp-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--gp-muted-foreground); }
+      .bg-border { background-color: var(--gp-border); }
+      .text-border { color: var(--gp-border); }
+      .border-border { border-color: var(--gp-border); }
+      .ring-border { --tw-ring-color: var(--gp-border); }
+      .bg-input { background-color: var(--gp-input); }
+      .text-input { color: var(--gp-input); }
+      .border-input { border-color: var(--gp-input); }
+      .ring-input { --tw-ring-color: var(--gp-input); }
+      .bg-ring { background-color: var(--gp-ring); }
+      .text-ring { color: var(--gp-ring); }
+      .border-ring { border-color: var(--gp-ring); }
+      .ring-ring { --tw-ring-color: var(--gp-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+    <style>
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body { max-width: 100%; overflow-x: clip; }
+      .app-shell {
+        max-width: 448px;
+        margin: 0 auto;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--gp-background);
+        position: relative;
+        box-shadow: 0 0 32px rgba(45, 42, 38, 0.06);
+      }
+      @media (max-width: 480px) { .app-shell { box-shadow: none; } }
+      .app-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: rgba(255, 255, 255, 0.92);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--gp-border);
+      }
+      .app-body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 16px 16px 24px 16px;
+      }
+      .icon-20 { width: 20px; height: 20px; }
+      .icon-18 { width: 18px; height: 18px; }
+      .icon-16 { width: 16px; height: 16px; }
+      .icon-14 { width: 14px; height: 14px; }
+      .icon-12 { width: 12px; height: 12px; }
+      .keep-all { word-break: keep-all; overflow-wrap: anywhere; }
+      /* Timeline styles */
+      .timeline-item { position: relative; padding-left: 40px; padding-bottom: 20px; }
+      .timeline-item:last-child { padding-bottom: 0; }
+      .timeline-item::before {
+        content: "";
+        position: absolute;
+        left: 15px;
+        top: 24px;
+        bottom: 0;
+        width: 2px;
+        background: var(--gp-border);
+      }
+      .timeline-item:last-child::before { display: none; }
+      .timeline-dot {
+        position: absolute;
+        left: 8px;
+        top: 4px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 3px solid var(--gp-card);
+        box-shadow: 0 0 0 2px var(--gp-border);
+        z-index: 1;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+  <div class="app-shell">
+
+    <!-- Header -->
+    <header class="app-header px-4 py-3 flex items-center justify-between">
+      <button class="w-9 h-9 rounded-full text-muted-foreground hover:bg-muted flex items-center justify-center transition-colors" aria-label="返回">
+        <i data-lucide="arrow-left" class="icon-20"></i>
+      </button>
+      <h1 class="text-base font-semibold text-foreground">成长故事</h1>
+      <button class="w-9 h-9 rounded-full text-muted-foreground hover:bg-muted flex items-center justify-center transition-colors" aria-label="筛选">
+        <i data-lucide="sliders-horizontal" class="icon-20"></i>
+      </button>
+    </header>
+
+    <!-- Body -->
+    <main class="app-body">
+
+      <!-- Summary Banner -->
+      <section class="bg-card rounded-2xl border border-border p-4" style="background: linear-gradient(135deg, #F0FDF4 0%, #FFFFFF 100%)">
+        <div class="flex items-center gap-4">
+          <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-14 h-14 rounded-2xl object-cover flex-shrink-0">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-foreground">小明的故事集</p>
+            <p class="text-xs text-muted-foreground mt-0.5">共记录 42 个成长瞬间</p>
+            <div class="mt-2 flex gap-4 flex-wrap">
+              <span class="text-xs text-muted-foreground flex items-center"><span class="inline-block w-1.5 h-1.5 rounded-full mr-1" style="background: var(--gp-primary)"></span>语言 12</span>
+              <span class="text-xs text-muted-foreground flex items-center"><span class="inline-block w-1.5 h-1.5 rounded-full mr-1" style="background: #6DBF7B"></span>认知 10</span>
+              <span class="text-xs text-muted-foreground flex items-center"><span class="inline-block w-1.5 h-1.5 rounded-full mr-1" style="background: #5B9BD5"></span>运动 8</span>
+              <span class="text-xs text-muted-foreground flex items-center"><span class="inline-block w-1.5 h-1.5 rounded-full mr-1" style="background: #F0B848"></span>社交 7</span>
+              <span class="text-xs text-muted-foreground flex items-center"><span class="inline-block w-1.5 h-1.5 rounded-full mr-1" style="background: #E87461"></span>情感 5</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Filter Tabs -->
+      <nav class="mt-4 no-scrollbar overflow-x-auto flex gap-2">
+        <button class="bg-primary text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap">全部</button>
+        <button class="bg-card border border-border text-foreground px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap">语言</button>
+        <button class="bg-card border border-border text-foreground px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap">认知</button>
+        <button class="bg-card border border-border text-foreground px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap">运动</button>
+        <button class="bg-card border border-border text-foreground px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap">社交</button>
+        <button class="bg-card border border-border text-foreground px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap">情感</button>
+      </nav>
+
+      <!-- Timeline -->
+      <section class="mt-4">
+
+        <!-- Item 1: 语言 -->
+        <div class="timeline-item">
+          <span class="timeline-dot" style="background: var(--gp-primary)"></span>
+          <div class="bg-card rounded-xl border border-border p-3.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background: rgba(245,158,107,0.1); color: var(--gp-primary)">语言</span>
+              <span class="text-xs text-muted-foreground">2026-07-30</span>
+            </div>
+            <h3 class="mt-2 text-sm font-semibold text-foreground">第一次主动说完整句子</h3>
+            <p class="mt-1 text-xs text-muted-foreground leading-relaxed keep-all">今天晚饭时，小明主动说"妈妈我想喝水"，这是第一次使用完整的句子表达需求！</p>
+            <div class="mt-2.5 bg-muted rounded-lg p-2.5 flex items-start gap-2">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-5 h-5 rounded-full object-cover flex-shrink-0 mt-0.5">
+              <p class="text-xs text-foreground keep-all">词汇量突破 50 词里程碑，建议增加对话互动场景</p>
+            </div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="flex items-center gap-1 text-xs" style="color: #6DBF7B">
+                <i data-lucide="trending-up" class="icon-12"></i>
+                <span>语言能力 +5</span>
+              </span>
+              <span class="flex items-center gap-1 text-xs text-primary">
+                <i data-lucide="sparkles" class="icon-12"></i>
+                <span>+50 成长值</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 2: 认知 -->
+        <div class="timeline-item">
+          <span class="timeline-dot" style="background: #6DBF7B"></span>
+          <div class="bg-card rounded-xl border border-border p-3.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background: rgba(109,191,123,0.1); color: #6DBF7B">认知</span>
+              <span class="text-xs text-muted-foreground">2026-07-28</span>
+            </div>
+            <h3 class="mt-2 text-sm font-semibold text-foreground">认识了几何形状</h3>
+            <p class="mt-1 text-xs text-muted-foreground leading-relaxed keep-all">能够正确区分圆形、三角形和正方形，并在积木游戏中主动命名形状</p>
+            <div class="mt-2.5 bg-muted rounded-lg p-2.5 flex items-start gap-2">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-5 h-5 rounded-full object-cover flex-shrink-0 mt-0.5">
+              <p class="text-xs text-foreground keep-all">空间认知能力发展良好，可以引入更复杂的立体图形</p>
+            </div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="flex items-center gap-1 text-xs" style="color: #6DBF7B">
+                <i data-lucide="trending-up" class="icon-12"></i>
+                <span>认知能力 +3</span>
+              </span>
+              <span class="flex items-center gap-1 text-xs text-primary">
+                <i data-lucide="sparkles" class="icon-12"></i>
+                <span>+30 成长值</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 3: 运动 -->
+        <div class="timeline-item">
+          <span class="timeline-dot" style="background: #5B9BD5"></span>
+          <div class="bg-card rounded-xl border border-border p-3.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background: rgba(91,155,213,0.1); color: #5B9BD5">运动</span>
+              <span class="text-xs text-muted-foreground">2026-07-25</span>
+            </div>
+            <h3 class="mt-2 text-sm font-semibold text-foreground">学会独立骑平衡车</h3>
+            <p class="mt-1 text-xs text-muted-foreground leading-relaxed keep-all">在公园里第一次独立骑行平衡车5米以上，平衡感显著提升</p>
+            <div class="mt-2.5 bg-muted rounded-lg p-2.5 flex items-start gap-2">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-5 h-5 rounded-full object-cover flex-shrink-0 mt-0.5">
+              <p class="text-xs text-foreground keep-all">大运动发展达标，建议增加户外活动频率</p>
+            </div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="flex items-center gap-1 text-xs" style="color: #5B9BD5">
+                <i data-lucide="trending-up" class="icon-12"></i>
+                <span>运动能力 +8</span>
+              </span>
+              <span class="flex items-center gap-1 text-xs text-primary">
+                <i data-lucide="sparkles" class="icon-12"></i>
+                <span>+40 成长值</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 4: 社交 -->
+        <div class="timeline-item">
+          <span class="timeline-dot" style="background: #F0B848"></span>
+          <div class="bg-card rounded-xl border border-border p-3.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background: rgba(240,184,72,0.1); color: #F0B848">社交</span>
+              <span class="text-xs text-muted-foreground">2026-07-22</span>
+            </div>
+            <h3 class="mt-2 text-sm font-semibold text-foreground">主动与小朋友分享玩具</h3>
+            <p class="mt-1 text-xs text-muted-foreground leading-relaxed keep-all">在游乐场主动把积木分享给其他小朋友，一起合作搭建</p>
+            <div class="mt-2.5 bg-muted rounded-lg p-2.5 flex items-start gap-2">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-5 h-5 rounded-full object-cover flex-shrink-0 mt-0.5">
+              <p class="text-xs text-foreground keep-all">亲社会行为出现，社交技能正在快速发展</p>
+            </div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="flex items-center gap-1 text-xs" style="color: #F0B848">
+                <i data-lucide="trending-up" class="icon-12"></i>
+                <span>社交能力 +6</span>
+              </span>
+              <span class="flex items-center gap-1 text-xs text-primary">
+                <i data-lucide="sparkles" class="icon-12"></i>
+                <span>+35 成长值</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 5: 情感 -->
+        <div class="timeline-item">
+          <span class="timeline-dot" style="background: #E87461"></span>
+          <div class="bg-card rounded-xl border border-border p-3.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background: rgba(232,116,97,0.1); color: #E87461">情感</span>
+              <span class="text-xs text-muted-foreground">2026-07-20</span>
+            </div>
+            <h3 class="mt-2 text-sm font-semibold text-foreground">学会用语言表达情绪</h3>
+            <p class="mt-1 text-xs text-muted-foreground leading-relaxed keep-all">生气时说"我生气了"而不是哭闹，情绪表达能力进步明显</p>
+            <div class="mt-2.5 bg-muted rounded-lg p-2.5 flex items-start gap-2">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-5 h-5 rounded-full object-cover flex-shrink-0 mt-0.5">
+              <p class="text-xs text-foreground keep-all">情绪识别与表达里程碑达成，继续保持</p>
+            </div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="flex items-center gap-1 text-xs" style="color: #E87461">
+                <i data-lucide="trending-up" class="icon-12"></i>
+                <span>情感管理 +7</span>
+              </span>
+              <span class="flex items-center gap-1 text-xs text-primary">
+                <i data-lucide="sparkles" class="icon-12"></i>
+                <span>+45 成长值</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Item 6: 语言 -->
+        <div class="timeline-item">
+          <span class="timeline-dot" style="background: var(--gp-primary)"></span>
+          <div class="bg-card rounded-xl border border-border p-3.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background: rgba(245,158,107,0.1); color: var(--gp-primary)">语言</span>
+              <span class="text-xs text-muted-foreground">2026-07-15</span>
+            </div>
+            <h3 class="mt-2 text-sm font-semibold text-foreground">开始模仿大人说话</h3>
+            <p class="mt-1 text-xs text-muted-foreground leading-relaxed keep-all">经常模仿大人的语调和用词，语言学习进入模仿期</p>
+            <div class="mt-2.5 bg-muted rounded-lg p-2.5 flex items-start gap-2">
+              <img src="../assets/ip-sprouty-hero.jpg" alt="小萌芽" class="w-5 h-5 rounded-full object-cover flex-shrink-0 mt-0.5">
+              <p class="text-xs text-foreground keep-all">语言模仿是学习的重要方式，多进行对话练习</p>
+            </div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="flex items-center gap-1 text-xs text-primary">
+                <i data-lucide="trending-up" class="icon-12"></i>
+                <span>语言能力 +4</span>
+              </span>
+              <span class="flex items-center gap-1 text-xs text-primary">
+                <i data-lucide="sparkles" class="icon-12"></i>
+                <span>+20 成长值</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Load More -->
+      <div class="mt-4 flex justify-center">
+        <button class="bg-card border border-border rounded-full px-6 py-2.5 text-sm text-muted-foreground flex items-center gap-1.5 hover:bg-muted transition-colors">
+          <span>加载更多故事</span>
+          <i data-lucide="chevron-down" class="icon-16"></i>
+        </button>
+      </div>
+
+    </main>
+
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

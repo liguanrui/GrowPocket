@@ -1,0 +1,233 @@
+{
+  "data": [
+    {
+      "id": "page-assistant-empty",
+      "title": "AI助理 · 空状态",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-20f6526b",
+          "measuredAt": 1785568734077
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/assistant-empty.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-assistant-chat",
+      "title": "AI助理 · 对话中",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 309,
+        "y": 0,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-31ad2ddd",
+          "measuredAt": 1785568734077
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/assistant-chat.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-assistant-drawer",
+      "title": "AI助理 · 历史抽屉",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 618,
+        "y": 0,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-8ef4d55e",
+          "measuredAt": 1785568734077
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/assistant-drawer.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-assistant-child-switch",
+      "title": "AI助理 · 切换儿童",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 927,
+        "y": 0,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-e71da811",
+          "measuredAt": 1785568734077
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/assistant-child-switch.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-assistant-voice",
+      "title": "AI助理 · 语音输入",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 1236,
+        "y": 0,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-4efc21bd",
+          "measuredAt": 1785568734077
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/assistant-voice.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "image-001",
+      "title": "IP形象 · 小萌芽",
+      "type": "image",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "imageSrc": "assets/ip-sprouty-hero.jpg",
+      "canvasData": {
+        "x": 0,
+        "y": 967,
+        "naturalSize": {
+          "width": 1920,
+          "height": 1920
+        }
+      },
+      "devMetadata": {
+        "imageSrc": "assets/ip-sprouty-hero.jpg"
+      }
+    },
+    {
+      "id": "page-growth-main",
+      "title": "成长记录 · 主页",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 0,
+        "y": 376,
+        "group": 1,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-138526d8",
+          "measuredAt": 1785571040993
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/growth-main.html",
+        "interactions": [
+          {
+            "trigger": {
+              "domId": "points-enter",
+              "event": "click"
+            },
+            "action": {
+              "type": "navigate",
+              "targetPageId": "page-growth-points"
+            }
+          },
+          {
+            "trigger": {
+              "domId": "story-view-all",
+              "event": "click"
+            },
+            "action": {
+              "type": "navigate",
+              "targetPageId": "page-growth-story"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-growth-points",
+      "title": "成长记录 · 积分兑换",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 309,
+        "y": 376,
+        "group": 1,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-5ccef627",
+          "measuredAt": 1785571040993
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/growth-points.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-growth-story",
+      "title": "成长记录 · 成长故事",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1785628800000,
+      "canvasData": {
+        "x": 618,
+        "y": 376,
+        "group": 1,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 375,
+          "sourceHash": "fnv1a-d224d792",
+          "measuredAt": 1785571040993
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/growth-story.html",
+        "interactions": []
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": true,
+    "deviceType": "mobile",
+    "projectName": "GrowPocket UI模块设计"
+  }
+}

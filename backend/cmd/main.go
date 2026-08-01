@@ -177,11 +177,17 @@ func main() {
 		chatHandler := handler.NewChatHandler(service.NewChatService(aiService))
 		authorized.POST("/chat/message", chatHandler.SendMessage)
 		authorized.GET("/chat/history/:child_id", chatHandler.GetHistory)
+		authorized.GET("/chat/sessions", chatHandler.ListSessions)
+		authorized.POST("/chat/sessions", chatHandler.CreateSession)
+		authorized.GET("/chat/sessions/search", chatHandler.SearchSessions)
+		authorized.GET("/chat/sessions/:id/messages", chatHandler.GetSessionMessages)
 
 		// 成长故事（v3）
 		growthStoryHandler := handler.NewGrowthStoryHandler(service.NewGrowthStoryService(aiService))
+		authorized.GET("/growth-stories", growthStoryHandler.ListStories)
 		authorized.POST("/growth-stories/:cycle_id", growthStoryHandler.GenerateStory)
 		authorized.GET("/growth-stories/:cycle_id", growthStoryHandler.GetStory)
+		authorized.GET("/growth-stories/:cycle_id/tasks", growthStoryHandler.GetCycleTasks)
 
 		// 问卷（v3）
 		questionnaireHandler := handler.NewQuestionnaireHandler()

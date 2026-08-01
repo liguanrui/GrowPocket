@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Share2, Sparkles, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { ChevronLeft, Share2, Sparkles, RefreshCw, Image as ImageIcon, Target, Calendar, Star, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useChildStore } from '../stores/childStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { IPPAvatar } from '../components/IPPAvatar';
-import { generateStory, getCurrentCycle, parseAbilitySummary, parsePhotoUrls } from '../services/growthStory';
+import { generateStory, getStory, getCurrentCycle, getCycleTasks, parseAbilitySummary, parsePhotoUrls } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
+import type { Task } from '../services/tasks';
 import * as communityService from '../services/community';
 import { getGrowthIndex } from '../services/ability';
 
@@ -33,6 +34,7 @@ export function GrowthStoryPage() {
   const childName = child?.nickname || '宝宝';
 
   const [story, setStory] = useState<GrowthStory | null>(null);
+  const [cycleTasks, setCycleTasks] = useState<Task[]>([]);
   const [growthIndex, setGrowthIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +84,7 @@ export function GrowthStoryPage() {
       setError(null);
       try {
         let cycleId: number | null = cycleIdParam ? Number(cycleIdParam) : null;
+        const isHistorical = !!cycleIdParam;
         if (!cycleId || isNaN(cycleId)) {
           const current = await getCurrentCycle(childId);
           cycleId = current.cycle?.id;
@@ -89,9 +92,21 @@ export function GrowthStoryPage() {
             throw new Error('未找到当前成长周期');
           }
         }
-        const result = await generateStory(cycleId, childId, childName);
+        // 历史回看：直接读取已有故事，不重新生成
+        // 新生成：调用 generateStory
+        const result = isHistorical
+          ? await getStory(cycleId)
+          : await generateStory(cycleId, childId, childName);
+        // 拉取周期内任务时间线
+        let tasks: Task[] = [];
+        try {
+          tasks = await getCycleTasks(cycleId);
+        } catch {
+          // 任务时间线加载失败不阻塞故事展示
+        }
         if (!cancelled && mountedRef.current) {
           setStory(result);
+          setCycleTasks(tasks);
           setLoading(false);
         }
       } catch (e: any) {
@@ -191,7 +206,7 @@ export function GrowthStoryPage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-4">
+      <div className="max-w-lg mx-auto px-4 -mt-4 space-y-3">
         {/* 故事卡片 */}
         <div className="bg-card rounded-2xl p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
@@ -203,52 +218,131 @@ export function GrowthStoryPage() {
             </div>
             <IPPAvatar growthIndex={growthIndex} expression="proud" size={48} />
           </div>
+        </div>
 
-          {/* 故事正文 */}
-          <div className="mt-4 text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
-            {story.content}
+        {/* 阶段目标达成情况 */}
+        {abilityList.length > 0 && abilityList.some((d) => d.target_score > 0) && (
+          <div className="bg-card rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Target size={14} className="text-purple-500" />
+              <span className="text-sm font-medium text-text-primary">阶段目标达成</span>
+            </div>
+            <div className="space-y-3">
+              {abilityList.filter((d) => d.target_score > 0).map((item, idx) => {
+                const progress = item.target_score > 0
+                  ? Math.min(100, Math.round((item.new_score / item.target_score) * 100))
+                  : 0;
+                return (
+                  <div key={idx}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-text-primary">{item.dimension_name}</span>
+                      <span className="text-xs text-text-tertiary">
+                        {item.new_score} / {item.target_score}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          progress >= 100 ? 'bg-green-500' : progress >= 60 ? 'bg-primary' : 'bg-amber-400'
+                        }`}
+                        style={{ width: `${Math.min(100, progress)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        )}
 
-          {/* 能力提升摘要 */}
-          {abilityList.length > 0 && (
-            <div className="mt-5">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Sparkles size={14} className="text-purple-500" />
-                <span className="text-sm font-medium text-text-primary">能力提升</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {abilityList.map((item, idx) => (
+        {/* 能力提升摘要 */}
+        {abilityList.length > 0 && (
+          <div className="bg-card rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Sparkles size={14} className="text-purple-500" />
+              <span className="text-sm font-medium text-text-primary">能力提升</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {abilityList.map((item, idx) => {
+                const isUp = item.delta > 0;
+                const isDown = item.delta < 0;
+                const Icon = isUp ? TrendingUp : isDown ? TrendingDown : Minus;
+                const colorClass = isUp
+                  ? 'bg-green-50 text-green-700'
+                  : isDown
+                  ? 'bg-red-50 text-red-700'
+                  : 'bg-gray-100 text-text-tertiary';
+                return (
                   <span
                     key={idx}
-                    className="text-xs px-2.5 py-1 bg-purple-50 text-purple-700 rounded-full"
+                    className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 ${colorClass}`}
                   >
-                    {item.dimension} +{item.delta}
+                    <Icon size={12} />
+                    {item.dimension_name} {isUp ? '+' : ''}{item.delta}
                   </span>
-                ))}
-              </div>
+                );
+              })}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* 相册精选 */}
-          {photoList.length > 0 && (
-            <div className="mt-5">
-              <div className="flex items-center gap-1.5 mb-2">
-                <ImageIcon size={14} className="text-purple-500" />
-                <span className="text-sm font-medium text-text-primary">精彩瞬间</span>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-                {photoList.map((url, idx) => (
-                  <img
-                    key={idx}
-                    src={url}
-                    alt=""
-                    className="w-24 h-24 rounded-xl object-cover flex-shrink-0"
-                  />
-                ))}
-              </div>
+        {/* 子任务时间线 */}
+        {cycleTasks.length > 0 && (
+          <div className="bg-card rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Calendar size={14} className="text-purple-500" />
+              <span className="text-sm font-medium text-text-primary">子任务时间线</span>
+              <span className="text-xs text-text-tertiary bg-gray-100 px-2 py-0.5 rounded-full">
+                {cycleTasks.length}
+              </span>
             </div>
-          )}
+            <div className="space-y-3">
+              {cycleTasks.map((task, idx) => (
+                <div key={task.id || idx} className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0">
+                    <Star size={14} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-text-primary">{task.title}</div>
+                    <div className="text-xs text-text-tertiary mt-0.5">
+                      {new Date(task.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div className="text-xs text-primary font-medium flex-shrink-0">
+                    +{task.points}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 故事正文 */}
+        <div className="bg-card rounded-2xl p-5 shadow-sm">
+          <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
+            {story.content}
+          </div>
         </div>
+
+        {/* 相册精选 */}
+        {photoList.length > 0 && (
+          <div className="bg-card rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-3">
+              <ImageIcon size={14} className="text-purple-500" />
+              <span className="text-sm font-medium text-text-primary">精彩瞬间</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+              {photoList.map((url, idx) => (
+                <img
+                  key={idx}
+                  src={url}
+                  alt=""
+                  className="w-24 h-24 rounded-xl object-cover flex-shrink-0"
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 底部分享按钮（仅家长可见） */}

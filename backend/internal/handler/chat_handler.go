@@ -92,3 +92,92 @@ func (h *ChatHandler) GetHistory(c *gin.Context) {
 	}
 	util.OK(c, gin.H{"messages": messages, "session_id": session.ID})
 }
+
+// ListSessions GET /api/chat/sessions?child_id=xxx
+// 获取儿童的会话列表（按最后消息时间倒序）
+func (h *ChatHandler) ListSessions(c *gin.Context) {
+	childID64, err := strconv.ParseUint(c.Query("child_id"), 10, 32)
+	if err != nil || childID64 == 0 {
+		util.FailBadRequest(c, "请提供 child_id")
+		return
+	}
+	childID := uint(childID64)
+	familyID := middleware.GetFamilyID(c)
+
+	sessions, err := h.chatService.ListSessions(childID, familyID)
+	if err != nil {
+		util.FailInternal(c, "查询会话列表失败")
+		return
+	}
+	util.OK(c, sessions)
+}
+
+// SearchSessions GET /api/chat/sessions/search?child_id=xxx&q=xxx
+// 搜索会话（匹配标题或最后消息）
+func (h *ChatHandler) SearchSessions(c *gin.Context) {
+	childID64, err := strconv.ParseUint(c.Query("child_id"), 10, 32)
+	if err != nil || childID64 == 0 {
+		util.FailBadRequest(c, "请提供 child_id")
+		return
+	}
+	childID := uint(childID64)
+	familyID := middleware.GetFamilyID(c)
+	q := c.Query("q")
+
+	sessions, err := h.chatService.SearchSessions(childID, familyID, q)
+	if err != nil {
+		util.FailInternal(c, "搜索会话失败")
+		return
+	}
+	util.OK(c, sessions)
+}
+
+// CreateSession POST /api/chat/sessions
+// 主动新建会话
+func (h *ChatHandler) CreateSession(c *gin.Context) {
+	var req struct {
+		ChildID uint `json:"child_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		util.FailBadRequest(c, "请提供 child_id")
+		return
+	}
+	userID := middleware.GetUserID(c)
+	familyID := middleware.GetFamilyID(c)
+
+	var user model.User
+	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		util.FailUnauthorized(c, "用户不存在")
+		return
+	}
+	role := user.Role
+	if role == "" {
+		role = "parent"
+	}
+
+	session, err := h.chatService.CreateSession(familyID, req.ChildID, userID, role)
+	if err != nil {
+		util.FailInternal(c, "创建会话失败")
+		return
+	}
+	util.OK(c, session)
+}
+
+// GetSessionMessages GET /api/chat/sessions/:id/messages
+// 获取指定会话的全部消息
+func (h *ChatHandler) GetSessionMessages(c *gin.Context) {
+	sessionID64, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || sessionID64 == 0 {
+		util.FailBadRequest(c, "无效的会话 ID")
+		return
+	}
+	sessionID := uint(sessionID64)
+	familyID := middleware.GetFamilyID(c)
+
+	messages, err := h.chatService.GetSessionMessages(sessionID, familyID)
+	if err != nil {
+		util.FailNotFound(c, err.Error())
+		return
+	}
+	util.OK(c, messages)
+}

@@ -1,0 +1,542 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-01T07:06:34.278Z",
+  "source": "build-page-dispatch-manifest.mjs",
+  "mode": "free-fast",
+  "summary_path": "runtime-orchestration-summary.json",
+  "skillProvenance": null,
+  "dispatchPreflightManifest": [
+    {
+      "recorded_at": "2026-08-01T07:06:34.274Z",
+      "generatedBy": "build-page-dispatch-manifest.mjs",
+      "packetType": "FreePagePacket",
+      "laneContract": {
+        "resolvedLane": "free_exploration",
+        "packetType": "FreePagePacket",
+        "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+      },
+      "taskLinePresent": true,
+      "outputPathPresent": true,
+      "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+      "nodeId": "page-assistant-empty",
+      "htmlSrc": "pages/assistant-empty.html",
+      "supplementaryReads": [],
+      "allowedWritePaths": [
+        "pages/assistant-empty.html",
+        "assets/"
+      ],
+      "forbiddenWriteRoots": [
+        "*.design",
+        "runtime-orchestration-summary.json",
+        "validation-report.json",
+        "finish-readiness-report.json",
+        "restore-contract-report.json",
+        "page-generation-summary.json"
+      ],
+      "toolPolicy": {
+        "todoWriteAllowed": false,
+        "validationScriptsAllowed": false,
+        "previewAllowed": false,
+        "helperScriptsAllowed": false,
+        "designFileWriteAllowed": false,
+        "allowedWritePaths": [
+          "pages/assistant-empty.html",
+          "assets/"
+        ]
+      },
+      "skillRuntime": {
+        "skillDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design",
+        "deterministicToolDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling",
+        "toolPaths": {
+          "applyHtmlHeadContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs",
+          "recordDispatchCompletion": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs",
+          "buildPageDispatchManifest": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs",
+          "validateDesignWorkspace": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-design-workspace.mjs",
+          "validateFinishReadiness": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs",
+          "validateRestoreContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-restore-contract.mjs"
+        },
+        "requiredForPageSubAgent": [
+          "applyHtmlHeadContract",
+          "recordDispatchCompletion"
+        ],
+        "pathInjection": "absolute",
+        "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+        "commandTemplates": {
+          "recordDispatchCompletion": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design' --node-id='page-assistant-empty' --html-src='pages/assistant-empty.html' --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+        }
+      },
+      "cssFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css",
+      "htmlFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-empty.html",
+      "brandPrefix": "gp",
+      "aestheticsMode": "free-explore",
+      "toolDisciplineBlockPresent": true,
+      "fillHtmlHeadCommand": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-empty.html' --title='AI助理 · 空状态' --lang='zh-CN' --prefix='gp'",
+      "headFillMode": "skeleton-first",
+      "viewportMode": null,
+      "completionSchemaExpected": "compact",
+      "restoreFields": null,
+      "restoreContractStatus": null,
+      "restoreCompactPacket": null,
+      "deterministicCommands": null,
+      "sourceAuthorityLock": null,
+      "preDispatchFileHashes": {
+        ".design": "ce3f76a0b95e3aeacb6ca2bad01902cbcfc48383a8bbff6d73f47862731c3224"
+      },
+      "contextPreflight": {
+        "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+        "requiredContextFiles": [
+          "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+          "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+          "delivery-quality/page-rendering-quality-gate.md",
+          "delivery-quality/design-artifact-validation.md",
+          "delivery-quality/delivery-evidence-contract.md",
+          "visual-experience/visual-experience-guidelines.md"
+        ],
+        "optionalContextFiles": [],
+        "passed": true
+      },
+      "pageSliceOnly": true,
+      "requiredFieldsPresent": true,
+      "missingFields": [],
+      "fillHtmlHeadCommandValid": true,
+      "mobileNavigation": {
+        "required": false,
+        "appliesToThisPage": false,
+        "canonicalHtmlIncluded": false,
+        "missingFields": []
+      },
+      "persistedToSummary": true,
+      "taskQueryAudited": false,
+      "proofSource": "summary-only",
+      "largeWorkflowFilesInTaskQuery": null
+    },
+    {
+      "recorded_at": "2026-08-01T07:06:34.274Z",
+      "generatedBy": "build-page-dispatch-manifest.mjs",
+      "packetType": "FreePagePacket",
+      "laneContract": {
+        "resolvedLane": "free_exploration",
+        "packetType": "FreePagePacket",
+        "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+      },
+      "taskLinePresent": true,
+      "outputPathPresent": true,
+      "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+      "nodeId": "page-assistant-chat",
+      "htmlSrc": "pages/assistant-chat.html",
+      "supplementaryReads": [],
+      "allowedWritePaths": [
+        "pages/assistant-chat.html",
+        "assets/"
+      ],
+      "forbiddenWriteRoots": [
+        "*.design",
+        "runtime-orchestration-summary.json",
+        "validation-report.json",
+        "finish-readiness-report.json",
+        "restore-contract-report.json",
+        "page-generation-summary.json"
+      ],
+      "toolPolicy": {
+        "todoWriteAllowed": false,
+        "validationScriptsAllowed": false,
+        "previewAllowed": false,
+        "helperScriptsAllowed": false,
+        "designFileWriteAllowed": false,
+        "allowedWritePaths": [
+          "pages/assistant-chat.html",
+          "assets/"
+        ]
+      },
+      "skillRuntime": {
+        "skillDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design",
+        "deterministicToolDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling",
+        "toolPaths": {
+          "applyHtmlHeadContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs",
+          "recordDispatchCompletion": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs",
+          "buildPageDispatchManifest": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs",
+          "validateDesignWorkspace": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-design-workspace.mjs",
+          "validateFinishReadiness": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs",
+          "validateRestoreContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-restore-contract.mjs"
+        },
+        "requiredForPageSubAgent": [
+          "applyHtmlHeadContract",
+          "recordDispatchCompletion"
+        ],
+        "pathInjection": "absolute",
+        "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+        "commandTemplates": {
+          "recordDispatchCompletion": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design' --node-id='page-assistant-chat' --html-src='pages/assistant-chat.html' --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+        }
+      },
+      "cssFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css",
+      "htmlFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-chat.html",
+      "brandPrefix": "gp",
+      "aestheticsMode": "free-explore",
+      "toolDisciplineBlockPresent": true,
+      "fillHtmlHeadCommand": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-chat.html' --title='AI助理 · 对话中' --lang='zh-CN' --prefix='gp'",
+      "headFillMode": "skeleton-first",
+      "viewportMode": null,
+      "completionSchemaExpected": "compact",
+      "restoreFields": null,
+      "restoreContractStatus": null,
+      "restoreCompactPacket": null,
+      "deterministicCommands": null,
+      "sourceAuthorityLock": null,
+      "preDispatchFileHashes": {
+        ".design": "ce3f76a0b95e3aeacb6ca2bad01902cbcfc48383a8bbff6d73f47862731c3224"
+      },
+      "contextPreflight": {
+        "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+        "requiredContextFiles": [
+          "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+          "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+          "delivery-quality/page-rendering-quality-gate.md",
+          "delivery-quality/design-artifact-validation.md",
+          "delivery-quality/delivery-evidence-contract.md",
+          "visual-experience/visual-experience-guidelines.md"
+        ],
+        "optionalContextFiles": [],
+        "passed": true
+      },
+      "pageSliceOnly": true,
+      "requiredFieldsPresent": true,
+      "missingFields": [],
+      "fillHtmlHeadCommandValid": true,
+      "mobileNavigation": {
+        "required": false,
+        "appliesToThisPage": false,
+        "canonicalHtmlIncluded": false,
+        "missingFields": []
+      },
+      "persistedToSummary": true,
+      "taskQueryAudited": false,
+      "proofSource": "summary-only",
+      "largeWorkflowFilesInTaskQuery": null
+    },
+    {
+      "recorded_at": "2026-08-01T07:06:34.274Z",
+      "generatedBy": "build-page-dispatch-manifest.mjs",
+      "packetType": "FreePagePacket",
+      "laneContract": {
+        "resolvedLane": "free_exploration",
+        "packetType": "FreePagePacket",
+        "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+      },
+      "taskLinePresent": true,
+      "outputPathPresent": true,
+      "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+      "nodeId": "page-assistant-drawer",
+      "htmlSrc": "pages/assistant-drawer.html",
+      "supplementaryReads": [],
+      "allowedWritePaths": [
+        "pages/assistant-drawer.html",
+        "assets/"
+      ],
+      "forbiddenWriteRoots": [
+        "*.design",
+        "runtime-orchestration-summary.json",
+        "validation-report.json",
+        "finish-readiness-report.json",
+        "restore-contract-report.json",
+        "page-generation-summary.json"
+      ],
+      "toolPolicy": {
+        "todoWriteAllowed": false,
+        "validationScriptsAllowed": false,
+        "previewAllowed": false,
+        "helperScriptsAllowed": false,
+        "designFileWriteAllowed": false,
+        "allowedWritePaths": [
+          "pages/assistant-drawer.html",
+          "assets/"
+        ]
+      },
+      "skillRuntime": {
+        "skillDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design",
+        "deterministicToolDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling",
+        "toolPaths": {
+          "applyHtmlHeadContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs",
+          "recordDispatchCompletion": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs",
+          "buildPageDispatchManifest": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs",
+          "validateDesignWorkspace": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-design-workspace.mjs",
+          "validateFinishReadiness": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs",
+          "validateRestoreContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-restore-contract.mjs"
+        },
+        "requiredForPageSubAgent": [
+          "applyHtmlHeadContract",
+          "recordDispatchCompletion"
+        ],
+        "pathInjection": "absolute",
+        "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+        "commandTemplates": {
+          "recordDispatchCompletion": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design' --node-id='page-assistant-drawer' --html-src='pages/assistant-drawer.html' --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+        }
+      },
+      "cssFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css",
+      "htmlFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-drawer.html",
+      "brandPrefix": "gp",
+      "aestheticsMode": "free-explore",
+      "toolDisciplineBlockPresent": true,
+      "fillHtmlHeadCommand": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-drawer.html' --title='AI助理 · 历史抽屉' --lang='zh-CN' --prefix='gp'",
+      "headFillMode": "skeleton-first",
+      "viewportMode": null,
+      "completionSchemaExpected": "compact",
+      "restoreFields": null,
+      "restoreContractStatus": null,
+      "restoreCompactPacket": null,
+      "deterministicCommands": null,
+      "sourceAuthorityLock": null,
+      "preDispatchFileHashes": {
+        ".design": "ce3f76a0b95e3aeacb6ca2bad01902cbcfc48383a8bbff6d73f47862731c3224"
+      },
+      "contextPreflight": {
+        "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+        "requiredContextFiles": [
+          "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+          "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+          "delivery-quality/page-rendering-quality-gate.md",
+          "delivery-quality/design-artifact-validation.md",
+          "delivery-quality/delivery-evidence-contract.md",
+          "visual-experience/visual-experience-guidelines.md"
+        ],
+        "optionalContextFiles": [],
+        "passed": true
+      },
+      "pageSliceOnly": true,
+      "requiredFieldsPresent": true,
+      "missingFields": [],
+      "fillHtmlHeadCommandValid": true,
+      "mobileNavigation": {
+        "required": false,
+        "appliesToThisPage": false,
+        "canonicalHtmlIncluded": false,
+        "missingFields": []
+      },
+      "persistedToSummary": true,
+      "taskQueryAudited": false,
+      "proofSource": "summary-only",
+      "largeWorkflowFilesInTaskQuery": null
+    },
+    {
+      "recorded_at": "2026-08-01T07:06:34.274Z",
+      "generatedBy": "build-page-dispatch-manifest.mjs",
+      "packetType": "FreePagePacket",
+      "laneContract": {
+        "resolvedLane": "free_exploration",
+        "packetType": "FreePagePacket",
+        "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+      },
+      "taskLinePresent": true,
+      "outputPathPresent": true,
+      "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+      "nodeId": "page-assistant-child-switch",
+      "htmlSrc": "pages/assistant-child-switch.html",
+      "supplementaryReads": [],
+      "allowedWritePaths": [
+        "pages/assistant-child-switch.html",
+        "assets/"
+      ],
+      "forbiddenWriteRoots": [
+        "*.design",
+        "runtime-orchestration-summary.json",
+        "validation-report.json",
+        "finish-readiness-report.json",
+        "restore-contract-report.json",
+        "page-generation-summary.json"
+      ],
+      "toolPolicy": {
+        "todoWriteAllowed": false,
+        "validationScriptsAllowed": false,
+        "previewAllowed": false,
+        "helperScriptsAllowed": false,
+        "designFileWriteAllowed": false,
+        "allowedWritePaths": [
+          "pages/assistant-child-switch.html",
+          "assets/"
+        ]
+      },
+      "skillRuntime": {
+        "skillDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design",
+        "deterministicToolDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling",
+        "toolPaths": {
+          "applyHtmlHeadContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs",
+          "recordDispatchCompletion": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs",
+          "buildPageDispatchManifest": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs",
+          "validateDesignWorkspace": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-design-workspace.mjs",
+          "validateFinishReadiness": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs",
+          "validateRestoreContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-restore-contract.mjs"
+        },
+        "requiredForPageSubAgent": [
+          "applyHtmlHeadContract",
+          "recordDispatchCompletion"
+        ],
+        "pathInjection": "absolute",
+        "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+        "commandTemplates": {
+          "recordDispatchCompletion": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design' --node-id='page-assistant-child-switch' --html-src='pages/assistant-child-switch.html' --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+        }
+      },
+      "cssFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css",
+      "htmlFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-child-switch.html",
+      "brandPrefix": "gp",
+      "aestheticsMode": "free-explore",
+      "toolDisciplineBlockPresent": true,
+      "fillHtmlHeadCommand": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-child-switch.html' --title='AI助理 · 切换儿童' --lang='zh-CN' --prefix='gp'",
+      "headFillMode": "skeleton-first",
+      "viewportMode": null,
+      "completionSchemaExpected": "compact",
+      "restoreFields": null,
+      "restoreContractStatus": null,
+      "restoreCompactPacket": null,
+      "deterministicCommands": null,
+      "sourceAuthorityLock": null,
+      "preDispatchFileHashes": {
+        ".design": "ce3f76a0b95e3aeacb6ca2bad01902cbcfc48383a8bbff6d73f47862731c3224"
+      },
+      "contextPreflight": {
+        "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+        "requiredContextFiles": [
+          "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+          "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+          "delivery-quality/page-rendering-quality-gate.md",
+          "delivery-quality/design-artifact-validation.md",
+          "delivery-quality/delivery-evidence-contract.md",
+          "visual-experience/visual-experience-guidelines.md"
+        ],
+        "optionalContextFiles": [],
+        "passed": true
+      },
+      "pageSliceOnly": true,
+      "requiredFieldsPresent": true,
+      "missingFields": [],
+      "fillHtmlHeadCommandValid": true,
+      "mobileNavigation": {
+        "required": false,
+        "appliesToThisPage": false,
+        "canonicalHtmlIncluded": false,
+        "missingFields": []
+      },
+      "persistedToSummary": true,
+      "taskQueryAudited": false,
+      "proofSource": "summary-only",
+      "largeWorkflowFilesInTaskQuery": null
+    },
+    {
+      "recorded_at": "2026-08-01T07:06:34.274Z",
+      "generatedBy": "build-page-dispatch-manifest.mjs",
+      "packetType": "FreePagePacket",
+      "laneContract": {
+        "resolvedLane": "free_exploration",
+        "packetType": "FreePagePacket",
+        "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+      },
+      "taskLinePresent": true,
+      "outputPathPresent": true,
+      "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+      "nodeId": "page-assistant-voice",
+      "htmlSrc": "pages/assistant-voice.html",
+      "supplementaryReads": [],
+      "allowedWritePaths": [
+        "pages/assistant-voice.html",
+        "assets/"
+      ],
+      "forbiddenWriteRoots": [
+        "*.design",
+        "runtime-orchestration-summary.json",
+        "validation-report.json",
+        "finish-readiness-report.json",
+        "restore-contract-report.json",
+        "page-generation-summary.json"
+      ],
+      "toolPolicy": {
+        "todoWriteAllowed": false,
+        "validationScriptsAllowed": false,
+        "previewAllowed": false,
+        "helperScriptsAllowed": false,
+        "designFileWriteAllowed": false,
+        "allowedWritePaths": [
+          "pages/assistant-voice.html",
+          "assets/"
+        ]
+      },
+      "skillRuntime": {
+        "skillDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design",
+        "deterministicToolDir": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling",
+        "toolPaths": {
+          "applyHtmlHeadContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs",
+          "recordDispatchCompletion": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs",
+          "buildPageDispatchManifest": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs",
+          "validateDesignWorkspace": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-design-workspace.mjs",
+          "validateFinishReadiness": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-finish-readiness.mjs",
+          "validateRestoreContract": "/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/validate-restore-contract.mjs"
+        },
+        "requiredForPageSubAgent": [
+          "applyHtmlHeadContract",
+          "recordDispatchCompletion"
+        ],
+        "pathInjection": "absolute",
+        "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+        "commandTemplates": {
+          "recordDispatchCompletion": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/record-dispatch-completion.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design' --node-id='page-assistant-voice' --html-src='pages/assistant-voice.html' --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+        }
+      },
+      "cssFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css",
+      "htmlFilePath": "/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-voice.html",
+      "brandPrefix": "gp",
+      "aestheticsMode": "free-explore",
+      "toolDisciplineBlockPresent": true,
+      "fillHtmlHeadCommand": "node '/Users/Admin1/.trae-cn/builtin/design/hebe/skills/solo-design/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/colors_and_type.css' '/Users/Admin1/Workhome/GrowPocket/ai-assistant-ui-design/pages/assistant-voice.html' --title='AI助理 · 语音输入' --lang='zh-CN' --prefix='gp'",
+      "headFillMode": "skeleton-first",
+      "viewportMode": null,
+      "completionSchemaExpected": "compact",
+      "restoreFields": null,
+      "restoreContractStatus": null,
+      "restoreCompactPacket": null,
+      "deterministicCommands": null,
+      "sourceAuthorityLock": null,
+      "preDispatchFileHashes": {
+        ".design": "ce3f76a0b95e3aeacb6ca2bad01902cbcfc48383a8bbff6d73f47862731c3224"
+      },
+      "contextPreflight": {
+        "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+        "requiredContextFiles": [
+          "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+          "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+          "delivery-quality/page-rendering-quality-gate.md",
+          "delivery-quality/design-artifact-validation.md",
+          "delivery-quality/delivery-evidence-contract.md",
+          "visual-experience/visual-experience-guidelines.md"
+        ],
+        "optionalContextFiles": [],
+        "passed": true
+      },
+      "pageSliceOnly": true,
+      "requiredFieldsPresent": true,
+      "missingFields": [],
+      "fillHtmlHeadCommandValid": true,
+      "mobileNavigation": {
+        "required": false,
+        "appliesToThisPage": false,
+        "canonicalHtmlIncluded": false,
+        "missingFields": []
+      },
+      "persistedToSummary": true,
+      "taskQueryAudited": false,
+      "proofSource": "summary-only",
+      "largeWorkflowFilesInTaskQuery": null
+    }
+  ],
+  "deterministicCommandsByPage": {
+    "pages/assistant-empty.html": {},
+    "pages/assistant-chat.html": {},
+    "pages/assistant-drawer.html": {},
+    "pages/assistant-child-switch.html": {},
+    "pages/assistant-voice.html": {}
+  }
+}
