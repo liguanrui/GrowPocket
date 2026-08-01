@@ -26,9 +26,20 @@ type AnswerInput struct {
 	Score       int  `json:"score"`
 }
 
-// GetByStage 按阶段获取问卷
-func (s *QuestionnaireService) GetByStage(stage string) (*model.Questionnaire, error) {
+// GetByStage 按阶段获取问卷，level 非空时按档位过滤，未命中时回退到通用问卷
+func (s *QuestionnaireService) GetByStage(stage, level string) (*model.Questionnaire, error) {
 	var q model.Questionnaire
+	if level != "" {
+		// 优先查指定档位
+		if err := database.DB.Where("stage = ? AND level = ?", stage, level).Order("created_at DESC").First(&q).Error; err == nil {
+			return &q, nil
+		}
+		// 回退到通用问卷（level 为空），用独立查询避免条件叠加
+		if err := database.DB.Where("stage = ? AND (level = '' OR level IS NULL)", stage).Order("created_at DESC").First(&q).Error; err != nil {
+			return nil, errors.New("问卷不存在")
+		}
+		return &q, nil
+	}
 	if err := database.DB.Where("stage = ?", stage).Order("created_at DESC").First(&q).Error; err != nil {
 		return nil, errors.New("问卷不存在")
 	}

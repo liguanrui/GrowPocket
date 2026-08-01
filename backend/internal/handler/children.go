@@ -22,6 +22,9 @@ type addChildReq struct {
 	Nickname string  `json:"nickname" binding:"required"`
 	Gender   *int    `json:"gender"`
 	Birthday *string `json:"birthday"` // RFC3339 字符串
+	Grade    *int    `json:"grade"`
+	Age      *int    `json:"age"`
+	Hobbies  string  `json:"hobbies"`
 }
 
 func (h *ChildrenHandler) AddChild(c *gin.Context) {
@@ -43,6 +46,9 @@ func (h *ChildrenHandler) AddChild(c *gin.Context) {
 		Nickname: req.Nickname,
 		Gender:   req.Gender,
 		Birthday: birthday,
+		Grade:    req.Grade,
+		Age:      req.Age,
+		Hobbies:  req.Hobbies,
 	})
 	if err != nil {
 		util.FailBadRequest(c, err.Error())
@@ -85,6 +91,9 @@ type updateChildReq struct {
 	Gender   *int    `json:"gender"`
 	Birthday *string `json:"birthday"`
 	Avatar   *string `json:"avatar"`
+	Grade    *int    `json:"grade"`
+	Age      *int    `json:"age"`
+	Hobbies  *string `json:"hobbies"`
 }
 
 func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
@@ -112,6 +121,9 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 		Gender:   req.Gender,
 		Birthday: birthday,
 		Avatar:   req.Avatar,
+		Grade:    req.Grade,
+		Age:      req.Age,
+		Hobbies:  req.Hobbies,
 	})
 	if err != nil {
 		util.FailBadRequest(c, err.Error())

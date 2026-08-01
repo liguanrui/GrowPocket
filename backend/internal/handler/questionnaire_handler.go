@@ -18,14 +18,15 @@ func NewQuestionnaireHandler() *QuestionnaireHandler {
 	return &QuestionnaireHandler{service: service.NewQuestionnaireService()}
 }
 
-// GetByStage GET /api/questionnaires/:stage
+// GetByStage GET /api/questionnaires/:stage?level=Lx
 func (h *QuestionnaireHandler) GetByStage(c *gin.Context) {
 	stage := c.Param("stage")
 	if stage == "" {
 		util.FailBadRequest(c, "请提供 stage")
 		return
 	}
-	q, err := h.service.GetByStage(stage)
+	level := c.Query("level")
+	q, err := h.service.GetByStage(stage, level)
 	if err != nil {
 		util.FailInternal(c, err.Error())
 		return

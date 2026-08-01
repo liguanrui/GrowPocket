@@ -18,6 +18,9 @@ type AddChildInput struct {
 	Nickname string
 	Gender   *int
 	Birthday *time.Time
+	Grade    *int
+	Age      *int
+	Hobbies  string
 }
 
 func (s *ChildService) AddChild(input AddChildInput) (*model.User, error) {
@@ -31,6 +34,9 @@ func (s *ChildService) AddChild(input AddChildInput) (*model.User, error) {
 		Nickname: input.Nickname,
 		Gender:   input.Gender,
 		Birthday: input.Birthday,
+		Grade:    input.Grade,
+		Age:      input.Age,
+		Hobbies:  input.Hobbies,
 		Balance:  0,
 	}
 
@@ -62,6 +68,9 @@ type UpdateChildInput struct {
 	Gender   *int
 	Birthday *time.Time
 	Avatar   *string
+	Grade    *int
+	Age      *int
+	Hobbies  *string
 }
 
 func (s *ChildService) UpdateChild(id, familyID uint, input UpdateChildInput) (*model.User, error) {
@@ -81,6 +90,15 @@ func (s *ChildService) UpdateChild(id, familyID uint, input UpdateChildInput) (*
 	}
 	if input.Avatar != nil {
 		child.Avatar = *input.Avatar
+	}
+	if input.Grade != nil {
+		child.Grade = input.Grade
+	}
+	if input.Age != nil {
+		child.Age = input.Age
+	}
+	if input.Hobbies != nil {
+		child.Hobbies = *input.Hobbies
 	}
 
 	if err := database.DB.Save(child).Error; err != nil {

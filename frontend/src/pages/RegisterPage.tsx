@@ -29,8 +29,8 @@ export default function RegisterPage() {
     setError('');
     try {
       await register(nickname.trim(), password);
-      // 注册成功后进入家庭管理页，录入儿童信息后自动引导到能力评估问卷
-      navigate('/settings/family', { replace: true });
+      // 注册成功后进入 Onboarding 新手指引流程，IP「小萌芽」陪伴收集儿童信息并进入分龄问卷
+      navigate('/onboarding', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败');
     } finally {

@@ -161,7 +161,7 @@ export function GrowthStoryPage() {
         <p className="text-sm text-text-tertiary mt-2">{LOADING_TIPS[tipIndex]}</p>
         <div className="w-48 h-1 bg-gray-100 rounded-full mt-6 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-purple-400 to-purple-600 rounded-full animate-pulse"
+            className="h-full bg-gradient-to-r from-emerald-400 to-green-600 rounded-full animate-pulse"
             style={{ width: '60%' }}
           />
         </div>
@@ -192,7 +192,7 @@ export function GrowthStoryPage() {
   return (
     <div className="min-h-screen bg-bg pb-28">
       {/* 顶部 */}
-      <div className="bg-gradient-to-br from-purple-500 to-purple-700 pt-8 pb-10 px-5 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-8 pb-10 px-5 rounded-b-3xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-3">
             <button
@@ -259,7 +259,7 @@ export function GrowthStoryPage() {
         {abilityList.length > 0 && (
           <div className="bg-card rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-3">
-              <Sparkles size={14} className="text-purple-500" />
+              <Sparkles size={14} className="text-emerald-500" />
               <span className="text-sm font-medium text-text-primary">能力提升</span>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -290,7 +290,7 @@ export function GrowthStoryPage() {
         {cycleTasks.length > 0 && (
           <div className="bg-card rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-3">
-              <Calendar size={14} className="text-purple-500" />
+              <Calendar size={14} className="text-emerald-500" />
               <span className="text-sm font-medium text-text-primary">子任务时间线</span>
               <span className="text-xs text-text-tertiary bg-gray-100 px-2 py-0.5 rounded-full">
                 {cycleTasks.length}
@@ -299,7 +299,7 @@ export function GrowthStoryPage() {
             <div className="space-y-3">
               {cycleTasks.map((task, idx) => (
                 <div key={task.id || idx} className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0">
                     <Star size={14} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -328,7 +328,7 @@ export function GrowthStoryPage() {
         {photoList.length > 0 && (
           <div className="bg-card rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-3">
-              <ImageIcon size={14} className="text-purple-500" />
+              <ImageIcon size={14} className="text-emerald-500" />
               <span className="text-sm font-medium text-text-primary">精彩瞬间</span>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
@@ -352,7 +352,7 @@ export function GrowthStoryPage() {
             <button
               onClick={handleShare}
               disabled={sharing}
-              className="w-full py-3 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-xl font-medium shadow-lg shadow-purple-500/20 hover:shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-medium shadow-lg shadow-emerald-500/20 hover:shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <Share2 size={18} />
               {sharing ? '分享中...' : '分享到社区'}

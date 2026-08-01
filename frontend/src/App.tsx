@@ -7,6 +7,7 @@ import { HomePage } from './pages/HomePage';
 import { MallPage } from './pages/MallPage';
 import { GrowthPage } from './pages/GrowthPage';
 import { GrowthStoryPage } from './pages/GrowthStoryPage';
+import { GrowthStoryListPage } from './pages/GrowthStoryListPage';
 import { FamilyPage } from './pages/FamilyPage';
 import { CommunityPage } from './pages/CommunityPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
@@ -23,6 +24,7 @@ import { TemplateEditPage } from './pages/TemplateEditPage';
 import { QuestionnairePage } from './pages/QuestionnairePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import OnboardingPage from './pages/OnboardingPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 type PageKey = 'assistant' | 'home' | 'growth' | 'community' | 'settings';
@@ -54,6 +56,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/onboarding" element={<OnboardingPage />} />
       <Route
         path="/"
         element={
@@ -72,6 +75,7 @@ export default function App() {
         <Route path="mall/:id/edit" element={<CreateItemPage />} />
         <Route path="growth" element={<GrowthPage />} />
         <Route path="growth/story" element={<GrowthStoryPage />} />
+        <Route path="growth/stories" element={<GrowthStoryListPage />} />
         <Route path="family" element={<FamilyPage />} />
         <Route path="community" element={<CommunityPage />} />
         <Route path="community/activities/new" element={<CreateActivityPage />} />

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Trophy, Star, ChevronLeft, ChevronRight, Share2, Sparkles, Image, FileText, Send, X, ChevronDown, Plus, Target, Check } from 'lucide-react';
+import { ChevronRight, Share2, Sparkles, Image, FileText, Send, X, Target, Check, Sliders, History, BookOpen, ArrowRight, Gift } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
 import { useAuthStore } from '../stores/authStore';
@@ -17,6 +16,84 @@ import type { DimensionProgress } from '../services/growthCycle';
 import { listStories, parseAbilitySummary } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
 import { useToastStore } from '../stores/toastStore';
+
+// 维度颜色映射
+const DIMENSION_COLORS = ['#10b981', '#6DBF7B', '#5B9BD5', '#F0B848', '#E87461'];
+
+function getDimensionColor(index: number): string {
+  return DIMENSION_COLORS[index % DIMENSION_COLORS.length];
+}
+
+function getLevelInfo(growthIndex: number) {
+  if (growthIndex < 20) return { level: 1, name: '种子期' };
+  if (growthIndex < 40) return { level: 2, name: '萌芽期' };
+  if (growthIndex < 60) return { level: 3, name: '小苗期' };
+  if (growthIndex < 80) return { level: 4, name: '小树期' };
+  return { level: 5, name: '大树期' };
+}
+
+// 原生 SVG 五维雷达图
+function RadarChartSVG({ scores }: { scores: ChildAbilityScore[] }) {
+  const size = 200;
+  const cx = size / 2;
+  const cy = size / 2;
+  const maxRadius = 70;
+  const labelRadius = 90;
+  const levels = [maxRadius, maxRadius * 2 / 3, maxRadius / 3];
+  const n = scores.length;
+  const angles = Array.from({ length: n }, (_, i) => -90 + (360 / n) * i);
+
+  function getPoint(angle: number, radius: number) {
+    const rad = (angle * Math.PI) / 180;
+    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+  }
+
+  function polygonPoints(radius: number) {
+    return angles.map(a => {
+      const p = getPoint(a, radius);
+      return `${p.x},${p.y}`;
+    }).join(' ');
+  }
+
+  const dataPoints = scores.map((s, i) => {
+    const radius = (Math.max(0, Math.min(100, s.score)) / 100) * maxRadius;
+    return getPoint(angles[i], radius);
+  });
+  const dataPolygonStr = dataPoints.map(p => `${p.x},${p.y}`).join(' ');
+
+  return (
+    <svg width={180} height={180} viewBox={`0 0 ${size} ${size}`}>
+      {/* 三层同心五边形网格 */}
+      {levels.map((r, i) => (
+        <polygon key={i} points={polygonPoints(r)} fill="none" stroke="#e5e7eb" strokeWidth="1" />
+      ))}
+      {/* 五条轴线 */}
+      {angles.map((a, i) => {
+        const p = getPoint(a, maxRadius);
+        return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#e5e7eb" strokeWidth="1" />;
+      })}
+      {/* 数据多边形 */}
+      {n > 0 && (
+        <>
+          <polygon points={dataPolygonStr} fill="rgba(126, 200, 80, 0.15)" stroke="#7EC850" strokeWidth="2" />
+          {/* 数据点 */}
+          {dataPoints.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r="3" fill="#7EC850" />
+          ))}
+        </>
+      )}
+      {/* 轴标签：维度名+分数 */}
+      {scores.map((s, i) => {
+        const p = getPoint(angles[i], labelRadius);
+        return (
+          <text key={i} x={p.x} y={p.y} fontSize="10" fill="#6b7280" textAnchor="middle" dominantBaseline="middle">
+            {s.dimension_name} {s.score}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
 
 function ShareModal({
   onClose,
@@ -114,7 +191,7 @@ function ShareModal({
           {[
             { id: 'text' as const, label: '文字', icon: FileText },
             { id: 'text_image' as const, label: '图文', icon: Image },
-            { id: 'text_task' as const, label: '任务', icon: Star },
+            { id: 'text_task' as const, label: '任务', icon: Sparkles },
           ].map((type) => {
             const Icon = type.icon;
             const isActive = shareType === type.id;
@@ -206,7 +283,7 @@ function ShareModal({
                         <div className="text-xs text-text-tertiary">+{task.points} 积分</div>
                       </div>
                     </div>
-                    {selectedTaskId === task.id && <Star size={16} className="text-primary" />}
+                    {selectedTaskId === task.id && <Sparkles size={16} className="text-primary" />}
                   </button>
                 ))
               )}
@@ -227,57 +304,21 @@ function ShareModal({
   );
 }
 
-function SectionHeader({
-  icon: Icon,
-  title,
-  count,
-  onToggle,
-  expanded,
-}: {
-  icon: any;
-  title: string;
-  count: number;
-  onToggle?: () => void;
-  expanded?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-          <Icon size={16} />
-        </div>
-        <h2 className="font-semibold text-text-primary">{title}</h2>
-        <span className="text-xs text-text-tertiary bg-gray-100 px-2 py-0.5 rounded-full">{count}</span>
-      </div>
-      {onToggle && (
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-1 text-sm text-text-tertiary hover:text-primary transition-colors"
-        >
-          <span>{expanded ? '收起' : '更多'}</span>
-          <ChevronDown size={16} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
-        </button>
-      )}
-    </div>
-  );
-}
-
 export function GrowthPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const childStore = useChildStore();
   const authStore = useAuthStore();
   const isParent = authStore.user?.role === 'parent';
+  const toast = useToastStore();
   const [scores, setScores] = useState<ChildAbilityScore[]>([]);
   const [growthIndex, setGrowthIndex] = useState(0);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksTotal, setTasksTotal] = useState(0);
   const [showShareModal, setShowShareModal] = useState(false);
   const [stories, setStories] = useState<GrowthStory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // 阶段目标相关
-  const toast = useToastStore();
   const [cycleId, setCycleId] = useState<number | null>(null);
   const [progressList, setProgressList] = useState<DimensionProgress[]>([]);
   const [cycleName, setCycleName] = useState('');
@@ -288,7 +329,7 @@ export function GrowthPage() {
   const [showGoalSetup, setShowGoalSetup] = useState(false);
   const [setupStartDate, setSetupStartDate] = useState('');
   const [setupEndDate, setSetupEndDate] = useState('');
-  const [setupGoals, setSetupGoals] = useState<Record<number, number>>({}); // dimension_id -> target_score
+  const [setupGoals, setSetupGoals] = useState<Record<number, number>>({});
   const [goalSubmitting, setGoalSubmitting] = useState(false);
 
   const children = childStore.children;
@@ -324,7 +365,7 @@ export function GrowthPage() {
         const [scoresResult, growthIndexResult, tasksResult, cycleResult, dimsResult, storiesResult] = await Promise.all([
           getChildScores(selectedChildId),
           getGrowthIndex(selectedChildId),
-          tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 20 }),
+          tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 100 }),
           getCurrentCycle(selectedChildId),
           getAbilities(),
           listStories(selectedChildId, 1, 20),
@@ -333,10 +374,8 @@ export function GrowthPage() {
           setScores(scoresResult);
           setGrowthIndex(growthIndexResult);
           setTasks(tasksResult.items);
-          setTasksTotal(tasksResult.total);
           setStories(storiesResult.items);
           setDimensions(dimsResult);
-          // 阶段目标数据
           if (cycleResult.cycle) {
             setCycleId(cycleResult.cycle.id);
             setCycleName(cycleResult.cycle.name);
@@ -374,7 +413,6 @@ export function GrowthPage() {
   // 打开阶段目标设置面板
   const openGoalSetup = () => {
     if (cycleId) {
-      // 编辑模式：加载当前周期时间区间和已有目标
       setSetupStartDate(cycleStartDate.slice(0, 10));
       setSetupEndDate(cycleEndDate.slice(0, 10));
       const goalsMap: Record<number, number> = {};
@@ -383,7 +421,6 @@ export function GrowthPage() {
       });
       setSetupGoals(goalsMap);
     } else {
-      // 创建模式：默认 30 天周期
       const now = new Date();
       const end = new Date(now);
       end.setDate(end.getDate() + 30);
@@ -394,7 +431,7 @@ export function GrowthPage() {
     setShowGoalSetup(true);
   };
 
-  // 提交阶段目标设置（时间区间 + 多维度目标）
+  // 提交阶段目标设置
   const handleSaveGoalSetup = async () => {
     if (!selectedChildId) return;
     if (!setupStartDate || !setupEndDate) {
@@ -414,20 +451,16 @@ export function GrowthPage() {
 
       let finalCycleId = cycleId;
       if (!finalCycleId) {
-        // 创建周期
         const cycle = await createCycle(selectedChildId, name, startISO, endISO);
         finalCycleId = cycle.id;
       } else {
-        // 更新周期时间区间
         await updateCycle(finalCycleId, name, startISO, endISO);
       }
-      // 批量设置维度目标
       for (const [dimId, target] of goalEntries) {
         await setGoal(finalCycleId!, selectedChildId, Number(dimId), target);
       }
       toast.success('阶段目标已保存');
       setShowGoalSetup(false);
-      // 重新加载
       const cycleResult = await getCurrentCycle(selectedChildId);
       if (cycleResult.cycle) {
         setCycleId(cycleResult.cycle.id);
@@ -443,9 +476,32 @@ export function GrowthPage() {
     }
   };
 
-  const cycleDays = cycleStartDate && cycleEndDate
-    ? Math.max(1, Math.ceil((new Date(cycleEndDate).getTime() - new Date(cycleStartDate).getTime()) / (1000 * 60 * 60 * 24)))
+  // 综合进度计算
+  const overallProgress = progressList.length > 0
+    ? Math.round(progressList.reduce((sum, p) => sum + p.progress, 0) / progressList.length)
     : 0;
+  const completedDimensions = progressList.filter(p => p.progress >= 100).length;
+  const levelInfo = getLevelInfo(growthIndex);
+  const stageLabel = cycleName || '未设置阶段';
+  const goalText = progressList.length > 0
+    ? `提升${progressList.map(p => p.dimension_name).join('、')}能力`
+    : '为孩子的成长设定阶段性目标';
+
+  // 是否已设置目标（有周期且至少一个维度有目标分）
+  const hasGoals = !!cycleId && progressList.some(p => p.target_score > 0);
+  // 是否存在未达标的目标
+  const hasUncompletedGoals = progressList.some(p => p.target_score > 0 && p.progress < 100);
+  // 阶段时间区间内是否有已完成任务
+  const hasCompletedTasksInCycle = (() => {
+    if (!cycleStartDate || !cycleEndDate) return false;
+    const start = new Date(cycleStartDate).getTime();
+    const end = new Date(cycleEndDate).getTime();
+    return tasks.some(t => {
+      if (t.status !== 3) return false;
+      const taskDate = new Date(t.updated_at || t.created_at).getTime();
+      return taskDate >= start && taskDate <= end;
+    });
+  })();
 
   if (loading) {
     return (
@@ -480,6 +536,7 @@ export function GrowthPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
+      {/* Header：绿色渐变 */}
       <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-8 pb-10 px-5 rounded-b-3xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-3">
@@ -495,242 +552,219 @@ export function GrowthPage() {
               <span className="hidden sm:inline">分享</span>
             </button>
           </div>
-
           <ChildTabs children={children} selectedId={selectedChild.id} onSelect={handleChildSelect} />
-
-          <div className="bg-white/15 backdrop-blur rounded-2xl p-4 mt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-white/80 text-xs">孩子</div>
-                <div className="text-white font-semibold text-lg mt-0.5">{selectedChild.nickname}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-white/80 text-xs">累计积分</div>
-                <div className="text-white text-2xl font-bold mt-0.5">{selectedChild.balance}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
-              <div className="flex-1 text-center">
-                <div className="text-white font-bold text-lg">{growthIndex}</div>
-                <div className="text-white/70 text-xs">成长指数</div>
-              </div>
-              <div className="flex-1 text-center">
-                <div className="text-white font-bold text-lg">{tasksTotal}</div>
-                <div className="text-white/70 text-xs">累计任务</div>
-              </div>
-              <div className="flex-1 text-center">
-                <div className="text-white font-bold text-lg">{cycleDays}</div>
-                <div className="text-white/70 text-xs">阶段天数</div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
-        {/* 能力雷达图 Section */}
+        {/* 1. 阶段目标（三按钮 + 单一进度条 + 阶段标签） */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                <Sparkles size={16} />
-              </div>
-              <h2 className="font-semibold text-text-primary">能力成长</h2>
+              <h2 className="text-sm font-semibold text-text-primary">阶段目标</h2>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                {stageLabel}
+              </span>
             </div>
-            <div className="text-right">
-              <div className="text-xs text-text-tertiary">成长指数</div>
-              <div className="text-xl font-bold text-primary">{growthIndex}</div>
-            </div>
-          </div>
-          <div className="w-full h-64">
-            {scores.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={scores}>
-                  <PolarGrid stroke="#e5e7eb" />
-                  <PolarAngleAxis dataKey="dimension_name" tick={{ fontSize: 11, fill: '#6b7280' }} />
-                  <PolarRadiusAxis domain={[0, 100]} tick={{ fontSize: 9, fill: '#9ca3af' }} />
-                  <Radar
-                    name="能力"
-                    dataKey="score"
-                    stroke="#7EC850"
-                    fill="#7EC850"
-                    fillOpacity={0.4}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
-                <div className="text-center">
-                  <Sparkles size={32} className="mx-auto mb-2 text-gray-300" />
-                  完成任务后展示能力成长
-                </div>
-              </div>
-            )}
-          </div>
-          {/* IP 形态（Task 11 实现） */}
-          <div className="mt-3 flex items-center justify-center gap-2 py-2 bg-primary/5 rounded-xl">
-            <IPPAvatar growthIndex={growthIndex} expression="proud" size={40} />
-            <div className="text-sm text-text-secondary">
-              {growthIndex < 20 ? '种子阶段' : growthIndex < 40 ? '萌芽阶段' : growthIndex < 60 ? '小苗阶段' : growthIndex < 80 ? '小树阶段' : '大树阶段'}
-            </div>
-          </div>
-        </div>
-
-        {/* 阶段目标 Section */}
-        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600">
-                <Target size={16} />
-              </div>
-              <h2 className="font-semibold text-text-primary">阶段目标</h2>
-            </div>
-            {cycleId && cycleEndDate && (
-              <div className="text-xs text-text-tertiary">
-                {cycleStartDate.slice(0, 10)} ~ {cycleEndDate.slice(0, 10)}
-              </div>
-            )}
+            <button
+              onClick={() => navigate(`/growth/stories?child_id=${selectedChild.id}`)}
+              className="flex items-center gap-1 text-xs text-text-tertiary hover:text-primary transition-colors"
+            >
+              查看详情
+              <ChevronRight size={14} />
+            </button>
           </div>
 
-          {cycleId && progressList.length > 0 ? (
-            <div className="space-y-3">
-              {progressList.map((p) => (
-                <div key={p.dimension_id} className="p-2 rounded-lg">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-text-primary">{p.dimension_name}</span>
-                    <span className="text-xs text-text-tertiary">
-                      {p.current_score} / {p.target_score}
-                    </span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        p.progress >= 100 ? 'bg-green-500' : p.progress >= 60 ? 'bg-primary' : 'bg-amber-400'
-                      }`}
-                      style={{ width: `${Math.min(100, p.progress)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-              {isParent && (
-                <button
-                  onClick={openGoalSetup}
-                  className="w-full mt-2 py-2 text-sm text-primary border border-primary/30 rounded-xl hover:bg-primary/5 transition-colors"
-                >
-                  调整阶段目标
-                </button>
-              )}
+          {/* 目标文本 */}
+          <p className="text-sm text-text-tertiary mt-3">{goalText}</p>
+
+          {/* 单一进度条 */}
+          <div className="mt-3">
+            <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${Math.min(100, overallProgress)}%` }}
+              />
             </div>
-          ) : (
-            <div className="text-center py-6">
-              <Target size={32} className="mx-auto mb-2 text-gray-300" />
-              <p className="text-sm text-text-tertiary mb-3">
-                {cycleId ? '还没有设置维度目标' : '暂无成长周期'}
-              </p>
-              {isParent && (
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-xs text-text-tertiary">进度 {overallProgress}%</span>
+              <span className="text-xs text-primary font-medium">
+                {completedDimensions}/{progressList.length} 维度达标
+              </span>
+            </div>
+          </div>
+
+          {/* 按钮区：无目标时只显示「设置目标」，有目标时显示「调整目标」+「触发回顾」 */}
+          {isParent && (
+            <div className="flex gap-2 mt-4">
+              {!hasGoals ? (
                 <button
                   onClick={openGoalSetup}
-                  className="px-4 py-2 bg-primary text-white text-sm rounded-xl"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors"
                 >
-                  设置阶段目标
+                  <Target size={15} />
+                  设置目标
                 </button>
+              ) : (
+                <>
+                  <button
+                    onClick={openGoalSetup}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-card border border-gray-200 text-text-primary hover:bg-gray-50 transition-colors"
+                  >
+                    <Sliders size={15} />
+                    调整目标
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!hasUncompletedGoals) {
+                        toast.error('当前所有目标已达标，无需触发回顾');
+                        return;
+                      }
+                      if (!hasCompletedTasksInCycle) {
+                        toast.error('该阶段尚无已完成的任务数据，无法回顾');
+                        return;
+                      }
+                      navigate(`/growth/story?child_id=${selectedChild.id}`);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors"
+                  >
+                    <History size={15} />
+                    触发回顾
+                  </button>
+                </>
               )}
             </div>
           )}
         </div>
 
-        {/* 积分兑换入口 */}
+        {/* 2. 成长维度图（SVG雷达图 + IP等级 + 维度评分列表） */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <button
-            onClick={() => navigate('/mall')}
-            className="w-full flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                <Trophy size={20} className="text-amber-600" />
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-text-primary">成长维度</h2>
+            <span className="text-xs text-text-tertiary">
+              {new Date().toLocaleDateString()} 更新
+            </span>
+          </div>
+
+          {scores.length > 0 ? (
+            <>
+              {/* 雷达图 + IP 形象区 */}
+              <div className="flex items-center gap-2">
+                <div className="flex-shrink-0">
+                  <RadarChartSVG scores={scores} />
+                </div>
+                <div className="flex-1 flex flex-col items-center gap-2">
+                  <IPPAvatar growthIndex={growthIndex} expression="proud" size={64} />
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary">
+                    Lv.{levelInfo.level} {levelInfo.name}
+                  </span>
+                  <span className="text-xs text-text-tertiary">成长值 {selectedChild.balance}</span>
+                </div>
               </div>
-              <div className="text-left">
-                <div className="font-semibold text-text-primary">积分兑换</div>
-                <div className="text-xs text-text-tertiary">用积分兑换奖励</div>
+
+              {/* 维度评分列表 */}
+              <div
+                className="grid gap-1 mt-3"
+                style={{ gridTemplateColumns: `repeat(${scores.length}, 1fr)` }}
+              >
+                {scores.map((s, i) => (
+                  <div key={s.dimension_id} className="flex flex-col items-center gap-0.5">
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: getDimensionColor(i) }}
+                    />
+                    <span className="text-xs font-semibold text-text-primary">{s.score}</span>
+                    <span className="text-[10px] text-text-tertiary">{s.dimension_name}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="h-48 flex items-center justify-center text-text-tertiary text-sm">
+              <div className="text-center">
+                <Sparkles size={32} className="mx-auto mb-2 text-gray-300" />
+                完成任务后展示能力成长
               </div>
             </div>
-            <ChevronRight size={20} className="text-text-tertiary" />
-          </button>
+          )}
         </div>
 
-        {/* 阶段回顾按钮（仅家长可见） */}
-        {isParent && (
-          <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-            <button
-              onClick={() => navigate(`/growth/story?child_id=${selectedChild.id}`)}
-              className="w-full flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                  <Sparkles size={20} className="text-purple-600" />
-                </div>
-                <div className="text-left">
-                  <div className="font-semibold text-text-primary">阶段回顾</div>
-                  <div className="text-xs text-text-tertiary">生成本阶段成长故事</div>
-                </div>
+        {/* 3. 积分兑换（增强入口卡片） */}
+        <div
+          className="rounded-2xl p-4 shadow-sm mb-3 border border-gray-100"
+          style={{ background: 'linear-gradient(135deg, #F0FDF4 0%, #FFFFFF 100%)' }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Gift size={20} className="text-primary" />
+                <h2 className="text-sm font-semibold text-text-primary">积分兑换</h2>
               </div>
-              <ChevronRight size={20} className="text-text-tertiary" />
+              <div className="flex items-baseline gap-1 mt-2">
+                <span className="text-2xl font-bold text-primary">{selectedChild.balance}</span>
+                <span className="text-sm text-text-tertiary">积分</span>
+              </div>
+              <p className="text-xs text-text-tertiary mt-1">用积分兑换心仪奖励</p>
+            </div>
+            <button
+              onClick={() => navigate(`/mall?child_id=${selectedChild.id}`)}
+              className="flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors"
+            >
+              进入兑换
+              <ArrowRight size={15} />
             </button>
           </div>
-        )}
+        </div>
 
-        {/* 成长回顾历史时间轴 */}
+        {/* 4. 成长故事预览（2条预览 + 查看全部） */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <SectionHeader
-            icon={FileText}
-            title="成长回顾历史"
-            count={stories.length}
-          />
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <BookOpen size={16} className="text-primary" />
+              <h2 className="text-sm font-semibold text-text-primary">成长故事</h2>
+            </div>
+            <button
+              onClick={() => navigate(`/growth/stories?child_id=${selectedChild.id}`)}
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary-dark transition-colors"
+            >
+              查看全部
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
           {stories.length > 0 ? (
-            <div className="space-y-3">
-              {stories.map((s) => {
+            <div className="space-y-2">
+              {stories.slice(0, 2).map((s) => {
                 const deltas = parseAbilitySummary(s.ability_summary);
+                const dimLabel = deltas.length > 0 ? deltas[0].dimension_name : '综合';
+                const previewText = s.content.replace(/[#*\-]/g, '').slice(0, 60);
                 return (
                   <button
                     key={s.id}
-                    onClick={() => navigate(`/growth/story?cycle_id=${s.cycle_id}`)}
+                    onClick={() => navigate(`/growth/story?cycle_id=${s.cycle_id}&child_id=${selectedChild.id}`)}
                     className="w-full text-left p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-text-primary line-clamp-1">{s.title}</span>
-                      <ChevronRight size={16} className="text-text-tertiary flex-shrink-0 ml-2" />
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                        {dimLabel}
+                      </span>
+                      <span className="text-xs text-text-tertiary">
+                        {new Date(s.created_at).toLocaleDateString()}
+                      </span>
                     </div>
-                    <div className="text-xs text-text-tertiary">
-                      {new Date(s.created_at).toLocaleDateString()}
-                    </div>
-                    {deltas.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {deltas.slice(0, 3).map((d, idx) => (
-                          <span key={idx} className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full">
-                            {d.dimension_name} {d.delta >= 0 ? '+' : ''}{d.delta}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="text-sm font-medium text-text-primary line-clamp-1">{s.title}</div>
+                    <div className="text-xs text-text-tertiary line-clamp-1 mt-0.5">{previewText}</div>
                   </button>
                 );
               })}
             </div>
           ) : (
-            <div className="text-center py-8 text-text-tertiary text-sm">
-              <FileText size={32} className="mx-auto mb-2 text-gray-300" />
-              还没有成长回顾记录
+            <div className="text-center py-6 text-text-tertiary text-sm">
+              <BookOpen size={32} className="mx-auto mb-2 text-gray-300" />
+              还没有成长故事记录
             </div>
           )}
         </div>
-
-        {/* 分享悬浮按钮 */}
-        <button
-          onClick={() => setShowShareModal(true)}
-          className="fixed bottom-24 right-4 w-14 h-14 bg-gradient-to-br from-primary to-amber-500 text-white rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:shadow-xl transition-all z-40"
-        >
-          <Plus size={24} />
-        </button>
 
         <div className="h-8" />
       </div>

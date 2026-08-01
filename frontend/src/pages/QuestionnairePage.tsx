@@ -7,11 +7,18 @@ import { getGrowthIndex } from '../services/ability';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { useToastStore } from '../stores/toastStore';
 
+// 暖橙色彩常量
+const C = {
+  bg: '#FFFAF4', primary: '#F59E6B', primaryFg: '#FFFFFF',
+  card: '#FFFFFF', muted: '#FFF1E6', mutedFg: '#7A7168', border: '#F5E6D3',
+};
+
 export function QuestionnairePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToastStore();
   const stage = searchParams.get('stage') || 'register';
+  const level = searchParams.get('level') || '';
   const childId = Number(searchParams.get('child_id') || 0);
 
   const [questionnaire, setQuestionnaire] = useState<QuestionnaireType | null>(null);
@@ -23,7 +30,7 @@ export function QuestionnairePage() {
   const [growthIndex, setGrowthIndex] = useState(0);
 
   useEffect(() => {
-    getQuestionnaire(stage)
+    getQuestionnaire(stage, level)
       .then((q) => {
         setQuestionnaire(q);
         try {
@@ -34,7 +41,7 @@ export function QuestionnairePage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [stage]);
+  }, [stage, level]);
 
   useEffect(() => {
     if (childId) {
@@ -44,9 +51,19 @@ export function QuestionnairePage() {
 
   const currentQ = questions[currentIdx];
   const progress = questions.length > 0 ? ((currentIdx + 1) / questions.length) * 100 : 0;
-  // IP 表情随答题进度切换：首题思考、答题中开心、末题完成自豪
+  const isFirst = currentIdx === 0;
+  const isLast = currentIdx === questions.length - 1;
+
+  // IP 表情随答题进度切换
   const ipExpression: 'think' | 'happy' | 'proud' =
-    currentIdx === 0 ? 'think' : currentIdx < questions.length - 1 ? 'happy' : 'proud';
+    isFirst ? 'think' : isLast ? 'proud' : 'happy';
+
+  // IP 气泡文案动态变化
+  const ipBubbleText = isFirst
+    ? '小萌芽想了解你~'
+    : isLast
+    ? '就快完成啦，加油！'
+    : '答得不错哦，继续~';
 
   const handleSelect = (optionIdx: number) => {
     if (!currentQ) return;
@@ -61,6 +78,12 @@ export function QuestionnairePage() {
     }
   };
 
+  const handlePrev = () => {
+    if (currentIdx > 0) {
+      setCurrentIdx(currentIdx - 1);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!questionnaire) return;
     setSubmitting(true);
@@ -71,97 +94,174 @@ export function QuestionnairePage() {
     }));
     try {
       const res = await submitQuestionnaire(questionnaire.id, stage, childId, answerList);
-      toast.success(`问卷完成！获得 ${res.reward} 积分`);
-      navigate('/growth');
+      // 检测是否从 onboarding 进入：若是则返回 Onboarding Step 6 展示雷达图+目标设置+任务生成
+      const returnTo = searchParams.get('return');
+      if (returnTo === 'onboarding') {
+        navigate(`/onboarding?step=6&child_id=${childId}`, { replace: true });
+      } else {
+        toast.success(`问卷完成！获得 ${res.reward} 积分`);
+        setTimeout(() => navigate('/growth'), 1500);
+      }
     } catch {
       toast.error('提交失败');
-    } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">加载中...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg }}>
+        <p style={{ color: C.mutedFg }}>加载中...</p>
+      </div>
+    );
   }
   if (!currentQ) {
-    return <div className="min-h-screen flex items-center justify-center">暂无问卷</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg }}>
+        <p style={{ color: C.mutedFg }}>暂无问卷</p>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-bg pb-24">
-      {/* 顶部进度条 */}
-      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-6 pb-4 px-5 rounded-b-3xl">
-        <div className="max-w-lg mx-auto">
+    <div className="min-h-screen flex flex-col" style={{ background: C.bg }}>
+      {/* 顶部进度区 */}
+      <header
+        className="sticky top-0 z-20 pt-6 pb-4 px-5 rounded-b-3xl"
+        style={{ background: `linear-gradient(135deg, ${C.primary}, #F5A572)` }}
+      >
+        <div className="max-w-[448px] mx-auto">
           <div className="flex items-center justify-between mb-3">
-            <button onClick={() => navigate(-1)} className="text-white/80">
-              <ChevronLeft size={24} />
+            <button
+              onClick={() => navigate(-1)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center"
+              style={{ background: 'rgba(255,255,255,0.2)' }}
+              aria-label="返回"
+            >
+              <ChevronLeft size={20} style={{ color: C.primaryFg }} />
             </button>
-            <span className="text-white font-medium">{questionnaire?.title}</span>
-            <div className="w-6" />
+            <span className="font-medium text-sm" style={{ color: C.primaryFg }}>{questionnaire?.title}</span>
+            <div className="w-9" />
           </div>
-          {/* 探险地图进度 */}
-          <div className="flex items-center gap-1">
-            {questions.map((q, idx) => (
-              <div
-                key={q.id}
-                className={`flex-1 h-2 rounded-full transition-all ${idx <= currentIdx ? 'bg-white' : 'bg-white/20'}`}
-              />
-            ))}
+
+          {/* 关卡节点路径 */}
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide py-1">
+            {questions.map((q, idx) => {
+              const answered = answers[q.id] !== undefined;
+              const isCurrent = idx === currentIdx;
+              const isDone = idx < currentIdx;
+              return (
+                <div
+                  key={q.id}
+                  className="flex-shrink-0 flex items-center"
+                >
+                  <div
+                    className={`rounded-full flex items-center justify-center transition-all ${isCurrent ? 'w-6 h-6' : 'w-4 h-4'}`}
+                    style={{
+                      background: answered || isDone ? C.primaryFg : 'rgba(255,255,255,0.3)',
+                      border: isCurrent ? `2px solid ${C.primaryFg}` : 'none',
+                      animation: isCurrent ? 'pulse 1.5s ease-in-out infinite' : undefined,
+                    }}
+                  >
+                    {answered && !isCurrent && <Check size={10} style={{ color: C.primary }} />}
+                    {isCurrent && (
+                      <span className="text-xs font-bold" style={{ color: C.primary }}>{idx + 1}</span>
+                    )}
+                  </div>
+                  {idx < questions.length - 1 && (
+                    <div
+                      className="w-2 h-0.5 mx-0.5"
+                      style={{ background: isDone ? C.primaryFg : 'rgba(255,255,255,0.3)' }}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div className="text-white/80 text-xs mt-2 text-center">
-            {currentIdx + 1} / {questions.length} · 进度 {Math.round(progress)}%
+          <div className="text-center text-xs mt-2" style={{ color: 'rgba(255,255,255,0.85)' }}>
+            第 {currentIdx + 1} / {questions.length} 题 · 进度 {Math.round(progress)}%
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* IP 提问者 */}
-      <div className="max-w-lg mx-auto px-4 py-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <IPPAvatar growthIndex={growthIndex} expression={ipExpression} size={48} />
+      {/* 主内容区 */}
+      <main className="flex-1 px-4 py-6 pb-28">
+        <div className="max-w-[448px] mx-auto" key={currentIdx} style={{ animation: 'cardEnter 0.3s ease-out' }}>
+          {/* IP 提问者 */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: C.muted }}>
+              <IPPAvatar growthIndex={growthIndex} expression={ipExpression} size={40} />
+            </div>
+            <div
+              className="px-4 py-2 rounded-2xl rounded-tl-sm shadow-sm"
+              style={{ background: C.card, border: `1px solid ${C.border}` }}
+            >
+              <p className="text-sm" style={{ color: '#2D2A26' }}>{ipBubbleText}</p>
+            </div>
           </div>
-          <div className="bg-card px-4 py-2 rounded-2xl rounded-bl-md shadow-sm">
-            <p className="text-sm text-text-secondary">小芽想了解你~</p>
+
+          {/* 题目卡片 */}
+          <div className="rounded-2xl p-5 shadow-sm mb-4" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            <p className="text-lg font-medium mb-4" style={{ color: '#2D2A26' }}>{currentQ.question}</p>
+            <div className="space-y-2">
+              {currentQ.options.map((opt, idx) => {
+                const selected = answers[currentQ.id] === idx;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleSelect(idx)}
+                    className="w-full text-left p-3 rounded-xl transition-all active:scale-[0.98]"
+                    style={{
+                      background: selected ? C.muted : '#FFFFFF',
+                      border: `2px solid ${selected ? C.primary : C.border}`,
+                    }}
+                  >
+                    <span className="text-sm" style={{ color: '#2D2A26' }}>{opt.text}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
+      </main>
 
-        {/* 题目 */}
-        <div className="bg-card rounded-2xl p-5 shadow-sm mb-4">
-          <p className="text-lg font-medium text-text-primary mb-4">{currentQ.question}</p>
-          <div className="space-y-2">
-            {currentQ.options.map((opt, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSelect(idx)}
-                className={`w-full text-left p-3 rounded-xl transition-all border-2 ${
-                  answers[currentQ.id] === idx ? 'bg-primary/10 border-primary' : 'bg-bg border-transparent'
-                }`}
-              >
-                <span className="text-sm text-text-primary">{opt.text}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 下一题按钮 */}
-        <button
-          onClick={handleNext}
-          disabled={answers[currentQ.id] === undefined || submitting}
-          className="w-full py-3 bg-primary text-white rounded-xl font-medium disabled:opacity-40 flex items-center justify-center gap-2"
-        >
-          {currentIdx < questions.length - 1 ? (
-            <>
-              下一题 <ChevronRight size={18} />
-            </>
-          ) : submitting ? (
-            '提交中...'
-          ) : (
-            <>
-              完成 <Check size={18} />
-            </>
+      {/* 底部操作区（固定） */}
+      <footer
+        className="fixed bottom-16 left-0 right-0 z-30 px-4 py-3"
+        style={{ background: 'rgba(255,250,244,0.95)', backdropFilter: 'blur(8px)', borderTop: `1px solid ${C.border}` }}
+      >
+        <div className="max-w-[448px] mx-auto flex gap-2">
+          {!isFirst && (
+            <button
+              onClick={handlePrev}
+              disabled={submitting}
+              className="px-5 rounded-xl font-medium transition-all active:scale-95 disabled:opacity-40 flex items-center justify-center gap-1"
+              style={{ background: C.muted, color: C.mutedFg, border: `1px solid ${C.border}` }}
+            >
+              <ChevronLeft size={18} />
+              上一题
+            </button>
           )}
-        </button>
-      </div>
+          <button
+            onClick={handleNext}
+            disabled={answers[currentQ.id] === undefined || submitting}
+            className="flex-1 py-3 rounded-xl font-medium transition-all active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2"
+            style={{ background: C.primary, color: C.primaryFg }}
+          >
+            {isLast ? (
+              submitting ? '提交中...' : (
+                <>
+                  完成评估 <Check size={18} />
+                </>
+              )
+            ) : (
+              <>
+                下一题 <ChevronRight size={18} />
+              </>
+            )}
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

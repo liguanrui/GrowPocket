@@ -8,6 +8,9 @@ export interface Child {
   avatar?: string;
   gender?: 0 | 1;
   birthday?: string;
+  grade?: number; // 1-6 年级
+  age?: number;
+  hobbies?: string; // JSON 数组字符串
   balance: number;
   created_at?: string;
   updated_at?: string;
@@ -17,6 +20,9 @@ export interface AddChildInput {
   nickname: string;
   gender?: 0 | 1;
   birthday?: string;
+  grade?: number;
+  age?: number;
+  hobbies?: string; // JSON 数组字符串
 }
 
 export async function getChildren(): Promise<Child[]> {

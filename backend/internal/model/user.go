@@ -20,6 +20,9 @@ type User struct {
 	// 以下字段仅 role=child 时填写
 	Gender   *int       `json:"gender,omitempty"` // 0=男 1=女
 	Birthday *time.Time `json:"birthday,omitempty"`
+	Grade    *int       `json:"grade,omitempty"` // 1-6 年级
+	Age      *int       `json:"age,omitempty"`   // 年龄（冗余，由 birthday 计算）
+	Hobbies  string     `gorm:"type:text" json:"hobbies,omitempty"` // JSON 数组，如 ["阅读","拼搭积木"]
 	Balance  int        `gorm:"default:0" json:"balance"`
 
 	CreatedAt time.Time `json:"created_at"`

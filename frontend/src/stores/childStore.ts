@@ -9,6 +9,9 @@ export interface Child {
   avatar?: string;
   gender?: 0 | 1;
   birthday?: string;
+  grade?: number; // 1-6 年级
+  age?: number;
+  hobbies?: string; // JSON 数组字符串
   balance: number;
   created_at?: string;
   updated_at?: string;
@@ -19,8 +22,8 @@ interface ChildState {
   currentChildId: number | null;
   loading: boolean;
   fetchChildren: () => Promise<void>;
-  addChild: (input: { nickname: string; gender?: 0 | 1; birthday?: string }) => Promise<Child>;
-  updateChild: (id: number, input: Partial<{ nickname: string; gender?: 0 | 1; birthday?: string; avatar?: string }>) => Promise<void>;
+  addChild: (input: { nickname: string; gender?: 0 | 1; birthday?: string; grade?: number; age?: number; hobbies?: string }) => Promise<Child>;
+  updateChild: (id: number, input: Partial<{ nickname: string; gender?: 0 | 1; birthday?: string; avatar?: string; grade?: number; age?: number; hobbies?: string }>) => Promise<void>;
   removeChild: (id: number) => Promise<void>;
   setCurrentChildId: (id: number | null) => void;
   getCurrentChild: () => Child | null;

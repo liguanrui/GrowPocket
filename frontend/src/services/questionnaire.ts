@@ -13,6 +13,7 @@ export interface Question {
 export interface Questionnaire {
   id: number;
   stage: string;
+  level?: string; // L1-L6 分龄档位
   title: string;
   questions: string; // JSON string
 }
@@ -22,8 +23,12 @@ export interface AnswerInput {
   score: number;
 }
 
-export async function getQuestionnaire(stage: string): Promise<Questionnaire> {
-  return request<Questionnaire>({ method: 'GET', url: `/questionnaires/${stage}` });
+export async function getQuestionnaire(stage: string, level?: string): Promise<Questionnaire> {
+  return request<Questionnaire>({
+    method: 'GET',
+    url: `/questionnaires/${stage}`,
+    params: level ? { level } : undefined,
+  });
 }
 
 export async function submitQuestionnaire(
