@@ -233,3 +233,65 @@ body {
 .transition-all-slow {
   transition: all 0.5s ease;
 }
+
+/* ========================================
+   语音输入面板动画
+   ======================================== */
+
+/* 麦克风脉冲（录音中） */
+@keyframes voice-mic-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.88;
+  }
+}
+
+.anim-voice-mic-pulse {
+  animation: voice-mic-pulse 1.8s ease-in-out infinite;
+}
+
+/* 声波扩散圈 */
+@keyframes voice-ping-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+.anim-voice-ping-ring {
+  animation: voice-ping-ring 1.6s ease-out infinite;
+}
+
+/* 波形条跳动 */
+@keyframes voice-waveform {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.anim-voice-waveform {
+  transform-origin: center;
+  animation: voice-waveform 0.8s ease-in-out infinite;
+}
+
+/* 减弱动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .anim-voice-mic-pulse,
+  .anim-voice-ping-ring,
+  .anim-voice-waveform {
+    animation: none !important;
+  }
+}

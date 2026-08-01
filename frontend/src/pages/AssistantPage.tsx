@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Send, PanelLeft, SquarePen, ChevronDown, Search, X, Plus, MessageCircle,
-  Check, Star, CheckSquare, TrendingUp, Gift, UserPlus, Volume2,
+  Check, Star, CheckSquare, TrendingUp, Gift, UserPlus, Volume2, VolumeX,
+  Mic, Keyboard, Volume1,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
@@ -11,6 +12,9 @@ import type { ChatMessage, ChatSession } from '../services/chat';
 import { getGrowthIndex } from '../services/ability';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { useToastStore } from '../stores/toastStore';
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
+import { isEchoOfLastReply } from '../lib/utils';
 
 type ExpressionType = 'happy' | 'encourage' | 'think' | 'surprised' | 'comfort' | 'proud';
 
@@ -267,6 +271,18 @@ export function AssistantPage() {
   const [showSwitch, setShowSwitch] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // ===== 语音相关状态 =====
+  const [voiceMode, setVoiceMode] = useState(false);          // 底部面板：文字 or 语音
+  const [ttsEnabled, setTtsEnabled] = useState(true);         // AI 回复是否朗读
+  const [speakingMsgId, setSpeakingMsgId] = useState<number | null>(null); // 当前正在朗读哪条 AI 消息
+  const sendAfterStopRef = useRef(false);                     // 停止录音后是否自动发送
+  const lastAssistantReplyRef = useRef<string>('');           // 上一条 AI 回复全文（用于回声检测）
+  const ttsSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stt = useSpeechRecognition({ lang: 'zh-CN', interimResults: true });
+  // 儿童友好默认：稍高的 pitch（1.1）模仿小萌芽柔和女声；rate=1.05 不拖沓
+  const tts = useSpeechSynthesis({ lang: 'zh-CN', rate: 1.05, pitch: 1.1, preprocess: true });
+
   const children = childStore.children;
   const selectedChildId = childStore.currentChildId || children[0]?.id || null;
   const selectedChild = children.find((c) => c.id === selectedChildId) || null;
@@ -311,6 +327,14 @@ export function AssistantPage() {
     setInput('');
     setLoading(true);
 
+    // 发送前做一次"回声检测"：如果刚刚 TTS 在朗读 AI 回复，而这条用户输入
+    // 和那条回复高度相似（≥65%），判定为麦克风录到了扬声器自己的声音 → 丢弃。
+    if (isEchoOfLastReply(content, lastAssistantReplyRef.current)) {
+      setLoading(false);
+      toast.info('刚才的声音像是回声，已过滤。你可以再跟我说一遍~');
+      return;
+    }
+
     const tempUserMsg: ChatMessage = {
       id: Date.now(),
       session_id: sessionId,
@@ -323,8 +347,9 @@ export function AssistantPage() {
     try {
       const res = await chatService.sendMessage(content, selectedChildId, sessionId || undefined);
       setSessionId(res.session_id);
+      const aiMsgId = Date.now() + 1;
       const aiMsg: ChatMessage = {
-        id: Date.now() + 1,
+        id: aiMsgId,
         session_id: res.session_id,
         role: 'assistant',
         content: res.reply,
@@ -334,6 +359,26 @@ export function AssistantPage() {
       setMessages((prev) => [...prev, aiMsg]);
       // 刷新会话列表（更新 last_message）
       loadSessions(selectedChildId);
+
+      // 记录最近一次 AI 回复（用于回声检测）
+      lastAssistantReplyRef.current = res.reply;
+
+      // AI 回复朗读（TTS）
+      if (ttsEnabled && tts.isSupported && res.reply) {
+        // 先确保上一条停掉，避免叠加
+        if (ttsSafetyTimerRef.current) {
+          clearTimeout(ttsSafetyTimerRef.current);
+          ttsSafetyTimerRef.current = null;
+        }
+        setSpeakingMsgId(aiMsgId);
+        tts.speak(res.reply);
+        // 兜底：最长 N 秒后自动解除"正在朗读"态（某些系统 onend 偶尔不触发）
+        // 粗略按每秒读 4~5 字计算，加上 3 秒缓冲
+        const estimatedSec = Math.min(60, Math.max(4, Math.ceil(res.reply.length / 4.5) + 3));
+        ttsSafetyTimerRef.current = setTimeout(() => {
+          setSpeakingMsgId(null);
+        }, estimatedSec * 1000);
+      }
     } catch {
       const errMsg: ChatMessage = {
         id: Date.now() + 1,
@@ -347,6 +392,114 @@ export function AssistantPage() {
       setLoading(false);
     }
   };
+
+  // TTS isSpeaking 状态与 speakingMsgId 同步（避免 onend 不触发）
+  useEffect(() => {
+    if (!tts.isSpeaking && speakingMsgId !== null) {
+      if (ttsSafetyTimerRef.current) {
+        clearTimeout(ttsSafetyTimerRef.current);
+        ttsSafetyTimerRef.current = null;
+      }
+      setSpeakingMsgId(null);
+    }
+  }, [tts.isSpeaking, speakingMsgId]);
+
+  /**
+   * 点击 AI 气泡时的交互：
+   *  - 如果正在朗读这条 → 立即停止
+   *  - 没朗读 → 从头朗读这条回复
+   */
+  const handleAssistantBubbleClick = (msg: ChatMessage) => {
+    if (msg.role !== 'assistant' || !tts.isSupported) return;
+    if (tts.isSpeaking && speakingMsgId === msg.id) {
+      if (ttsSafetyTimerRef.current) {
+        clearTimeout(ttsSafetyTimerRef.current);
+        ttsSafetyTimerRef.current = null;
+      }
+      tts.cancel();
+      setSpeakingMsgId(null);
+      return;
+    }
+    // 用户主动点气泡 → 临时允许朗读（即使 ttsEnabled 为 false）
+    // 因为显式点击本身就是"想再听一遍"
+    if (ttsSafetyTimerRef.current) {
+      clearTimeout(ttsSafetyTimerRef.current);
+      ttsSafetyTimerRef.current = null;
+    }
+    setSpeakingMsgId(msg.id);
+    lastAssistantReplyRef.current = msg.content;
+    tts.speak(msg.content);
+    const estimatedSec = Math.min(60, Math.max(4, Math.ceil(msg.content.length / 4.5) + 3));
+    ttsSafetyTimerRef.current = setTimeout(() => {
+      setSpeakingMsgId(null);
+    }, estimatedSec * 1000);
+  };
+
+  // ===== 语音模式下：点击大麦克风切换录音状态 =====
+  const handleVoiceMicClick = () => {
+    if (!stt.isSupported) {
+      toast.error('当前浏览器不支持语音识别，建议使用 Chrome / Edge / Safari 14+');
+      return;
+    }
+    if (stt.isListening) {
+      // 停止 → 稍后自动发送
+      sendAfterStopRef.current = true;
+      stt.stop();
+    } else {
+      // ==============  防死循环关键  ==============
+      // 开录音前，先强制停止 AI 正在的朗读，并等待"扬声器余音"消散
+      // 否则会出现：AI 还在外放 → 麦克风刚好开 → 录到 AI 自己的声音
+      //           → 识别成"用户说的话"→ 又触发 AI 回复 → 又朗读 → 死循环
+      if (tts.isSpeaking) {
+        if (ttsSafetyTimerRef.current) {
+          clearTimeout(ttsSafetyTimerRef.current);
+          ttsSafetyTimerRef.current = null;
+        }
+        tts.cancel();
+        setSpeakingMsgId(null);
+      }
+      sendAfterStopRef.current = false;
+      // 300ms 静音缓冲：等扬声器残余声波彻底消失再开麦
+      setTimeout(() => {
+        stt.start();
+      }, 300);
+    }
+  };
+
+  // 监听录音停止：如果是用户主动停止，则发送识别结果
+  useEffect(() => {
+    if (stt.isListening) return;
+    if (!sendAfterStopRef.current) return;
+    sendAfterStopRef.current = false;
+    const text = (stt.transcript || '').trim();
+    if (text) {
+      handleSend(text);
+      stt.reset();
+    }
+  }, [stt.isListening]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 识别出错时 toast 提示（仅用户操作相关错误）
+  useEffect(() => {
+    if (stt.error && stt.error !== '录音已取消' && stt.error !== '未检测到语音，请再试一次') {
+      toast.error(stt.error);
+    }
+  }, [stt.error, toast]);
+
+  // 退出语音模式时，确保停止录音
+  useEffect(() => {
+    if (!voiceMode && stt.isListening) {
+      sendAfterStopRef.current = false;
+      stt.stop();
+      stt.reset();
+    }
+  }, [voiceMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 页面卸载时停止 TTS
+  useEffect(() => {
+    return () => {
+      if (tts.isSpeaking) tts.cancel();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 新建会话
   const handleNewSession = async () => {
@@ -435,12 +588,23 @@ export function AssistantPage() {
         {/* 右侧按钮组 */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => toast.info('语音功能开发中')}
-            className="w-10 h-10 rounded-lg bg-[#FFF1E6]/50 flex items-center justify-center text-[#7A7168] active:scale-95 transition-transform"
-            aria-label="语音"
+            onClick={() => {
+              const next = !ttsEnabled;
+              setTtsEnabled(next);
+              if (!next && tts.isSpeaking) {
+                tts.cancel();
+              }
+              toast.success(next ? '已开启语音回复' : '已关闭语音回复');
+            }}
+            className={`w-10 h-10 rounded-lg flex items-center justify-center active:scale-95 transition-transform ${
+              ttsEnabled
+                ? 'bg-[#F59E6B]/10 text-[#F59E6B]'
+                : 'bg-[#FFF1E6]/50 text-[#7A7168]'
+            }`}
+            aria-label={ttsEnabled ? '关闭语音回复' : '开启语音回复'}
             data-dom-id="voice-toggle"
           >
-            <Volume2 size={20} />
+            {ttsEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
           </button>
           <button
             onClick={() => { setShowSwitch(!showSwitch); setShowDrawer(false); }}
@@ -459,7 +623,7 @@ export function AssistantPage() {
       </header>
 
       {/* 消息区 / 空状态 */}
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-28">
+      <main className={`flex-1 overflow-y-auto px-4 py-4 ${voiceMode ? 'pb-64' : 'pb-28'}`}>
         <div className="max-w-[448px] mx-auto">
           {isEmpty ? (
             /* 空状态 */
@@ -499,15 +663,41 @@ export function AssistantPage() {
                       <IPPAvatar growthIndex={growthIndex} expression={intentToExpression(msg.intent)} size={32} />
                     </div>
                   )}
-                  <div
-                    className={`max-w-[75%] px-4 py-2.5 text-sm whitespace-pre-wrap break-words ${
-                      msg.role === 'user'
-                        ? 'bg-[#F59E6B] text-white rounded-lg rounded-tr-sm'
-                        : 'bg-white text-[#2D2A26] border border-[#F5E6D3] rounded-lg rounded-tl-sm shadow-sm'
-                    }`}
-                  >
-                    {msg.content}
-                  </div>
+                  {msg.role === 'assistant' ? (
+                    /* AI 气泡：正在朗读时加个橙色边框+波浪动画；点击可停/重播 */
+                    <button
+                      type="button"
+                      onClick={() => handleAssistantBubbleClick(msg)}
+                      className={`group relative max-w-[75%] px-4 py-2.5 text-left text-sm whitespace-pre-wrap break-words transition-all bg-white text-[#2D2A26] border rounded-lg rounded-tl-sm shadow-sm active:scale-[0.995] ${
+                        speakingMsgId === msg.id
+                          ? 'border-[#F59E6B] ring-2 ring-[#F59E6B]/20'
+                          : 'border-[#F5E6D3] hover:border-[#F59E6B]/25'
+                      }`}
+                      aria-label={speakingMsgId === msg.id ? '点击停止朗读' : '点击再听一遍'}
+                    >
+                      <span>{msg.content}</span>
+                      {/* 朗读状态指示：三条竖线 + Volume 图标（右下角） */}
+                      {speakingMsgId === msg.id && (
+                        <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#F59E6B] text-white shadow-md">
+                          <span className="flex items-end gap-[2px] h-3">
+                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '50%', animationDelay: '0s' }} />
+                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '100%', animationDelay: '0.15s' }} />
+                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '70%', animationDelay: '0.3s' }} />
+                          </span>
+                        </span>
+                      )}
+                      {/* 未朗读时 hover 提示：右下角淡 Volume1 */}
+                      {speakingMsgId !== msg.id && (
+                        <span className="pointer-events-none absolute -right-2 -top-1 hidden items-center justify-center h-6 w-6 rounded-full bg-white border border-[#F5E6D3] text-[#F59E6B] group-hover:flex shadow-sm">
+                          <Volume1 size={13} />
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <div className={`max-w-[75%] px-4 py-2.5 text-sm whitespace-pre-wrap break-words bg-[#F59E6B] text-white rounded-lg rounded-tr-sm`}>
+                      {msg.content}
+                    </div>
+                  )}
                 </div>
               ))}
               {loading && (
@@ -535,23 +725,131 @@ export function AssistantPage() {
         className="fixed bottom-20 left-0 right-0 z-40 border-t border-[#F5E6D3] px-2 py-2"
         style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)' }}
       >
-        <div className="max-w-[448px] mx-auto flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="对小萌芽说点什么..."
-            className="flex-1 px-4 py-2.5 bg-[#FFF1E6] rounded-lg border border-[#F5E6D3] focus:border-[#F59E6B] focus:ring-1 focus:ring-[#F59E6B] outline-none text-[#2D2A26] text-sm placeholder:text-[#7A7168]"
-            disabled={loading}
-          />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || loading}
-            className="w-11 h-11 bg-[#F59E6B] text-white rounded-lg flex items-center justify-center disabled:opacity-40 active:scale-95 transition-transform flex-shrink-0"
-          >
-            <Send size={18} />
-          </button>
+        <div className="max-w-[448px] mx-auto">
+          {!voiceMode ? (
+            // ====== 文字输入模式 ======
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (!stt.isSupported) {
+                    toast.error('当前浏览器不支持语音识别，建议使用 Chrome / Edge / Safari 14+');
+                    return;
+                  }
+                  setVoiceMode(true);
+                }}
+                className="w-11 h-11 rounded-lg bg-[#FFF1E6] flex items-center justify-center text-[#F59E6B] active:scale-95 transition-transform flex-shrink-0"
+                aria-label="切换到语音输入"
+                data-dom-id="input-mode-voice"
+              >
+                <Mic size={18} />
+              </button>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder="对小萌芽说点什么..."
+                className="flex-1 px-4 py-2.5 bg-[#FFF1E6] rounded-lg border border-[#F5E6D3] focus:border-[#F59E6B] focus:ring-1 focus:ring-[#F59E6B] outline-none text-[#2D2A26] text-sm placeholder:text-[#7A7168]"
+                disabled={loading}
+              />
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim() || loading}
+                className="w-11 h-11 bg-[#F59E6B] text-white rounded-lg flex items-center justify-center disabled:opacity-40 active:scale-95 transition-transform flex-shrink-0"
+              >
+                <Send size={18} />
+              </button>
+            </div>
+          ) : (
+            // ====== 语音输入模式（参考 assistant-voice.html 设计）======
+            <div className="flex flex-col items-center gap-3 py-2">
+              {/* 识别文字预览 */}
+              <div className="min-h-[40px] w-full flex items-center justify-center rounded-lg bg-[#FFF1E6] px-4 py-2 text-center">
+                {stt.isListening ? (
+                  <span className="text-sm text-[#2D2A26]">
+                    {stt.interimTranscript || stt.transcript || '正在聆听...'}
+                  </span>
+                ) : stt.transcript ? (
+                  <span className="text-sm text-[#2D2A26]">{stt.transcript}</span>
+                ) : (
+                  <span className="text-sm text-[#7A7168]">点击麦克风开始说话</span>
+                )}
+              </div>
+
+              {/* 波形可视化 */}
+              {stt.isListening && (
+                <div className="flex h-10 items-center justify-center gap-1" aria-hidden="true">
+                  {[12, 24, 16, 32, 20, 28, 12].map((h, i) => (
+                    <span
+                      key={i}
+                      className="anim-voice-waveform w-1.5 rounded-full bg-[#F59E6B]"
+                      style={{
+                        height: `${h}px`,
+                        animationDelay: `${i * 0.1}s`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* 控制按钮 */}
+              <div className="flex items-center justify-center gap-6">
+                {/* 取消：退出语音 + 清空结果 */}
+                <button
+                  onClick={() => {
+                    if (stt.isListening) {
+                      sendAfterStopRef.current = false;
+                      stt.stop();
+                    }
+                    stt.reset();
+                    setVoiceMode(false);
+                  }}
+                  className="w-12 h-12 rounded-full bg-[#FFF1E6] text-[#7A7168] flex items-center justify-center active:scale-95 transition-transform"
+                  aria-label="取消语音"
+                  data-dom-id="voice-cancel"
+                >
+                  <X size={22} />
+                </button>
+
+                {/* 大麦克风：开始/停止录音并发送 */}
+                <button
+                  onClick={handleVoiceMicClick}
+                  className={`relative flex w-16 h-16 items-center justify-center rounded-full shadow-lg text-white transition-transform active:scale-95 flex-shrink-0 ${
+                    stt.isListening
+                      ? 'bg-[#E87461] anim-voice-mic-pulse'
+                      : 'bg-[#F59E6B]'
+                  }`}
+                  aria-label={stt.isListening ? '停止并发送' : '开始录音'}
+                  data-dom-id="voice-mic"
+                >
+                  <Mic size={28} />
+                  {stt.isListening && (
+                    <span className="anim-voice-ping-ring absolute inset-0 rounded-full border-2 border-[#F59E6B]/40" />
+                  )}
+                </button>
+
+                {/* 切回键盘模式（保留已识别文字到输入框） */}
+                <button
+                  onClick={() => {
+                    if (stt.isListening) {
+                      sendAfterStopRef.current = false;
+                      stt.stop();
+                    }
+                    const text = (stt.transcript || '').trim();
+                    if (text) {
+                      setInput(text);
+                    }
+                    setVoiceMode(false);
+                  }}
+                  className="w-12 h-12 rounded-full bg-[#FFF1E6] text-[#7A7168] flex items-center justify-center active:scale-95 transition-transform"
+                  aria-label="切换到键盘输入"
+                  data-dom-id="input-mode-toggle"
+                >
+                  <Keyboard size={22} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
