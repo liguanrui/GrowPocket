@@ -29,7 +29,8 @@ export default function RegisterPage() {
     setError('');
     try {
       await register(nickname.trim(), password);
-      navigate('/home', { replace: true });
+      // 注册成功后进入家庭管理页，录入儿童信息后自动引导到能力评估问卷
+      navigate('/settings/family', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败');
     } finally {

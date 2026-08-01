@@ -1,5 +1,6 @@
 import { Star, MoreVertical } from 'lucide-react';
 import type { Task } from '../types';
+import { IPPAvatar } from './IPPAvatar';
 
 interface TaskCardProps {
   task: Task;
@@ -7,6 +8,7 @@ interface TaskCardProps {
   showActions?: boolean;
   onApprove?: () => void;
   onReject?: () => void;
+  growthIndex?: number; // 用于 AI 生成任务上的 IP 形象阶段展示
 }
 
 // 新状态：进行中 / 待验收 / 已完成 / 已拒绝
@@ -38,7 +40,7 @@ function formatDeadline(deadline?: Date) {
   return deadline.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
-export function TaskCard({ task, onClick, showActions, onApprove, onReject }: TaskCardProps) {
+export function TaskCard({ task, onClick, showActions, onApprove, onReject, growthIndex = 0 }: TaskCardProps) {
   const deadlineText = formatDeadline(task.deadline);
 
   return (
@@ -54,6 +56,12 @@ export function TaskCard({ task, onClick, showActions, onApprove, onReject }: Ta
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[task.status]}`}>
               {STATUS_TEXT[task.status]}
             </span>
+            {task.aiGenerated && (
+              <div className="flex items-center gap-1">
+                <IPPAvatar growthIndex={growthIndex} expression="encourage" size={32} />
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">AI 生成</span>
+              </div>
+            )}
           </div>
 
           {/* 描述 */}

@@ -19,17 +19,19 @@ func NewCommunityService() *CommunityService {
 // ========== 分享相关 ==========
 
 type CreateShareInput struct {
-	FamilyID   uint
-	UserID     uint
-	Nickname   string
-	ShareType  string
-	Content    string
-	Photos     string
-	TaskID     uint
-	TaskTitle  string
-	TaskPoints int
-	ChildName  string
-	Tag        string
+	FamilyID       uint
+	UserID         uint
+	Nickname       string
+	ShareType      string
+	Content        string
+	Photos         string
+	TaskID         uint
+	TaskTitle      string
+	TaskPoints     int
+	ChildName      string
+	Tag            string
+	GrowthStoryID  uint
+	AbilitySummary string
 }
 
 type ShareResponse struct {
@@ -49,19 +51,21 @@ func (s *CommunityService) CreateShare(in CreateShareInput) (*model.CommunitySha
 	}
 
 	share := &model.CommunityShare{
-		FamilyID:     in.FamilyID,
-		UserID:       in.UserID,
-		Nickname:     in.Nickname,
-		ShareType:    in.ShareType,
-		Content:      in.Content,
-		Photos:       in.Photos,
-		TaskID:       in.TaskID,
-		TaskTitle:    in.TaskTitle,
-		TaskPoints:   in.TaskPoints,
-		ChildName:    in.ChildName,
-		Tag:          in.Tag,
-		LikeCount:    0,
-		CommentCount: 0,
+		FamilyID:       in.FamilyID,
+		UserID:         in.UserID,
+		Nickname:       in.Nickname,
+		ShareType:      in.ShareType,
+		Content:        in.Content,
+		Photos:         in.Photos,
+		TaskID:         in.TaskID,
+		TaskTitle:      in.TaskTitle,
+		TaskPoints:     in.TaskPoints,
+		ChildName:      in.ChildName,
+		Tag:            in.Tag,
+		GrowthStoryID:  in.GrowthStoryID,
+		AbilitySummary: in.AbilitySummary,
+		LikeCount:      0,
+		CommentCount:   0,
 	}
 	if err := database.DB.Create(share).Error; err != nil {
 		return nil, err

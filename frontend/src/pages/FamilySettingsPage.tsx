@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BackHeader } from '../components/Header';
 import { useAuthStore } from '../stores/authStore';
 import { useChildStore } from '../stores/childStore';
 import * as childService from '../services/children';
 import type { Child } from '../services/children';
-import { Users, Plus, Edit2, Trash2, X, Check, Home } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, X, Check, Home, Sparkles } from 'lucide-react';
+import { IPPAvatar } from '../components/IPPAvatar';
 
 function ChildForm({
   child,
@@ -107,6 +109,7 @@ function ChildForm({
 export function FamilySettingsPage() {
   const authStore = useAuthStore();
   const childStore = useChildStore();
+  const navigate = useNavigate();
   const [childrenList, setChildrenList] = useState<Child[]>([]);
   const [showChildForm, setShowChildForm] = useState(false);
   const [editingChild, setEditingChild] = useState<Child | undefined>();
@@ -125,9 +128,13 @@ export function FamilySettingsPage() {
 
   const handleAddChild = async (data: any) => {
     try {
-      await childService.addChild(data);
+      const newChild = await childService.addChild(data);
       setShowChildForm(false);
       childStore.fetchChildren();
+      // 创建儿童档案后跳转到初始能力评估问卷
+      if (newChild && newChild.id) {
+        navigate(`/questionnaire?stage=register&child_id=${newChild.id}`);
+      }
     } catch (e) {
       console.error('添加孩子失败:', e);
     }
@@ -240,9 +247,31 @@ export function FamilySettingsPage() {
               </div>
             ))}
             {childrenList.length === 0 && (
-              <div className="text-center py-6 text-text-tertiary">
-                暂无孩子档案，点击 + 添加
-              </div>
+              <button
+                onClick={() => {
+                  setEditingChild(undefined);
+                  setShowChildForm(true);
+                }}
+                className="w-full mt-2 p-5 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-all text-left"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0">
+                    <IPPAvatar growthIndex={0} expression="encourage" size={56} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Sparkles size={14} className="text-primary" />
+                      <span className="font-semibold text-text-primary">添加第一个孩子档案</span>
+                    </div>
+                    <p className="text-xs text-text-secondary leading-relaxed">
+                      录入孩子信息后，小芽将引导完成一次简短的能力评估，为孩子生成专属成长计划
+                    </p>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                    <Plus size={18} className="text-white" />
+                  </div>
+                </div>
+              </button>
             )}
           </div>
         </div>

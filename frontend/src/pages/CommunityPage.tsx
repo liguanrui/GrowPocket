@@ -4,6 +4,7 @@ import { Heart, MessageCircle, Plus, X, Image as ImageIcon, MapPin, Users, Calen
 import { useChildStore } from '../stores/childStore';
 import * as communityService from '../services/community';
 import type { CommunityShare, CommunityComment, CharityProject, CharityActivity, CharityDonation } from '../services/community';
+import { parseAbilitySummary } from '../services/growthStory';
 
 // 活动类型映射
 const activityTypeLabels: Record<number, string> = {
@@ -250,6 +251,7 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
   const getTypeLabel = () => {
     if (share.share_type === 'text_task') return '任务完成';
     if (share.share_type === 'text_image') return '图文分享';
+    if (share.share_type === 'growth_story') return '成长故事';
     return null;
   };
 
@@ -286,12 +288,30 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
       <PhotoGrid photos={photos} />
 
       <div className="p-3">
-        <p className="text-sm text-text-primary whitespace-pre-wrap">{displayContent}</p>
-        {share.share_type === 'text_task' && share.task_points && share.task_points > 0 && (
-          <div className="flex items-center gap-1 mt-2">
-            <Trophy size={14} className="text-primary" />
-            <span className="text-sm text-primary font-medium">获得 +{share.task_points} 积分</span>
+        {share.share_type === 'growth_story' ? (
+          <div className="p-3 bg-purple-50 rounded-xl">
+            <div className="text-xs text-purple-600 font-medium mb-1">成长故事</div>
+            {share.ability_summary && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {parseAbilitySummary(share.ability_summary).map((item, idx) => (
+                  <span key={idx} className="text-xs px-2 py-0.5 bg-white text-purple-700 rounded-full">
+                    {item.dimension} +{item.delta}
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="text-sm text-text-secondary line-clamp-3">{displayContent}</p>
           </div>
+        ) : (
+          <>
+            <p className="text-sm text-text-primary whitespace-pre-wrap">{displayContent}</p>
+            {share.share_type === 'text_task' && share.task_points && share.task_points > 0 && (
+              <div className="flex items-center gap-1 mt-2">
+                <Trophy size={14} className="text-primary" />
+                <span className="text-sm text-primary font-medium">获得 +{share.task_points} 积分</span>
+              </div>
+            )}
+          </>
         )}
       </div>
 

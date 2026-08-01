@@ -23,6 +23,8 @@ type CommunityShare struct {
 	Title        string    `gorm:"size:100" json:"-"`
 	Description  string    `gorm:"type:text" json:"-"`
 	Photo        string    `gorm:"size:500" json:"-"`
+	GrowthStoryID uint   `gorm:"index" json:"growth_story_id,omitempty"` // 成长故事ID（share_type=growth_story时关联）
+	AbilitySummary string `gorm:"type:text" json:"ability_summary,omitempty"` // 能力提升摘要（成长故事分享时）
 }
 
 // CommunityLike 点赞记录

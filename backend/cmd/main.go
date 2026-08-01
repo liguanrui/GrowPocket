@@ -6,12 +6,18 @@ import (
 	"growpocket/internal/handler"
 	"growpocket/internal/middleware"
 	"growpocket/internal/service"
+	"growpocket/pkg/envloader"
 	"log"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	// 加载 .env 文件（若存在），不覆盖已存在的环境变量
+	if err := envloader.Load(".env"); err != nil {
+		log.Println("未找到 .env 文件，使用系统环境变量或默认值")
+	}
+
 	cfg := config.Load()
 
 	// 初始化数据库
@@ -27,6 +33,13 @@ func main() {
 	if err := service.SeedAllFamiliesTemplates(); err != nil {
 		log.Printf("补齐任务模板失败: %v", err)
 	}
+
+	// 初始化 AI 服务
+	aiService := service.NewAIService(cfg.AIAPIKey, cfg.AIModel, cfg.AIBaseURL)
+
+	// 启动 AI 每日任务生成定时器（v3）
+	taskGenService := service.NewTaskGenerationService(aiService)
+	taskGenService.StartDailyScheduler()
 
 	// Gin
 	r := gin.Default()
@@ -71,6 +84,11 @@ func main() {
 		authorized.PUT("/tasks/:id/submit", taskHandler.SubmitTask)
 		authorized.PUT("/tasks/:id/review", taskHandler.ReviewTask)
 
+		// AI 任务审核（v3）
+		taskGenHandler := handler.NewTaskGenerationHandler().WithService(taskGenService)
+		authorized.PUT("/tasks/:id/ai-review", taskGenHandler.ReviewAITask)
+		authorized.POST("/tasks/ai-generate", taskGenHandler.GenerateToday)
+
 		// 积分
 		scoreHandler := handler.NewScoreHandler(cfg)
 		authorized.GET("/score/balance", scoreHandler.GetBalance)
@@ -95,14 +113,18 @@ func main() {
 		authorized.GET("/growth/album", growthHandler.Album)
 		authorized.GET("/growth/timeline", growthHandler.Timeline)
 
-		// 勋章成就
-		achievementHandler := handler.NewAchievementHandler()
-		authorized.GET("/achievements", achievementHandler.GetAchievements)
-		authorized.POST("/achievements/check", achievementHandler.CheckAndUnlock)
-		authorized.GET("/achievements/awards", achievementHandler.GetAchievementAwards)
-		authorized.POST("/achievements", achievementHandler.CreateAchievement)
-		authorized.PUT("/achievements/:id", achievementHandler.UpdateAchievement)
-		authorized.DELETE("/achievements/:id", achievementHandler.DeleteAchievement)
+		// 能力维度（v3）
+		abilityHandler := handler.NewAbilityHandler()
+		authorized.GET("/abilities", abilityHandler.ListDimensions)
+		authorized.GET("/abilities/scores/:child_id", abilityHandler.GetChildScores)
+		authorized.GET("/abilities/growth-index/:child_id", abilityHandler.GetGrowthIndex)
+
+		// 成长周期与目标（v3）
+		growthCycleHandler := handler.NewGrowthCycleHandler()
+		authorized.POST("/growth-cycles", growthCycleHandler.CreateCycle)
+		authorized.PUT("/growth-cycles/:id", growthCycleHandler.UpdateCycle)
+		authorized.POST("/growth-cycles/:id/goals", growthCycleHandler.SetGoal)
+		authorized.GET("/growth-cycles/current/:child_id", growthCycleHandler.GetCurrentCycle)
 
 		// 任务模板
 		taskTemplateHandler := handler.NewTaskTemplateHandler()
@@ -150,6 +172,21 @@ func main() {
 		authorized.POST("/community/activities/:id/complete", activityHandler.CompleteActivity)
 		authorized.DELETE("/community/activities/:id", activityHandler.DeleteActivity)
 		authorized.GET("/community/activities/my", activityHandler.ListMyActivities)
+
+		// AI 助理对话（v3）
+		chatHandler := handler.NewChatHandler(service.NewChatService(aiService))
+		authorized.POST("/chat/message", chatHandler.SendMessage)
+		authorized.GET("/chat/history/:child_id", chatHandler.GetHistory)
+
+		// 成长故事（v3）
+		growthStoryHandler := handler.NewGrowthStoryHandler(service.NewGrowthStoryService(aiService))
+		authorized.POST("/growth-stories/:cycle_id", growthStoryHandler.GenerateStory)
+		authorized.GET("/growth-stories/:cycle_id", growthStoryHandler.GetStory)
+
+		// 问卷（v3）
+		questionnaireHandler := handler.NewQuestionnaireHandler()
+		authorized.GET("/questionnaires/:stage", questionnaireHandler.GetByStage)
+		authorized.POST("/questionnaires/submit", questionnaireHandler.Submit)
 	}
 
 	log.Printf("服务启动于端口 %s", cfg.Port)

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, TrendingUp, Gift, Clock, CheckCircle, CheckCircle2, Inbox, FileText, XCircle, Minus, ClipboardList } from 'lucide-react';
+import { Plus, TrendingUp, Gift, Clock, CheckCircle, CheckCircle2, Inbox, FileText, XCircle, Minus, ClipboardList, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
+import { useAuthStore } from '../stores/authStore';
 import { ChildTabs } from '../components/ChildTabs';
 import { AnimatedNumberComponent as AnimatedNumber } from '../components/AnimatedNumber';
 import * as tasksService from '../services/tasks';
@@ -121,9 +122,11 @@ function StatusTabs({
   );
 }
 
-function TaskItem({ task, onClick, showStatus, highlight }: { task: Task; onClick: () => void; showStatus?: boolean; highlight?: boolean }) {
+function TaskItem({ task, onClick, showStatus, highlight, onAdjust, onReject }: { task: Task; onClick: () => void; showStatus?: boolean; highlight?: boolean; onAdjust?: (task: Task) => void; onReject?: (task: Task) => void }) {
   const statusInfo = STATUS_TABS.find((t) => t.id === task.status) || STATUS_TABS[0];
   const Icon = statusInfo.icon;
+  const isAITask = !!task.ai_generated;
+  const canReviewAI = isAITask && task.status === 1;
 
   return (
     <div
@@ -135,7 +138,15 @@ function TaskItem({ task, onClick, showStatus, highlight }: { task: Task; onClic
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-text-primary">{task.title}</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isAITask && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                <Sparkles size={10} />
+                AI 生成
+              </span>
+            )}
+            <div className="font-medium text-text-primary">{task.title}</div>
+          </div>
           {task.description && (
             <div className="text-sm text-text-tertiary mt-1 line-clamp-2">{task.description}</div>
           )}
@@ -166,6 +177,126 @@ function TaskItem({ task, onClick, showStatus, highlight }: { task: Task; onClic
           )}
         </div>
       </div>
+      {canReviewAI && (onAdjust || onReject) && (
+        <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+          {onAdjust && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onAdjust(task); }}
+              className="flex-1 py-1.5 text-xs rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            >
+              调整
+            </button>
+          )}
+          {onReject && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onReject(task); }}
+              className="flex-1 py-1.5 text-xs rounded-lg bg-danger/10 text-danger hover:bg-danger/20 transition-colors"
+            >
+              拒绝
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// AIReviewModal 家长审核 AI 任务弹窗：可调整标题/积分/难度，或拒绝删除
+function AIReviewModal({ task, onClose, onReviewed }: { task: Task; onClose: () => void; onReviewed: () => void }) {
+  const [title, setTitle] = useState(task.title);
+  const [points, setPoints] = useState(task.points);
+  const [difficulty, setDifficulty] = useState(task.difficulty || 'medium');
+  const [submitting, setSubmitting] = useState(false);
+  const toast = useToastStore();
+
+  const handleAdjust = async () => {
+    setSubmitting(true);
+    try {
+      await tasksService.reviewAITask(task.id, 'adjust', { title, points, difficulty });
+      toast.success('已调整 AI 任务');
+      onReviewed();
+    } catch (e: any) {
+      toast.error(e.message || '调整失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReject = async () => {
+    setSubmitting(true);
+    try {
+      await tasksService.reviewAITask(task.id, 'reject');
+      toast.success('已拒绝 AI 任务');
+      onReviewed();
+    } catch (e: any) {
+      toast.error(e.message || '操作失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
+            <Sparkles size={18} className="text-purple-500" />
+            审核 AI 任务
+          </h3>
+          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary text-lg leading-none">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm text-text-secondary">任务标题</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-text-secondary">积分</label>
+            <input
+              type="number"
+              value={points}
+              onChange={(e) => setPoints(Number(e.target.value))}
+              className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-text-secondary">难度</label>
+            <div className="mt-1 flex gap-2">
+              {(['easy', 'medium', 'hard'] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDifficulty(d)}
+                  className={`flex-1 py-2 text-xs rounded-lg transition-colors ${difficulty === d ? 'bg-primary text-white' : 'bg-gray-100 text-text-secondary hover:bg-gray-200'}`}
+                >
+                  {d === 'easy' ? '简单' : d === 'medium' ? '中等' : '困难'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={handleAdjust}
+            disabled={submitting || !title.trim() || points <= 0}
+            className="flex-1 py-2.5 bg-primary text-white text-sm rounded-xl hover:bg-primary-dark transition-colors disabled:opacity-50"
+          >
+            确认调整
+          </button>
+          <button
+            onClick={handleReject}
+            disabled={submitting}
+            className="flex-1 py-2.5 bg-danger/10 text-danger text-sm rounded-xl hover:bg-danger/20 transition-colors disabled:opacity-50"
+          >
+            拒绝删除
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -177,6 +308,7 @@ function TaskBoard({
   onTaskClick,
   onCreateTask,
   highlightTaskId,
+  onReviewed,
 }: {
   tasks: Task[];
   activeStatus: 'all' | TaskStatus;
@@ -184,9 +316,23 @@ function TaskBoard({
   onTaskClick: (taskId: number) => void;
   onCreateTask: () => void;
   highlightTaskId?: number | null;
+  onReviewed?: () => void;
 }) {
+  const [reviewingTask, setReviewingTask] = useState<Task | null>(null);
+  const toast = useToastStore();
   const filteredTasks = activeStatus === 'all' ? tasks : tasks.filter((t) => t.status === activeStatus);
   const showStatus = activeStatus === 'all';
+
+  const handleReject = async (task: Task) => {
+    if (!onReviewed) return;
+    try {
+      await tasksService.reviewAITask(task.id, 'reject');
+      toast.success('已拒绝 AI 任务');
+      onReviewed();
+    } catch (e: any) {
+      toast.error(e.message || '操作失败');
+    }
+  };
 
   if (filteredTasks.length === 0) {
     return (
@@ -223,9 +369,21 @@ function TaskBoard({
             onClick={() => onTaskClick(task.id)}
             showStatus={showStatus}
             highlight={highlightTaskId === task.id}
+            onAdjust={onReviewed ? (t) => setReviewingTask(t) : undefined}
+            onReject={onReviewed ? handleReject : undefined}
           />
         ))}
       </div>
+      {reviewingTask && (
+        <AIReviewModal
+          task={reviewingTask}
+          onClose={() => setReviewingTask(null)}
+          onReviewed={() => {
+            setReviewingTask(null);
+            onReviewed?.();
+          }}
+        />
+      )}
       <style>{`
         @keyframes highlightPulse {
           0%, 100% {
@@ -249,6 +407,8 @@ export function HomePage() {
   const childStore = useChildStore();
   const uiStore = useUIStore();
   const toast = useToastStore();
+  const authStore = useAuthStore();
+  const isParent = authStore.user?.role === 'parent';
   const children = childStore.children;
 
   const [selectedChildId, setSelectedChildId] = useState<number | null>(childStore.currentChildId);
@@ -259,8 +419,24 @@ export function HomePage() {
   const [loading, setLoading] = useState(!hasPrevBalance);
   const [error, setError] = useState<string | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
+  const [aiGenerating, setAiGenerating] = useState(false);
   const taskBoardRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+
+  // 手动触发 AI 生成今日任务
+  const handleGenerateAI = async () => {
+    if (!selectedChildId) return;
+    setAiGenerating(true);
+    try {
+      const res = await tasksService.generateAITasks(selectedChildId);
+      toast.success(`AI 已生成 ${res.count} 个任务`);
+      loadData(false);
+    } catch (e: any) {
+      toast.error(e.message || 'AI 生成失败（可能未配置 API Key）');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedChildId && children.length > 0) {
@@ -407,12 +583,24 @@ export function HomePage() {
               <h1 className="text-xl font-bold text-white">任务看板</h1>
               <p className="text-white/80 text-sm mt-0.5">今日共 {tasks.length} 个任务</p>
             </div>
-            <button
-              onClick={() => navigate(`/tasks/new?child_id=${selectedChildId}`)}
-              className="flex items-center gap-1 px-3 py-2 bg-white/20 text-white text-sm rounded-xl hover:bg-white/30 transition-colors"
-            >
-              <Plus size={16} /> 新建
-            </button>
+            <div className="flex items-center gap-2">
+              {isParent && (
+                <button
+                  onClick={handleGenerateAI}
+                  disabled={aiGenerating}
+                  className="flex items-center gap-1 px-3 py-2 bg-white/20 text-white text-sm rounded-xl hover:bg-white/30 transition-colors disabled:opacity-60"
+                >
+                  <Sparkles size={16} />
+                  {aiGenerating ? '生成中...' : 'AI 生成'}
+                </button>
+              )}
+              <button
+                onClick={() => navigate(`/tasks/new?child_id=${selectedChildId}`)}
+                className="flex items-center gap-1 px-3 py-2 bg-white/20 text-white text-sm rounded-xl hover:bg-white/30 transition-colors"
+              >
+                <Plus size={16} /> 新建
+              </button>
+            </div>
           </div>
 
           <ChildTabs children={children} selectedId={selectedChild.id} onSelect={handleChildSelect} />
@@ -441,6 +629,7 @@ export function HomePage() {
           onTaskClick={(id) => navigate(`/task/${id}`)}
           onCreateTask={() => navigate(`/tasks/new?child_id=${selectedChildId}`)}
           highlightTaskId={uiStore.highlightTaskId}
+          onReviewed={() => loadData(false)}
         />
 
         <div className="h-4" />

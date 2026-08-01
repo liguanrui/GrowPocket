@@ -303,6 +303,12 @@ func (s *TaskService) ReviewTask(id, familyID uint, input ReviewTaskInput) (*mod
 	achievementService := &AchievementService{}
 	updateTaskAchievementCounters(achievementService, task.ChildID, familyID, task.TemplateID, actualPoints)
 
+	// v3: 任务完成后累加能力维度分值
+	abilityService := &AbilityService{}
+	if err := abilityService.AwardTaskCompletion(task); err != nil {
+		log.Printf("[Ability] 任务完成累加能力维度失败 task=%d: %v", task.ID, err)
+	}
+
 	return task, nil
 }
 

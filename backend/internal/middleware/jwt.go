@@ -13,6 +13,7 @@ const (
 	UserIDKey   contextKey = "user_id"
 	FamilyIDKey contextKey = "family_id"
 	NicknameKey contextKey = "nickname"
+	RoleKey     contextKey = "role"
 )
 
 func JWTAuth(jwtSecret string) gin.HandlerFunc {
@@ -41,6 +42,7 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 		c.Set(string(UserIDKey), claims.UserID)
 		c.Set(string(FamilyIDKey), claims.FamilyID)
 		c.Set(string(NicknameKey), claims.Nickname)
+		c.Set(string(RoleKey), claims.Role)
 
 		c.Next()
 	}
@@ -66,6 +68,14 @@ func GetNickname(c *gin.Context) string {
 	v, _ := c.Get(string(NicknameKey))
 	if n, ok := v.(string); ok {
 		return n
+	}
+	return ""
+}
+
+func GetRole(c *gin.Context) string {
+	v, _ := c.Get(string(RoleKey))
+	if r, ok := v.(string); ok {
+		return r
 	}
 	return ""
 }

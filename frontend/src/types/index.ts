@@ -55,6 +55,9 @@ export interface Task {
   difficulty?: TaskDifficulty;
   frequency?: TaskFrequency;
   recurringId?: string;
+  abilityDimensionId?: number;
+  secondaryDimensions?: number[];
+  aiGenerated?: boolean;
 }
 
 export interface TaskTemplate {
@@ -185,6 +188,26 @@ export interface Message {
   status: 'read' | 'unread';
   relatedId?: string;
   createdAt: Date;
+}
+
+// === v3 能力维度系统 ===
+export interface AbilityDimension {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  research_src: string;
+  sort_order: number;
+}
+
+export interface ChildAbilityScore {
+  dimension_id: number;
+  score: number;
+  dimension_code: string;
+  dimension_name: string;
+  dimension_color: string;
 }
 
 // === 兼容旧组件的别名（便于逐步替换）===

@@ -23,14 +23,16 @@ func NewCommunityHandler() *CommunityHandler {
 // ===== 分享 =====
 
 type createShareReq struct {
-	ShareType  string   `json:"share_type"`
-	Content    string   `json:"content"`
-	Photos     []string `json:"photos"`
-	TaskID     uint     `json:"task_id"`
-	TaskTitle  string   `json:"task_title"`
-	TaskPoints int      `json:"task_points"`
-	ChildName  string   `json:"child_name"`
-	Tag        string   `json:"tag"`
+	ShareType      string   `json:"share_type"`
+	Content        string   `json:"content"`
+	Photos         []string `json:"photos"`
+	TaskID         uint     `json:"task_id"`
+	TaskTitle      string   `json:"task_title"`
+	TaskPoints     int      `json:"task_points"`
+	ChildName      string   `json:"child_name"`
+	Tag            string   `json:"tag"`
+	GrowthStoryID  uint     `json:"growth_story_id"`   // 成长故事ID（share_type=growth_story 时关联）
+	AbilitySummary string   `json:"ability_summary"`  // 能力提升摘要（成长故事分享时）
 }
 
 func (h *CommunityHandler) CreateShare(c *gin.Context) {
@@ -59,17 +61,19 @@ func (h *CommunityHandler) CreateShare(c *gin.Context) {
 	}
 
 	share, err := h.service.CreateShare(service.CreateShareInput{
-		FamilyID:   familyID,
-		UserID:     userID,
-		Nickname:   nickname,
-		ShareType:  req.ShareType,
-		Content:    req.Content,
-		Photos:     photosJSON,
-		TaskID:     req.TaskID,
-		TaskTitle:  req.TaskTitle,
-		TaskPoints: req.TaskPoints,
-		ChildName:  req.ChildName,
-		Tag:        req.Tag,
+		FamilyID:       familyID,
+		UserID:         userID,
+		Nickname:       nickname,
+		ShareType:      req.ShareType,
+		Content:        req.Content,
+		Photos:         photosJSON,
+		TaskID:         req.TaskID,
+		TaskTitle:      req.TaskTitle,
+		TaskPoints:     req.TaskPoints,
+		ChildName:      req.ChildName,
+		Tag:            req.Tag,
+		GrowthStoryID:  req.GrowthStoryID,
+		AbilitySummary: req.AbilitySummary,
 	})
 	if err != nil {
 		util.FailBadRequest(c, err.Error())

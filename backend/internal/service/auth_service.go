@@ -77,7 +77,7 @@ func (s *AuthService) Register(input RegisterInput, jwtSecret string, jwtDuratio
 	}
 
 	// 生成 JWT
-	token, err := util.GenerateJWT(user.ID, family.ID, user.Nickname, jwtSecret, jwtDuration)
+	token, err := util.GenerateJWT(user.ID, family.ID, user.Nickname, user.Role, jwtSecret, jwtDuration)
 	if err != nil {
 		return nil, errors.New("生成令牌失败")
 	}
@@ -118,7 +118,7 @@ func (s *AuthService) Login(input LoginInput, jwtSecret string, jwtDuration int)
 	var family model.Family
 	database.DB.First(&family, user.FamilyID)
 
-	token, err := util.GenerateJWT(user.ID, family.ID, user.Nickname, jwtSecret, jwtDuration)
+	token, err := util.GenerateJWT(user.ID, family.ID, user.Nickname, user.Role, jwtSecret, jwtDuration)
 	if err != nil {
 		return nil, errors.New("生成令牌失败")
 	}

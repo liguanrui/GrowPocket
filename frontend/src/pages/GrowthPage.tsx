@@ -1,94 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { Camera, Calendar, Trophy, Star, ChevronLeft, ChevronRight, Share2, Lock, Unlock, Sparkles, Image, FileText, Send, X, ChevronDown, Plus, Medal } from 'lucide-react';
+import { Camera, Calendar, Trophy, Star, ChevronLeft, ChevronRight, Share2, Sparkles, Image, FileText, Send, X, ChevronDown, Plus, Target, Check } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
+import { useAuthStore } from '../stores/authStore';
 import { ChildTabs } from '../components/ChildTabs';
 import * as growthService from '../services/growth';
-import type { AlbumPhoto, TimelineEvent, TimelineDay, UserAchievement } from '../services/growth';
+import type { AlbumPhoto, TimelineEvent, TimelineDay } from '../services/growth';
 import * as tasksService from '../services/tasks';
 import type { Task } from '../services/tasks';
 import * as communityService from '../services/community';
-
-function AchievementCard({ achievement }: { achievement: UserAchievement }) {
-  const { Achievement, unlocked, current_value, award_count } = achievement;
-  const targetValue = Achievement.counter_target || Achievement.target_value || 0;
-  const progress = Math.min((current_value / Math.max(targetValue, 1)) * 100, 100);
-
-  return (
-    <div
-      className={`relative rounded-2xl p-3 transition-all ${
-        unlocked
-          ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 shadow-lg shadow-amber-100/50'
-          : 'bg-gray-50 border-2 border-gray-100'
-      }`}
-    >
-      {unlocked && (
-        <div className="absolute top-2.5 right-2.5">
-          <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full shadow-sm">
-            {award_count > 1 ? `已获得 x${award_count}` : '已获得'}
-          </div>
-        </div>
-      )}
-      <div className="flex items-center gap-2.5">
-        <div className="relative">
-          <div
-            className={`w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
-              unlocked
-                ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-200/50'
-                : 'bg-gray-200'
-            }`}
-          >
-            {unlocked ? (
-              <span className="drop-shadow">{Achievement.icon}</span>
-            ) : (
-              <Lock size={18} className="text-gray-400" />
-            )}
-          </div>
-          {unlocked && award_count > 1 && (
-            <div className="absolute -bottom-1 -right-1 bg-amber-600 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full shadow-sm min-w-[18px] text-center">
-              x{award_count}
-            </div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`font-semibold text-sm ${unlocked ? 'text-amber-900' : 'text-text-secondary'}`}>
-              {Achievement.name}
-            </span>
-          </div>
-          <p className="text-xs text-text-tertiary mt-0.5 line-clamp-1">{Achievement.description}</p>
-          <div className="flex items-center gap-3 mt-1.5">
-            <span className={`text-xs font-bold ${unlocked ? 'text-amber-600' : 'text-primary'}`}>
-              +{Achievement.points} 积分
-            </span>
-            {Achievement.is_custom && (
-              <span className="text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
-                自定义
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-1.5 flex-shrink-0 w-20">
-          <div className="text-xs text-text-tertiary">
-            <span className="font-medium text-text-secondary">{current_value}</span>
-            <span className="text-text-tertiary">/{targetValue}</span>
-          </div>
-          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-500 rounded-full ${
-                unlocked
-                  ? 'bg-gradient-to-r from-amber-400 to-yellow-500'
-                  : 'bg-gradient-to-r from-primary to-amber-400'
-              }`}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { getChildScores, getGrowthIndex, getAbilities } from '../services/ability';
+import type { ChildAbilityScore, AbilityDimension } from '../services/ability';
+import { IPPAvatar } from '../components/IPPAvatar';
+import { getCurrentCycle, setGoal, createCycle, updateCycle } from '../services/growthCycle';
+import type { DimensionProgress } from '../services/growthCycle';
+import { useToastStore } from '../stores/toastStore';
 
 function ShareModal({
   onClose,
@@ -338,16 +266,32 @@ export function GrowthPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const childStore = useChildStore();
+  const authStore = useAuthStore();
+  const isParent = authStore.user?.role === 'parent';
   const [album, setAlbum] = useState<AlbumPhoto[]>([]);
   const [timeline, setTimeline] = useState<TimelineDay[]>([]);
-  const [achievements, setAchievements] = useState<UserAchievement[]>([]);
+  const [scores, setScores] = useState<ChildAbilityScore[]>([]);
+  const [growthIndex, setGrowthIndex] = useState(0);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showShareModal, setShowShareModal] = useState(false);
   const [albumExpanded, setAlbumExpanded] = useState(false);
-  const [achievementsExpanded, setAchievementsExpanded] = useState(false);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 阶段目标相关
+  const toast = useToastStore();
+  const [cycleId, setCycleId] = useState<number | null>(null);
+  const [progressList, setProgressList] = useState<DimensionProgress[]>([]);
+  const [cycleName, setCycleName] = useState('');
+  const [cycleStartDate, setCycleStartDate] = useState('');
+  const [cycleEndDate, setCycleEndDate] = useState('');
+  const [dimensions, setDimensions] = useState<AbilityDimension[]>([]);
+  // 阶段目标设置面板
+  const [showGoalSetup, setShowGoalSetup] = useState(false);
+  const [setupStartDate, setSetupStartDate] = useState('');
+  const [setupEndDate, setSetupEndDate] = useState('');
+  const [setupGoals, setSetupGoals] = useState<Record<number, number>>({}); // dimension_id -> target_score
+  const [goalSubmitting, setGoalSubmitting] = useState(false);
 
   const children = childStore.children;
   const [selectedChildId, setSelectedChildId] = useState<number | null>(() => {
@@ -379,17 +323,33 @@ export function GrowthPage() {
       setLoading(true);
       setError(null);
       try {
-        const [albumResult, timelineResult, achievementsResult, tasksResult] = await Promise.all([
+        const [albumResult, timelineResult, scoresResult, growthIndexResult, tasksResult, cycleResult, dimsResult] = await Promise.all([
           growthService.getAlbum(selectedChildId, 1, 12),
           growthService.getTimeline(selectedChildId),
-          growthService.getAchievements(selectedChildId),
+          getChildScores(selectedChildId),
+          getGrowthIndex(selectedChildId),
           tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 20 }),
+          getCurrentCycle(selectedChildId),
+          getAbilities(),
         ]);
         if (mounted) {
           setAlbum(albumResult.items);
           setTimeline(timelineResult);
-          setAchievements(achievementsResult);
+          setScores(scoresResult);
+          setGrowthIndex(growthIndexResult);
           setTasks(tasksResult.items);
+          setDimensions(dimsResult);
+          // 阶段目标数据
+          if (cycleResult.cycle) {
+            setCycleId(cycleResult.cycle.id);
+            setCycleName(cycleResult.cycle.name);
+            setCycleStartDate(cycleResult.cycle.start_date);
+            setCycleEndDate(cycleResult.cycle.end_date);
+            setProgressList(cycleResult.progress || []);
+          } else {
+            setCycleId(null);
+            setProgressList([]);
+          }
         }
       } catch (e: any) {
         if (mounted) setError(e.message || '加载失败');
@@ -414,11 +374,79 @@ export function GrowthPage() {
     childStore.setCurrentChildId(id);
   };
 
-  const unlockedCount = achievements.filter((a) => a.unlocked).length;
-  const totalCount = achievements.length;
+  // 打开阶段目标设置面板
+  const openGoalSetup = () => {
+    if (cycleId) {
+      // 编辑模式：加载当前周期时间区间和已有目标
+      setSetupStartDate(cycleStartDate.slice(0, 10));
+      setSetupEndDate(cycleEndDate.slice(0, 10));
+      const goalsMap: Record<number, number> = {};
+      progressList.forEach((p) => {
+        if (p.target_score > 0) goalsMap[p.dimension_id] = p.target_score;
+      });
+      setSetupGoals(goalsMap);
+    } else {
+      // 创建模式：默认 30 天周期
+      const now = new Date();
+      const end = new Date(now);
+      end.setDate(end.getDate() + 30);
+      setSetupStartDate(now.toISOString().slice(0, 10));
+      setSetupEndDate(end.toISOString().slice(0, 10));
+      setSetupGoals({});
+    }
+    setShowGoalSetup(true);
+  };
+
+  // 提交阶段目标设置（时间区间 + 多维度目标）
+  const handleSaveGoalSetup = async () => {
+    if (!selectedChildId) return;
+    if (!setupStartDate || !setupEndDate) {
+      toast.error('请选择时间区间');
+      return;
+    }
+    const goalEntries = Object.entries(setupGoals).filter(([, v]) => v > 0);
+    if (goalEntries.length === 0) {
+      toast.error('请至少为一个维度设置目标');
+      return;
+    }
+    setGoalSubmitting(true);
+    try {
+      const startISO = new Date(setupStartDate + 'T00:00:00').toISOString();
+      const endISO = new Date(setupEndDate + 'T23:59:59').toISOString();
+      const name = `${setupStartDate.slice(5)}-${setupEndDate.slice(5)} 成长阶段`;
+
+      let finalCycleId = cycleId;
+      if (!finalCycleId) {
+        // 创建周期
+        const cycle = await createCycle(selectedChildId, name, startISO, endISO);
+        finalCycleId = cycle.id;
+      } else {
+        // 更新周期时间区间
+        await updateCycle(finalCycleId, name, startISO, endISO);
+      }
+      // 批量设置维度目标
+      for (const [dimId, target] of goalEntries) {
+        await setGoal(finalCycleId!, selectedChildId, Number(dimId), target);
+      }
+      toast.success('阶段目标已保存');
+      setShowGoalSetup(false);
+      // 重新加载
+      const cycleResult = await getCurrentCycle(selectedChildId);
+      if (cycleResult.cycle) {
+        setCycleId(cycleResult.cycle.id);
+        setCycleName(cycleResult.cycle.name);
+        setCycleStartDate(cycleResult.cycle.start_date);
+        setCycleEndDate(cycleResult.cycle.end_date);
+        setProgressList(cycleResult.progress || []);
+      }
+    } catch (e: any) {
+      toast.error(e.message || '保存失败');
+    } finally {
+      setGoalSubmitting(false);
+    }
+  };
 
   const DEFAULT_ALBUM_COUNT = 6;
-  const DEFAULT_ACHIEVEMENT_COUNT = 3;
   const DEFAULT_TIMELINE_COUNT = 3;
 
   if (loading) {
@@ -453,7 +481,6 @@ export function GrowthPage() {
   }
 
   const displayAlbum = albumExpanded ? album : album.slice(0, DEFAULT_ALBUM_COUNT);
-  const displayAchievements = achievementsExpanded ? achievements : achievements.slice(0, DEFAULT_ACHIEVEMENT_COUNT);
   const displayTimeline = timelineExpanded ? timeline : timeline.slice(0, DEFAULT_TIMELINE_COUNT);
 
   return (
@@ -489,8 +516,8 @@ export function GrowthPage() {
             </div>
             <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
               <div className="flex-1 text-center">
-                <div className="text-white font-bold text-lg">{unlockedCount}/{totalCount}</div>
-                <div className="text-white/70 text-xs">勋章</div>
+                <div className="text-white font-bold text-lg">{growthIndex}</div>
+                <div className="text-white/70 text-xs">成长指数</div>
               </div>
               <div className="flex-1 text-center">
                 <div className="text-white font-bold text-lg">{album.length}</div>
@@ -506,6 +533,117 @@ export function GrowthPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
+        {/* 能力雷达图 Section */}
+        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                <Sparkles size={16} />
+              </div>
+              <h2 className="font-semibold text-text-primary">能力成长</h2>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-text-tertiary">成长指数</div>
+              <div className="text-xl font-bold text-primary">{growthIndex}</div>
+            </div>
+          </div>
+          <div className="w-full h-64">
+            {scores.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={scores}>
+                  <PolarGrid stroke="#e5e7eb" />
+                  <PolarAngleAxis dataKey="dimension_name" tick={{ fontSize: 11, fill: '#6b7280' }} />
+                  <PolarRadiusAxis domain={[0, 100]} tick={{ fontSize: 9, fill: '#9ca3af' }} />
+                  <Radar
+                    name="能力"
+                    dataKey="score"
+                    stroke="#7EC850"
+                    fill="#7EC850"
+                    fillOpacity={0.4}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-text-tertiary text-sm">
+                <div className="text-center">
+                  <Sparkles size={32} className="mx-auto mb-2 text-gray-300" />
+                  完成任务后展示能力成长
+                </div>
+              </div>
+            )}
+          </div>
+          {/* IP 形态（Task 11 实现） */}
+          <div className="mt-3 flex items-center justify-center gap-2 py-2 bg-primary/5 rounded-xl">
+            <IPPAvatar growthIndex={growthIndex} expression="proud" size={40} />
+            <div className="text-sm text-text-secondary">
+              {growthIndex < 20 ? '种子阶段' : growthIndex < 40 ? '萌芽阶段' : growthIndex < 60 ? '小苗阶段' : growthIndex < 80 ? '小树阶段' : '大树阶段'}
+            </div>
+          </div>
+        </div>
+
+        {/* 阶段目标 Section */}
+        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600">
+                <Target size={16} />
+              </div>
+              <h2 className="font-semibold text-text-primary">阶段目标</h2>
+            </div>
+            {cycleId && cycleEndDate && (
+              <div className="text-xs text-text-tertiary">
+                {cycleStartDate.slice(0, 10)} ~ {cycleEndDate.slice(0, 10)}
+              </div>
+            )}
+          </div>
+
+          {cycleId && progressList.length > 0 ? (
+            <div className="space-y-3">
+              {progressList.map((p) => (
+                <div key={p.dimension_id} className="p-2 rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-text-primary">{p.dimension_name}</span>
+                    <span className="text-xs text-text-tertiary">
+                      {p.current_score} / {p.target_score}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        p.progress >= 100 ? 'bg-green-500' : p.progress >= 60 ? 'bg-primary' : 'bg-amber-400'
+                      }`}
+                      style={{ width: `${Math.min(100, p.progress)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {isParent && (
+                <button
+                  onClick={openGoalSetup}
+                  className="w-full mt-2 py-2 text-sm text-primary border border-primary/30 rounded-xl hover:bg-primary/5 transition-colors"
+                >
+                  调整阶段目标
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <Target size={32} className="mx-auto mb-2 text-gray-300" />
+              <p className="text-sm text-text-tertiary mb-3">
+                {cycleId ? '还没有设置维度目标' : '暂无成长周期'}
+              </p>
+              {isParent && (
+                <button
+                  onClick={openGoalSetup}
+                  className="px-4 py-2 bg-primary text-white text-sm rounded-xl"
+                >
+                  设置阶段目标
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* 图集 Section */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
           <SectionHeader
@@ -532,78 +670,6 @@ export function GrowthPage() {
             <div className="text-center py-8 text-text-tertiary text-sm">
               <Image size={32} className="mx-auto mb-2 text-gray-300" />
               暂无照片
-            </div>
-          )}
-        </div>
-
-        {/* 勋章 Section */}
-        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                <Trophy size={16} className="text-amber-600" />
-              </div>
-              <span className="font-semibold text-text-primary">勋章</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-amber-600">{unlockedCount}</span>
-              <span className="text-sm text-text-tertiary">/ {totalCount}</span>
-            </div>
-          </div>
-
-          {unlockedCount > 0 && (
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-              {achievements
-                .filter((a) => a.unlocked)
-                .map((achievement) => (
-                  <div
-                    key={achievement.id}
-                    className="flex-shrink-0 flex flex-col items-center gap-1 w-14"
-                  >
-                    <div className="relative">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-2xl shadow-md shadow-amber-200">
-                        {achievement.Achievement.icon}
-                      </div>
-                      {achievement.award_count > 1 && (
-                        <div className="absolute -top-1 -right-1 bg-amber-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm min-w-[18px] text-center">
-                          x{achievement.award_count}
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-xs text-text-secondary text-center line-clamp-1 w-full">
-                      {achievement.Achievement.name}
-                    </span>
-                  </div>
-                ))}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                <Medal size={16} />
-              </div>
-              <h2 className="font-semibold text-text-primary">全部勋章</h2>
-              <span className="text-xs text-text-tertiary bg-gray-100 px-2 py-0.5 rounded-full">{achievements.length}</span>
-            </div>
-            <button
-              onClick={() => navigate(`/achievements?child_id=${selectedChildId}`)}
-              className="flex items-center gap-1 text-sm text-text-tertiary hover:text-primary transition-colors"
-            >
-              <span>更多</span>
-              <ChevronDown size={16} />
-            </button>
-          </div>
-          {achievements.length > 0 ? (
-            <div className="space-y-3">
-              {displayAchievements.map((achievement) => (
-                <AchievementCard key={achievement.id} achievement={achievement} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-text-tertiary text-sm">
-              <Sparkles size={32} className="mx-auto mb-2 text-gray-300" />
-              暂无勋章
             </div>
           )}
         </div>
@@ -646,6 +712,46 @@ export function GrowthPage() {
           )}
         </div>
 
+        {/* 积分兑换入口 */}
+        <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
+          <button
+            onClick={() => navigate('/mall')}
+            className="w-full flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Trophy size={20} className="text-amber-600" />
+              </div>
+              <div className="text-left">
+                <div className="font-semibold text-text-primary">积分兑换</div>
+                <div className="text-xs text-text-tertiary">用积分兑换奖励</div>
+              </div>
+            </div>
+            <ChevronRight size={20} className="text-text-tertiary" />
+          </button>
+        </div>
+
+        {/* 阶段回顾按钮（仅家长可见） */}
+        {isParent && (
+          <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
+            <button
+              onClick={() => navigate(`/growth/story?child_id=${selectedChild.id}`)}
+              className="w-full flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                  <Sparkles size={20} className="text-purple-600" />
+                </div>
+                <div className="text-left">
+                  <div className="font-semibold text-text-primary">阶段回顾</div>
+                  <div className="text-xs text-text-tertiary">生成本阶段成长故事</div>
+                </div>
+              </div>
+              <ChevronRight size={20} className="text-text-tertiary" />
+            </button>
+          </div>
+        )}
+
         {/* 分享悬浮按钮 */}
         <button
           onClick={() => setShowShareModal(true)}
@@ -664,6 +770,119 @@ export function GrowthPage() {
           tasks={tasks}
           album={album}
         />
+      )}
+
+      {/* 阶段目标设置面板 */}
+      {showGoalSetup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-text-primary">
+                {cycleId ? '调整阶段目标' : '设置阶段目标'}
+              </h3>
+              <button
+                onClick={() => setShowGoalSetup(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 时间区间 */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-text-primary mb-2">阶段时间区间</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={setupStartDate}
+                  onChange={(e) => setSetupStartDate(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-text-primary"
+                />
+                <span className="text-text-tertiary">~</span>
+                <input
+                  type="date"
+                  value={setupEndDate}
+                  onChange={(e) => setSetupEndDate(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-text-primary"
+                />
+              </div>
+              <p className="text-xs text-text-tertiary mt-1.5">阶段结束时将触发成长回顾</p>
+            </div>
+
+            {/* 多维度目标 */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-text-primary mb-2">
+                维度目标（可多选）
+              </label>
+              <p className="text-xs text-text-tertiary mb-3">
+                AI 将基于目标和累计完成情况每日自动生成任务
+              </p>
+              <div className="space-y-2">
+                {dimensions.map((dim) => {
+                  const currentScore = scores.find((s) => s.dimension_id === dim.id)?.score || 0;
+                  const target = setupGoals[dim.id] || 0;
+                  return (
+                    <div key={dim.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                      <button
+                        onClick={() => {
+                          setSetupGoals((prev) => {
+                            const next = { ...prev };
+                            if (target > 0) {
+                              delete next[dim.id];
+                            } else {
+                              next[dim.id] = 20;
+                            }
+                            return next;
+                          });
+                        }}
+                        className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                          target > 0 ? 'border-primary bg-primary' : 'border-gray-300 bg-white'
+                        }`}
+                      >
+                        {target > 0 && <Check size={14} className="text-white" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-text-primary">{dim.name}</div>
+                        <div className="text-xs text-text-tertiary">当前 {currentScore} 分</div>
+                      </div>
+                      {target > 0 && (
+                        <select
+                          value={target}
+                          onChange={(e) =>
+                            setSetupGoals((prev) => ({ ...prev, [dim.id]: Number(e.target.value) }))
+                          }
+                          className="px-2 py-1 bg-white rounded-lg border border-gray-200 text-sm text-text-primary"
+                        >
+                          {[10, 20, 30, 40, 50, 60, 80, 100].map((v) => (
+                            <option key={v} value={v}>
+                              目标 {v}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowGoalSetup(false)}
+                className="flex-1 py-3 bg-gray-100 text-text-secondary rounded-xl font-medium"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveGoalSetup}
+                disabled={goalSubmitting}
+                className="flex-1 py-3 bg-gradient-to-r from-primary to-amber-500 text-white rounded-xl font-medium disabled:opacity-50"
+              >
+                {goalSubmitting ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -93,6 +93,7 @@ type TaskTemplate struct {
 	EstimatedTime int       `gorm:"default:15" json:"estimated_time"`   // 预计完成时间（分钟）
 	Tags          string    `gorm:"size:200" json:"tags,omitempty"`     // 标签，逗号分隔
 	IsSystem      bool      `gorm:"default:false" json:"is_system"`     // 是否系统内置模板
+	AbilityDimensionID uint `gorm:"index" json:"ability_dimension_id,omitempty"`
 }
 
 // TaskRecurringConfig 循环任务配置表

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { Settings, User, Users, ListTodo, Medal, LogOut, ChevronRight } from 'lucide-react';
+import { Settings, User, Users, ListTodo, LogOut, ChevronRight } from 'lucide-react';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -34,13 +34,6 @@ export function SettingsPage() {
       icon: ListTodo,
       description: '自定义任务模板',
       path: '/settings/templates',
-    },
-    {
-      id: 'achievements',
-      label: '自定义勋章',
-      icon: Medal,
-      description: '创建和管理勋章',
-      path: '/settings/achievements',
     },
   ];
 

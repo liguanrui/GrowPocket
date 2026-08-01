@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, ImageIcon, Star, Calendar, User, Upload, CheckCircle2, XCircle, Edit3, Trash2 } from 'lucide-react';
+import { ArrowLeft, ImageIcon, Star, Calendar, User, Upload, CheckCircle2, XCircle, Edit3, Trash2, Sparkles } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
 import * as scoreService from '../services/score';
+import { getAbilities } from '../services/ability';
 import type { Task } from '../services/tasks';
+import type { AbilityDimension } from '../services/ability';
 
 const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> = {
   1: { label: '进行中', color: 'text-primary', bg: 'bg-primary/10' },
@@ -175,6 +177,7 @@ export function TaskDetailPage() {
   const [showReview, setShowReview] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>(undefined);
   const [currentBalance, setCurrentBalance] = useState(0);
+  const [abilities, setAbilities] = useState<AbilityDimension[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -191,6 +194,9 @@ export function TaskDetailPage() {
         if (mounted) {
           setTask(t);
           setPhoto(t.photo);
+          if (t.ability_dimension_id) {
+            getAbilities().then(setAbilities).catch(() => {});
+          }
         }
         const bal = await scoreService.getBalance(t.child_id);
         if (mounted) {
@@ -247,6 +253,11 @@ export function TaskDetailPage() {
   const child = useChildStore.getState().children.find((c) => c.id === task.child_id);
   const childName = task.child_name || child?.nickname || '未设置';
   const status = STATUS_MAP[task.status] || STATUS_MAP[1];
+  const primaryDim = abilities.find(a => a.id === task.ability_dimension_id);
+  const secondaryIds: number[] = task.secondary_dimensions ? JSON.parse(task.secondary_dimensions) : [];
+  const secondaryDims = secondaryIds
+    .map(id => abilities.find(a => a.id === id))
+    .filter((d): d is AbilityDimension => !!d);
 
   const handleSubmit = async () => {
     if (!photo) return;
@@ -418,6 +429,27 @@ export function TaskDetailPage() {
             <span className="text-sm text-text-secondary">{task.created_at}</span>
           </div>
         </div>
+
+        {task.ability_dimension_id && (
+          <div className="bg-card rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles size={16} className="text-primary" />
+              <h3 className="font-semibold text-text-primary">能力提升</h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {primaryDim && (
+                <span className="px-3 py-1.5 rounded-full text-sm font-medium" style={{ backgroundColor: primaryDim.color + '20', color: primaryDim.color }}>
+                  {primaryDim.name} · 主维度
+                </span>
+              )}
+              {secondaryDims.map(dim => (
+                <span key={dim.id} className="px-3 py-1.5 rounded-full text-sm" style={{ backgroundColor: dim.color + '15', color: dim.color }}>
+                  {dim.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="h-8" />
       </div>

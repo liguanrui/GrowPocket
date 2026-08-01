@@ -24,6 +24,9 @@ type Task struct {
 	Difficulty  string    `gorm:"size:20" json:"difficulty"`         // 难度：easy/medium/hard
 	Frequency   string    `gorm:"size:20" json:"frequency"`          // 频次：daily/weekly/monthly/once
 	RecurringID *uint     `gorm:"index" json:"recurring_id"`         // 关联循环任务配置ID
+	AbilityDimensionID  uint   `gorm:"index" json:"ability_dimension_id,omitempty"`           // 主能力维度ID
+	SecondaryDimensions string `gorm:"size:100" json:"secondary_dimensions,omitempty"`        // 次维度ID JSON数组，如 "[2,5]"
+	AIGenerated         bool   `gorm:"default:false" json:"ai_generated"`                     // 是否AI生成
 }
 
 const (

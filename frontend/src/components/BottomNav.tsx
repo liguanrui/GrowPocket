@@ -1,4 +1,4 @@
-import { Home, Store, Trophy, Globe, Settings } from 'lucide-react';
+import { Bot, ListTodo, Trophy, Globe, Settings } from 'lucide-react';
 
 interface BottomNavProps {
   activeTab: string;
@@ -6,8 +6,8 @@ interface BottomNavProps {
 }
 
 const navItems = [
-  { id: 'home', label: '首页', icon: Home },
-  { id: 'mall', label: '商城', icon: Store },
+  { id: 'assistant', label: '助手', icon: Bot },
+  { id: 'home', label: '任务', icon: ListTodo },
   { id: 'growth', label: '成长', icon: Trophy },
   { id: 'community', label: '社区', icon: Globe },
   { id: 'settings', label: '设置', icon: Settings },

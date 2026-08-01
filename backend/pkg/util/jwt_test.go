@@ -8,7 +8,7 @@ import (
 const testSecret = "test-secret-123"
 
 func TestGenerateJWT(t *testing.T) {
-	token, err := GenerateJWT(1, 10, "小明", testSecret, 24)
+	token, err := GenerateJWT(1, 10, "小明", "parent", testSecret, 24)
 	if err != nil {
 		t.Fatalf("生成 JWT 失败: %v", err)
 	}
@@ -18,7 +18,7 @@ func TestGenerateJWT(t *testing.T) {
 }
 
 func TestParseJWT_Valid(t *testing.T) {
-	token, err := GenerateJWT(42, 99, "小明", testSecret, 24)
+	token, err := GenerateJWT(42, 99, "小明", "parent", testSecret, 24)
 	if err != nil {
 		t.Fatalf("生成 JWT 失败: %v", err)
 	}
@@ -36,6 +36,9 @@ func TestParseJWT_Valid(t *testing.T) {
 	if claims.Nickname != "小明" {
 		t.Errorf("Nickname 不匹配: got %s want 小明", claims.Nickname)
 	}
+	if claims.Role != "parent" {
+		t.Errorf("Role 不匹配: got %s want parent", claims.Role)
+	}
 	if claims.ExpiresAt == nil {
 		t.Error("ExpiresAt 为空")
 	}
@@ -48,7 +51,7 @@ func TestParseJWT_Valid(t *testing.T) {
 }
 
 func TestParseJWT_WrongSecret(t *testing.T) {
-	token, err := GenerateJWT(1, 1, "小明", testSecret, 24)
+	token, err := GenerateJWT(1, 1, "小明", "parent", testSecret, 24)
 	if err != nil {
 		t.Fatalf("生成 JWT 失败: %v", err)
 	}
@@ -61,7 +64,7 @@ func TestParseJWT_WrongSecret(t *testing.T) {
 
 func TestParseJWT_Expired(t *testing.T) {
 	// 生成一个已经过期的 token（durationHour 为负数）
-	token, err := GenerateJWT(1, 1, "小明", testSecret, -1)
+	token, err := GenerateJWT(1, 1, "小明", "parent", testSecret, -1)
 	if err != nil {
 		t.Fatalf("生成 JWT 失败: %v", err)
 	}
@@ -69,6 +72,22 @@ func TestParseJWT_Expired(t *testing.T) {
 	_, err = ParseJWT(token, testSecret)
 	if err == nil {
 		t.Fatal("过期 token 解析应该返回错误")
+	}
+}
+
+func TestParseJWT_Role(t *testing.T) {
+	// 验证不同 role 均能正确回填
+	token, err := GenerateJWT(7, 3, "小红", "child", testSecret, 24)
+	if err != nil {
+		t.Fatalf("生成 JWT 失败: %v", err)
+	}
+
+	claims, err := ParseJWT(token, testSecret)
+	if err != nil {
+		t.Fatalf("解析 JWT 失败: %v", err)
+	}
+	if claims.Role != "child" {
+		t.Errorf("Role 不匹配: got %s want child", claims.Role)
 	}
 }
 

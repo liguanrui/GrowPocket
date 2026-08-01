@@ -48,12 +48,17 @@ func Init(dbPath string) {
 		&model.CharityDonation{},
 		&model.CharityActivity{},
 		&model.ActivityParticipant{},
-		&model.Achievement{},
-		&model.UserAchievement{},
-		&model.UserCounter{},
-		&model.AchievementAward{},
 		&model.TaskTemplate{},
 		&model.TaskRecurringConfig{},
+		&model.AbilityDimension{},
+		&model.ChildAbilityScore{},
+		&model.GrowthCycle{},
+		&model.Goal{},
+		&model.Questionnaire{},
+		&model.QuestionnaireAnswer{},
+		&model.ChatSession{},
+		&model.ChatMessage{},
+		&model.GrowthStory{},
 	)
 	if err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
@@ -66,6 +71,14 @@ func Init(dbPath string) {
 	// Seed 数据
 	if err := seedCommunityData(db); err != nil {
 		log.Printf("Seed 数据失败: %v", err)
+	}
+
+	if err := seedAbilityDimensions(db); err != nil {
+		log.Printf("能力维度 Seed 数据失败: %v", err)
+	}
+
+	if err := seedQuestionnaires(db); err != nil {
+		log.Printf("问卷数据初始化失败: %v", err)
 	}
 
 	log.Printf("数据库初始化完成: %s", dbPath)
@@ -152,5 +165,28 @@ func seedCommunityData(db *gorm.DB) error {
 		}
 		log.Printf("已创建 3 个公益项目")
 	}
+	return nil
+}
+
+func seedAbilityDimensions(db *gorm.DB) error {
+	var count int64
+	db.Model(&model.AbilityDimension{}).Count(&count)
+	if count > 0 {
+		return nil
+	}
+	dimensions := []model.AbilityDimension{
+		{Code: "self_care", Name: "生活自理", Description: "完成日常起居、个人卫生、整理收纳等生活技能", Icon: "home", Color: "#7EC850", ResearchSrc: "蒙台梭利生活技能教育", SortOrder: 1},
+		{Code: "independence", Name: "独立自主", Description: "独立思考、自主决策、自我管理的能力", Icon: "compass", Color: "#4A90D9", ResearchSrc: "埃里克森心理社会发展理论", SortOrder: 2},
+		{Code: "hands_on", Name: "动手实践", Description: "动手制作、手工创作、家务劳动等实践能力", Icon: "wrench", Color: "#FF9500", ResearchSrc: "Gardner多元智能理论", SortOrder: 3},
+		{Code: "learning", Name: "学习认知", Description: "知识获取、思维训练、学习方法与学习习惯", Icon: "book", Color: "#9B59B6", ResearchSrc: "中国学生发展核心素养", SortOrder: 4},
+		{Code: "social_emotional", Name: "社交情感", Description: "人际交往、情绪管理、共情与合作能力", Icon: "heart", Color: "#E74C3C", ResearchSrc: "CASEL SEL框架", SortOrder: 5},
+		{Code: "health", Name: "身心健康", Description: "体育锻炼、健康习惯、心理韧性与抗压能力", Icon: "activity", Color: "#16A085", ResearchSrc: "中国学生发展核心素养", SortOrder: 6},
+	}
+	for i := range dimensions {
+		if err := db.Create(&dimensions[i]).Error; err != nil {
+			return err
+		}
+	}
+	log.Printf("已创建 6 个能力维度")
 	return nil
 }

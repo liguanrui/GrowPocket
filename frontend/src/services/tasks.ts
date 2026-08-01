@@ -22,6 +22,9 @@ export interface Task {
   difficulty?: string;
   frequency?: string;
   recurring_id?: number;
+  ability_dimension_id?: number;
+  secondary_dimensions?: string; // JSON 如 "[2,5]"
+  ai_generated?: boolean;
 }
 
 export interface CreateTaskInput {
@@ -32,6 +35,8 @@ export interface CreateTaskInput {
   deadline?: string;
   status?: 1 | 3; // 1=进行中(默认)，3=直接创建为已完成(奖惩任务)
   photo?: string;
+  abilityDimensionId?: number;
+  secondaryDimensions?: number[]; // 次维度ID数组
 }
 
 export interface PaginatedResponse<T> {
@@ -53,6 +58,8 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       deadline: input.deadline,
       status: input.status,
       photo: input.photo,
+      ability_dimension_id: input.abilityDimensionId,
+      secondary_dimensions: input.secondaryDimensions ? JSON.stringify(input.secondaryDimensions) : undefined,
     },
   });
 }
@@ -125,4 +132,27 @@ export async function reviewTask(id: number, approved: boolean, points?: number)
   }
 
   return task;
+}
+
+// AI 任务审核（v3）
+// action: confirm 确认 / adjust 调整 / reject 拒绝（删除）
+export async function reviewAITask(
+  id: number,
+  action: 'confirm' | 'adjust' | 'reject',
+  data?: { title?: string; points?: number; difficulty?: string }
+): Promise<Task | { deleted: boolean }> {
+  return request<Task | { deleted: boolean }>({
+    method: 'PUT',
+    url: `/tasks/${id}/ai-review`,
+    data: { action, ...data },
+  });
+}
+
+// 手动触发：为指定儿童生成今日 AI 任务
+export async function generateAITasks(childId: number): Promise<{ tasks: Task[]; count: number }> {
+  return request<{ tasks: Task[]; count: number }>({
+    method: 'POST',
+    url: '/tasks/ai-generate',
+    data: { child_id: childId },
+  });
 }

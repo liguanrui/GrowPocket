@@ -1,6 +1,6 @@
 import { request } from './api';
 
-export type ShareType = 'text' | 'text_image' | 'text_task';
+export type ShareType = 'text' | 'text_image' | 'text_task' | 'growth_story';
 
 export interface CommunityShare {
   id: number;
@@ -14,6 +14,8 @@ export interface CommunityShare {
   task_id?: number;
   task_title?: string;
   task_points?: number;
+  growth_story_id?: number;
+  ability_summary?: string;
   child_name?: string;
   tag?: string;
   like_count: number;
@@ -110,6 +112,8 @@ export async function createShare(data: {
   task_id?: number;
   task_title?: string;
   task_points?: number;
+  growth_story_id?: number;
+  ability_summary?: string;
   child_name?: string;
   tag?: string;
 }): Promise<CommunityShare> {

@@ -11,6 +11,9 @@ type Config struct {
 	UploadDir   string
 	JWTSecret   string
 	JWTDuration int // 单位：小时
+	AIAPIKey    string
+	AIModel     string
+	AIBaseURL   string
 }
 
 func Load() *Config {
@@ -20,6 +23,9 @@ func Load() *Config {
 		UploadDir:   getEnv("UPLOAD_DIR", "./uploads"),
 		JWTSecret:   getEnv("JWT_SECRET", "growpocket-secret-key-change-in-production"),
 		JWTDuration: getEnvInt("JWT_DURATION_HOUR", 2),
+		AIAPIKey:    getEnv("AI_API_KEY", ""),
+		AIModel:     getEnv("AI_MODEL", "deepseek-chat"),
+		AIBaseURL:   getEnv("AI_BASE_URL", "https://api.deepseek.com/v1"),
 	}
 }
 
