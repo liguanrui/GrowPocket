@@ -37,7 +37,14 @@ type aiStoryResult struct {
 
 // GenerateStory 为指定周期生成阶段成长故事
 func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, childName string) (*model.GrowthStory, error) {
-	// 1. 查询周期并校验 status=active
+	// 0. 幂等检查：若该周期已有故事记录，直接返回（防止重复生成）
+	var existing model.GrowthStory
+	if err := database.DB.Where("cycle_id = ?", cycleID).First(&existing).Error; err == nil {
+		log.Printf("[GrowthStory] 周期 %d 已有故事记录 story=%d，返回已有故事", cycleID, existing.ID)
+		return &existing, nil
+	}
+
+	// 1. 查询周期并校验权限
 	var cycle model.GrowthCycle
 	if err := database.DB.First(&cycle, cycleID).Error; err != nil {
 		return nil, errors.New("周期不存在")
@@ -45,9 +52,43 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 	if cycle.FamilyID != familyID || cycle.ChildID != childID {
 		return nil, errors.New("周期与儿童不匹配")
 	}
-	if cycle.Status != "active" {
-		return nil, errors.New("仅 active 状态的周期可生成成长故事")
+	// 1.1 状态校验 & 自动恢复：
+	// - active：正常生成
+	// - reviewing：上次生成过程崩溃/中断的遗留状态（因断电/重启/Panic 导致 defer 未执行）
+	//             若无故事记录，自动恢复为 active 后继续生成（幂等检查已确认无故事）
+	// - completed：拒绝（已生成过故事，不应再走 GenerateStory）
+	switch cycle.Status {
+	case "active":
+		// OK, 正常流程
+	case "reviewing":
+		log.Printf("[GrowthStory] 周期 %d 状态为 reviewing（疑似崩溃遗留），自动恢复为 active", cycleID)
+		cycle.Status = "active"
+		if err := database.DB.Save(&cycle).Error; err != nil {
+			log.Printf("[GrowthStory] 周期 %d 状态恢复失败: %v", cycleID, err)
+		}
+	case "completed":
+		return nil, errors.New("该周期已完成阶段回顾，如需重新生成请联系管理员")
+	default:
+		return nil, fmt.Errorf("周期状态异常：%s", cycle.Status)
 	}
+
+	// 1.5 并发保护：立即将周期状态改为 reviewing，防止并发请求重复生成
+	cycle.Status = "reviewing"
+	if err := database.DB.Save(&cycle).Error; err != nil {
+		return nil, errors.New("周期状态更新失败，请稍后重试")
+	}
+	// 生成失败时恢复状态（defer）
+	// 注意：若进程在此之后、completed 之前崩溃/重启，defer 不会执行，
+	// 周期会残留 reviewing 状态 → 由下次调用的 1.1 自动恢复逻辑兜底修复
+	generationFailed := true
+	defer func() {
+		if generationFailed {
+			cycle.Status = "active"
+			if err := database.DB.Save(&cycle).Error; err != nil {
+				log.Printf("[GrowthStory] 周期 %d 状态回滚为 active 失败: %v", cycleID, err)
+			}
+		}
+	}()
 
 	// child_name 未提供时从用户表查询
 	if childName == "" {
@@ -143,12 +184,22 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		PhotoUrls:      photosJSON,
 	}
 	if err := database.DB.Create(story).Error; err != nil {
+		log.Printf("[GrowthStory] 保存成长故事失败 cycle=%d: %v", cycleID, err)
+		// generationFailed 初始即为 true（Fail-Safe），保持不变
 		return nil, errors.New("保存成长故事失败")
 	}
 
 	// 10. 标记周期 status=completed
 	cycle.Status = "completed"
-	database.DB.Save(&cycle)
+	if err := database.DB.Save(&cycle).Error; err != nil {
+		log.Printf("[GrowthStory] 标记周期 %d 为 completed 失败: %v", cycleID, err)
+		// 故事已保存成功，但周期状态异常——保留 reviewing
+		// 下次请求时因幂等检查（已有故事）会直接返回故事，不影响用户体验
+	}
+
+	// 关键：所有步骤成功后，取消失败回滚标记
+	// 注意：必须在 100% 成功后才赋值，否则 Fail-Safe 默认回滚
+	generationFailed = false
 
 	log.Printf("[GrowthStory] 周期 %d 成长故事生成完成 story=%d", cycleID, story.ID)
 	return story, nil

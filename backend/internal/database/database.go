@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	_ "modernc.org/sqlite"
 )
@@ -23,13 +24,32 @@ func Init(dbPath string) {
 		}
 	}
 
+	// SQLite 并发配置：WAL 模式 + busy_timeout，避免事务嵌套错误
+	dsn := dbPath + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
 	db, err := gorm.Open(sqlite.Dialector{
-		DSN:        dbPath,
+		DSN:        dsn,
 		DriverName: "sqlite",
-	}, &gorm.Config{})
+	}, &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Warn),
+	})
 	if err != nil {
 		log.Fatalf("打开 SQLite 数据库失败: %v", err)
 	}
+
+	// SQLite 单连接：避免并发事务冲突（"cannot start a transaction within a transaction"）
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("获取底层 sql.DB 失败: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0)
+	sqlDB.SetConnMaxIdleTime(0)
+
+	// 启用 WAL 模式（若 DSN 未生效，再用 PRAGMA 兜底）
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
+	db.Exec("PRAGMA foreign_keys=ON")
 
 	DB = db
 

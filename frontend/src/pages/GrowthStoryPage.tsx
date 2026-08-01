@@ -42,6 +42,7 @@ export function GrowthStoryPage() {
   const [tipIndex, setTipIndex] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
   const mountedRef = useRef(true);
+  const generatingRef = useRef(false); // 防止重复调用 generateStory
 
   // 轮播加载文案
   useEffect(() => {
@@ -80,6 +81,11 @@ export function GrowthStoryPage() {
         setLoading(false);
         return;
       }
+      // 防止重复调用 generateStory（AI 生成耗时较长，用户可能重复进入页面）
+      if (generatingRef.current) {
+        return;
+      }
+      generatingRef.current = true;
       setLoading(true);
       setError(null);
       try {
@@ -92,11 +98,23 @@ export function GrowthStoryPage() {
             throw new Error('未找到当前成长周期');
           }
         }
-        // 历史回看：直接读取已有故事，不重新生成
-        // 新生成：调用 generateStory
-        const result = isHistorical
-          ? await getStory(cycleId)
-          : await generateStory(cycleId, childId, childName);
+        // 历史回看：先尝试读取已有故事；若不存在（例如尚未生成），则回落到生成模式
+        let result: GrowthStory;
+        if (isHistorical) {
+          try {
+            result = await getStory(cycleId);
+          } catch (_histErr) {
+            // 生成成长故事仅家长权限开放（后端 handler 也会校验），
+            // 儿童用户遇到历史故事不存在时，直接提示找不到故事
+            if (!isParent) {
+              throw new Error('此阶段成长故事尚未生成，请联系家长查看');
+            }
+            // 家长用户：回落为 AI 生成（兼容尚未生成但用户想查看的场景）
+            result = await generateStory(cycleId, childId, childName);
+          }
+        } else {
+          result = await generateStory(cycleId, childId, childName);
+        }
         // 拉取周期内任务时间线
         let tasks: Task[] = [];
         try {
@@ -104,14 +122,18 @@ export function GrowthStoryPage() {
         } catch {
           // 任务时间线加载失败不阻塞故事展示
         }
-        if (!cancelled && mountedRef.current) {
+        if (mountedRef.current && !cancelled) {
           setStory(result);
           setCycleTasks(tasks);
-          setLoading(false);
         }
       } catch (e: any) {
-        if (!cancelled && mountedRef.current) {
+        if (mountedRef.current && !cancelled) {
           setError(e.message || '成长故事生成失败');
+        }
+      } finally {
+        generatingRef.current = false;
+        // 无论成功/失败/cancelled，只要组件仍挂载，就必须关闭 loading
+        if (mountedRef.current) {
           setLoading(false);
         }
       }

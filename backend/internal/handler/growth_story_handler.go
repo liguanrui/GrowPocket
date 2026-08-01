@@ -5,6 +5,7 @@ import (
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -91,7 +92,13 @@ func (h *GrowthStoryHandler) GenerateStory(c *gin.Context) {
 	familyID := middleware.GetFamilyID(c)
 	story, err := h.service.GenerateStory(cycleID, familyID, req.ChildID, req.ChildName)
 	if err != nil {
-		util.FailInternal(c, err.Error())
+		// 业务校验错误用 400，数据库错误用 500
+		msg := err.Error()
+		if strings.Contains(msg, "保存成长故事失败") {
+			util.FailInternal(c, msg)
+		} else {
+			util.FailBadRequest(c, msg)
+		}
 		return
 	}
 	util.OK(c, story)
