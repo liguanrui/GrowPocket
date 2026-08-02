@@ -375,7 +375,7 @@ function ShareCard({ share, onRefresh }: { share: CommunityShare; onRefresh: () 
       )}
 
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl p-6 max-w-sm w-full">
             <h3 className="text-lg font-bold text-text-primary text-center">确认删除</h3>
             <p className="text-text-tertiary text-sm text-center mt-2">删除后将无法恢复</p>
@@ -427,7 +427,7 @@ function ShareModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
       <div className="bg-card rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <button onClick={onClose} className="p-2 -ml-2 text-text-tertiary">
@@ -548,7 +548,7 @@ function DonationModal({ project, onClose, onSuccess }: { project: CharityProjec
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <div>
@@ -972,7 +972,7 @@ function Activities() {
 
       {/* 活动详情 Modal */}
       {selectedActivity && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center overflow-y-auto">
           <div className="bg-card rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="p-5">
               <div className="flex items-start justify-between mb-4">

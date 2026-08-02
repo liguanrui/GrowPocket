@@ -15,6 +15,9 @@ Environment="DB_PATH=/opt/growpocket/backend/data/growpocket.db"
 Environment="UPLOAD_DIR=/opt/growpocket/backend/uploads"
 Environment="JWT_SECRET=growpocket-secret-key-change-in-production"
 Environment="JWT_DURATION_HOUR=24"
+Environment="AI_API_KEY=sk-db953ebaad364b60b5474e586f2fe9aa"
+Environment="AI_MODEL=deepseek-chat"
+Environment="AI_BASE_URL=https://api.deepseek.com/v1"
 
 [Install]
 WantedBy=multi-user.target

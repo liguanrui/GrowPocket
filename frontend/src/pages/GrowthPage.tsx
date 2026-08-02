@@ -314,7 +314,7 @@ function ShareModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end justify-center">
       <div className="bg-white rounded-t-3xl w-full max-w-lg p-5 pb-24 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-text-primary text-lg">分享成长</h3>
@@ -1249,7 +1249,7 @@ export function GrowthPage() {
 
       {/* 阶段目标设置面板 */}
       {showGoalSetup && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-semibold text-text-primary">
@@ -1363,7 +1363,7 @@ export function GrowthPage() {
       {/* 蓄势维小贴士弹窗 */}
       {latentTipDim && (
         <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
           onClick={() => setLatentTipDim(null)}
         >
           <div

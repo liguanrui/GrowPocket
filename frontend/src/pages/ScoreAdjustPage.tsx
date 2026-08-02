@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, Plus, Minus, Upload, X } from 'lucide-react';
+import { ArrowLeft, Star, Plus, Minus } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import { AnimatedNumberComponent as AnimatedNumber } from '../components/AnimatedNumber';
+import { MediaUploader } from '../components/MediaUploader';
 import * as scoreService from '../services/score';
 
 function AmountInput({ amount, onChange, mode }: { amount: number; onChange: (n: number) => void; mode: 'add' | 'deduct' }) {
@@ -36,43 +37,6 @@ function AmountInput({ amount, onChange, mode }: { amount: number; onChange: (n:
         />
         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-text-tertiary text-sm">积分</span>
       </div>
-    </div>
-  );
-}
-
-function RandomPhoto({ photo, onGenerate, onClear }: { photo: string | null; onGenerate: () => void; onClear: () => void }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-text-primary mb-2">图片（可选）</label>
-      {photo ? (
-        <div className="relative w-full h-40 rounded-xl overflow-hidden">
-          <img src={photo} alt="" className="w-full h-full object-cover" />
-          <div className="absolute top-2 right-2 flex gap-1">
-            <button
-              onClick={onGenerate}
-              className="w-7 h-7 bg-black/50 rounded-full flex items-center justify-center hover:bg-black/60"
-              title="换一张"
-            >
-              <Upload size={14} className="text-white" />
-            </button>
-            <button
-              onClick={onClear}
-              className="w-7 h-7 bg-black/50 rounded-full flex items-center justify-center hover:bg-black/60"
-              title="移除"
-            >
-              <X size={14} className="text-white" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          onClick={onGenerate}
-          className="w-full h-40 bg-bg border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-primary/5 transition-colors"
-        >
-          <Upload size={28} className="text-text-tertiary" />
-          <span className="text-sm text-text-secondary">点击生成随机图片</span>
-        </button>
-      )}
     </div>
   );
 }
@@ -121,12 +85,6 @@ export function ScoreAdjustPage() {
       mounted = false;
     };
   }, [searchParams]);
-
-  const generatePhoto = () => {
-    setPhoto(`https://picsum.photos/400/300?random=${Date.now()}`);
-  };
-
-  const clearPhoto = () => setPhoto(null);
 
   const isAdd = mode === 'add';
   const insufficient = !isAdd && amount > balance;
@@ -220,7 +178,14 @@ export function ScoreAdjustPage() {
             />
           </div>
 
-          <RandomPhoto photo={photo} onGenerate={generatePhoto} onClear={clearPhoto} />
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-2">照片 / 视频（可选）</label>
+            <MediaUploader
+              mediaUrl={photo || undefined}
+              onUpload={(url) => setPhoto(url)}
+              onClear={() => setPhoto(null)}
+            />
+          </div>
 
           {insufficient && (
             <div className="bg-danger/5 border border-danger/20 text-danger text-sm rounded-xl p-3">

@@ -158,13 +158,13 @@ export async function reviewTask(id: number, approved: boolean, points?: number)
 }
 
 // AI 任务审核（v3）
-// action: confirm 确认 / adjust 调整 / reject 拒绝（删除）
+// action: confirm 确认 / adjust 调整 / reject 拒绝（设为已拒绝状态）
 export async function reviewAITask(
   id: number,
   action: 'confirm' | 'adjust' | 'reject',
   data?: { title?: string; points?: number; difficulty?: string }
-): Promise<Task | { deleted: boolean }> {
-  return request<Task | { deleted: boolean }>({
+): Promise<Task> {
+  return request<Task>({
     method: 'PUT',
     url: `/tasks/${id}/ai-review`,
     data: { action, ...data },

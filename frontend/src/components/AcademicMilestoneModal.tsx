@@ -154,7 +154,7 @@ export function AcademicMilestoneModal({ open, childId, onClose, onSubmitted }: 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end justify-center">
       <div className="bg-white rounded-t-3xl w-full max-w-lg p-5 pb-8 max-h-[90vh] overflow-y-auto">
         {/* 顶栏：标题 + 关闭 */}
         <div className="flex items-center justify-between mb-4 sticky top-0 bg-white pb-2">

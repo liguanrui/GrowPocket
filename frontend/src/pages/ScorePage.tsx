@@ -81,6 +81,13 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   );
 }
 
+function formatDateTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function TransactionRow({ tx }: { tx: Transaction }) {
   const isIncome = tx.type === 0;
   return (
@@ -93,7 +100,7 @@ function TransactionRow({ tx }: { tx: Transaction }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-text-primary truncate">{tx.reason}</div>
-          <div className="text-xs text-text-tertiary mt-0.5">{tx.created_at}</div>
+          <div className="text-xs text-text-tertiary mt-0.5">{formatDateTime(tx.created_at)}</div>
         </div>
       </div>
       <div className={`text-base font-bold flex-shrink-0 ml-2 ${isIncome ? 'text-success' : 'text-danger'}`}>
