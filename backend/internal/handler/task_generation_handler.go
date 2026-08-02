@@ -74,12 +74,7 @@ func (h *TaskGenerationHandler) ReviewAITask(c *gin.Context) {
 		}
 		task.Status = model.TaskStatusInProgress
 	case "reject":
-		if err := database.DB.Delete(&task).Error; err != nil {
-			util.FailInternal(c, "删除失败")
-			return
-		}
-		util.OK(c, gin.H{"deleted": true})
-		return
+		task.Status = model.TaskStatusRejected
 	default:
 		util.FailBadRequest(c, "action 必须是 confirm/adjust/reject")
 		return

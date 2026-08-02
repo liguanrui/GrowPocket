@@ -293,7 +293,7 @@ function AIReviewModal({ task, onClose, onReviewed }: { task: Task; onClose: () 
             disabled={submitting}
             className="flex-1 py-2.5 bg-danger/10 text-danger text-sm rounded-xl hover:bg-danger/20 transition-colors disabled:opacity-50"
           >
-            拒绝删除
+            拒绝
           </button>
         </div>
       </div>
@@ -412,7 +412,7 @@ export function HomePage() {
   const children = childStore.children;
 
   const [selectedChildId, setSelectedChildId] = useState<number | null>(childStore.currentChildId);
-  const [activeStatus, setActiveStatus] = useState<'all' | TaskStatus>('all');
+  const [activeStatus, setActiveStatus] = useState<'all' | TaskStatus>(1);
   const [tasks, setTasks] = useState<Task[]>([]);
   const hasPrevBalance = uiStore.previousBalance != null;
   const [balance, setBalance] = useState(hasPrevBalance ? uiStore.previousBalance! : 0);
@@ -421,7 +421,7 @@ export function HomePage() {
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
   const [aiGenerating, setAiGenerating] = useState(false);
   const taskBoardRef = useRef<HTMLDivElement>(null);
-  const loadingRef = useRef(false);
+  const loadingSeqRef = useRef(0);
 
   // 手动触发 AI 生成今日任务
   const handleGenerateAI = async () => {
@@ -450,8 +450,8 @@ export function HomePage() {
 
   const loadData = async (showLoading = true) => {
     if (!selectedChildId) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    // 使用请求序号避免并发竞态，而不是直接丢弃新请求
+    const reqId = ++loadingSeqRef.current;
     if (showLoading) setLoading(true);
     setError(null);
     try {
@@ -460,15 +460,19 @@ export function HomePage() {
         scoreService.getBalance(selectedChildId),
         scoreService.getMonthlyStats(selectedChildId),
       ]);
+      // 只处理最新请求的结果
+      if (reqId !== loadingSeqRef.current) return;
       setTasks(tasksResult.items);
       setBalance(balanceResult.balance);
       childStore.updateBalance(selectedChildId!, balanceResult.balance);
       setMonthlyStats(statsResult);
     } catch (e: any) {
+      if (reqId !== loadingSeqRef.current) return;
       setError(e.message || '加载失败');
     } finally {
-      if (showLoading) setLoading(false);
-      loadingRef.current = false;
+      if (reqId === loadingSeqRef.current) {
+        if (showLoading) setLoading(false);
+      }
     }
   };
 
@@ -629,7 +633,10 @@ export function HomePage() {
           onTaskClick={(id) => navigate(`/task/${id}`)}
           onCreateTask={() => navigate(`/tasks/new?child_id=${selectedChildId}`)}
           highlightTaskId={uiStore.highlightTaskId}
-          onReviewed={() => loadData(false)}
+          onReviewed={() => {
+            uiStore.setNeedRefreshTasks(true);
+            loadData(false);
+          }}
         />
 
         <div className="h-4" />

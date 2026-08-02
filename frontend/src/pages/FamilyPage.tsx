@@ -89,7 +89,7 @@ function ChildFormModal({
   const [gender, setGender] = useState<0 | 1 | ''>(initialGender ?? '');
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end md:items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-semibold text-text-primary text-lg">
@@ -126,7 +126,7 @@ function ChildFormModal({
 
 function ConfirmDeleteModal({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl">
         <div className="p-6 text-center">
           <div className="w-16 h-16 mx-auto bg-danger/10 rounded-full flex items-center justify-center text-danger">

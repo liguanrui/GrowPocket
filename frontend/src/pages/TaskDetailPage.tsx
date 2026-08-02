@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, ImageIcon, Star, Calendar, User, Upload, CheckCircle2, XCircle, Edit3, Trash2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Star, Calendar, CheckCircle2, XCircle, Trash2, Sparkles } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
@@ -7,49 +7,24 @@ import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
 import * as scoreService from '../services/score';
 import { getAbilities } from '../services/ability';
+import { MediaUploader } from '../components/MediaUploader';
 import type { Task } from '../services/tasks';
 import type { AbilityDimension } from '../services/ability';
 
 const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> = {
-  1: { label: '进行中', color: 'text-primary', bg: 'bg-primary/10' },
+  1: { label: '进行中', color: 'text-orange-700', bg: 'bg-orange-100' },
   2: { label: '待验收', color: 'text-yellow-700', bg: 'bg-yellow-100' },
-  3: { label: '已完成', color: 'text-success', bg: 'bg-success/10' },
-  4: { label: '已拒绝', color: 'text-danger', bg: 'bg-danger/10' },
+  3: { label: '已完成', color: 'text-green-700', bg: 'bg-green-100' },
+  4: { label: '已拒绝', color: 'text-red-700', bg: 'bg-red-100' },
 };
 
-function PhotoUploader({ photoUrl, onUpload, disabled }: { photoUrl?: string; onUpload: (url: string) => void; disabled?: boolean }) {
-  const handleUpload = () => {
-    const mockUrl = `https://picsum.photos/400/300?random=${Date.now()}`;
-    onUpload(mockUrl);
-  };
-
-  return (
-    <div>
-      {photoUrl ? (
-        <div className="rounded-2xl overflow-hidden relative group">
-          <img src={photoUrl} alt="成果" className="w-full aspect-[4/3] object-cover" />
-          {!disabled && (
-            <button
-              onClick={handleUpload}
-              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-            >
-              <span className="text-white font-medium">更换照片</span>
-            </button>
-          )}
-        </div>
-      ) : (
-        <button
-          onClick={() => !disabled && handleUpload()}
-          disabled={disabled}
-          className="w-full aspect-[4/3] bg-bg border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-primary/5 transition-colors"
-        >
-          <Upload size={32} className="text-text-tertiary" />
-          <span className="text-sm text-text-secondary">上传任务成果照片</span>
-        </button>
-      )}
-    </div>
-  );
+function formatDateTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
 
 function ReviewModal({
   task,
@@ -66,8 +41,8 @@ function ReviewModal({
   const [points, setPoints] = useState(task.points);
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end md:items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl max-h-[82vh] mb-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] overflow-y-auto">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-semibold text-text-primary text-lg">验收任务</h2>
           <button onClick={onClose} className="text-text-tertiary hover:text-text-primary">
@@ -260,9 +235,8 @@ export function TaskDetailPage() {
     .filter((d): d is AbilityDimension => !!d);
 
   const handleSubmit = async () => {
-    if (!photo) return;
     try {
-      const updated = await tasksService.submitTask(task.id, photo);
+      const updated = await tasksService.submitTask(task.id, photo || '');
       setTask(updated);
       toast.success('任务已提交验收');
     } catch (e: any) {
@@ -358,24 +332,30 @@ export function TaskDetailPage() {
 
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
         <div className="bg-card rounded-2xl p-4 shadow-sm">
-          <h3 className="font-semibold text-text-primary mb-3">成果照片</h3>
-          <PhotoUploader
-            photoUrl={photo}
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-text-primary">成果照片 / 视频</h3>
+            <span className="text-xs text-text-tertiary">可选</span>
+          </div>
+          <MediaUploader
+            mediaUrl={photo}
             onUpload={(url) => setPhoto(url)}
-            disabled={task.status === 3}
+            onClear={() => setPhoto(undefined)}
+            disabled={task.status === 2 || task.status === 3}
           />
-          {!photo && (
-            <p className="mt-3 text-sm text-text-tertiary">
-              {task.status === 1
-                ? '上传孩子完成任务的照片后，提交给家长验收'
-                : task.status === 3
-                  ? '任务已完成，照片已存档'
-                  : '尚未提交成果照片'}
-            </p>
-          )}
+          <p className="mt-3 text-sm text-text-tertiary">
+            {task.status === 1 || task.status === 4
+              ? '可从相册选择或直接拍摄；支持图片与 60 秒内视频，不上传也可提交验收'
+              : task.status === 3
+                ? photo
+                  ? '任务已完成，成果已存档'
+                  : '任务已完成（未附带成果媒体）'
+                : photo
+                  ? '已提交成果，等待家长验收'
+                  : '已提交验收（未附带成果媒体）'}
+          </p>
         </div>
 
-        {task.status === 1 && photo && (
+        {task.status === 1 && (
           <button
             onClick={handleSubmit}
             className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
@@ -383,7 +363,7 @@ export function TaskDetailPage() {
             提交验收
           </button>
         )}
-        {task.status === 4 && photo && (
+        {task.status === 4 && (
           <button
             onClick={handleSubmit}
             className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
@@ -426,7 +406,7 @@ export function TaskDetailPage() {
           </div>
           <div className="flex items-start justify-between py-2">
             <span className="text-sm text-text-tertiary">创建时间</span>
-            <span className="text-sm text-text-secondary">{task.created_at}</span>
+            <span className="text-sm text-text-secondary">{formatDateTime(task.created_at)}</span>
           </div>
         </div>
 

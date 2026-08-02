@@ -78,20 +78,22 @@ func (s *QuestionnaireService) SubmitAnswers(familyID, childID uint, questionnai
 	}
 	database.DB.Create(record)
 
-	// 发放积分奖励：register=50, weekly=20, review=30
+	// 发放积分奖励：register=0（新手指引不发分）, weekly=20, review=30
+	// 注册问卷只用于能力评估建档，不得发放积分（与 Transaction 禁止词「问卷奖励」一致）
 	reward := 20
 	switch stage {
 	case "register":
-		reward = 50
+		reward = 0
 	case "review":
 		reward = 30
 	}
 
-	// 直接加到儿童余额
-	var child model.User
-	if err := database.DB.Where("id = ? AND role = ?", childID, model.RoleChild).First(&child).Error; err == nil {
-		child.Balance += reward
-		database.DB.Save(&child)
+	if reward > 0 {
+		var child model.User
+		if err := database.DB.Where("id = ? AND role = ?", childID, model.RoleChild).First(&child).Error; err == nil {
+			child.Balance += reward
+			database.DB.Save(&child)
+		}
 	}
 
 	return reward, nil

@@ -166,7 +166,7 @@ function ExchangeModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl">
         <div className="aspect-[16/9] bg-gray-100 relative overflow-hidden">
           {item.image && (

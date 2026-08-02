@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Clock, CheckCircle2, Inbox, FileText, BookOpen, Home, Smile, Dumbbell, MoreHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
+import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
 import type { Task, TaskStatus } from '../services/tasks';
 import type { TaskCategory } from '../types';
@@ -27,51 +28,67 @@ const CATEGORY_TABS: { id: 'all' | TaskCategory; label: string; icon: any; color
 export function TaskListPage() {
   const navigate = useNavigate();
   const childStore = useChildStore();
-  const [statusTab, setStatusTab] = useState<'all' | TaskStatus>('all');
+  const uiStore = useUIStore();
+  const [statusTab, setStatusTab] = useState<'all' | TaskStatus>(1);
   const [categoryTab, setCategoryTab] = useState<'all' | TaskCategory>('all');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // 学业里程碑录入弹窗（V3.1 模块 D：录一件学业上的好事）
   const [showAcademicModal, setShowAcademicModal] = useState(false);
+  const loadSeqRef = useRef(0);
+
+  const loadData = async (showLoading = true) => {
+    const child = useChildStore.getState().getCurrentChild();
+    if (!child) return;
+    const reqId = ++loadSeqRef.current;
+    if (showLoading) setLoading(true);
+    setError(null);
+    try {
+      const params: { childId: number; status?: TaskStatus; page: number; pageSize: number } = {
+        childId: child.id,
+        page: 1,
+        pageSize: 50,
+      };
+      if (statusTab !== 'all') {
+        params.status = statusTab;
+      }
+      const result = await tasksService.getTasks(params);
+      if (reqId !== loadSeqRef.current) return;
+      setTasks(result.items);
+    } catch (e: any) {
+      if (reqId !== loadSeqRef.current) return;
+      setError(e.message || '加载失败');
+    } finally {
+      if (reqId === loadSeqRef.current && showLoading) setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let mounted = true;
-    async function loadData() {
-      setLoading(true);
-      setError(null);
-      try {
-        await childStore.fetchChildren();
-        const child = useChildStore.getState().getCurrentChild();
-        if (!child) {
-          if (mounted) setLoading(false);
-          return;
-        }
+    childStore.fetchChildren().then(() => loadData(true));
+  }, []);
 
-        const params: { childId: number; status?: TaskStatus; page: number; pageSize: number } = {
-          childId: child.id,
-          page: 1,
-          pageSize: 50,
-        };
-        if (statusTab !== 'all') {
-          params.status = statusTab;
-        }
-
-        const result = await tasksService.getTasks(params);
-        if (mounted) {
-          setTasks(result.items);
-        }
-      } catch (e: any) {
-        if (mounted) setError(e.message || '加载失败');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-    loadData();
-    return () => {
-      mounted = false;
-    };
+  useEffect(() => {
+    loadData(true);
   }, [statusTab]);
+
+  // 监听全局刷新信号（从任务详情页返回、拒绝/验收操作后）
+  useEffect(() => {
+    if (uiStore.needRefreshTasks) {
+      uiStore.setNeedRefreshTasks(false);
+      loadData(false);
+    }
+  }, [uiStore.needRefreshTasks]);
+
+  // 页面可见性变化时刷新（从其他页面返回时）
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        loadData(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   const filteredTasks = tasks.filter((task) => {
     if (categoryTab === 'all') return true;

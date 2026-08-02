@@ -19,17 +19,39 @@ var allowedImageExts = map[string]bool{
 	".webp": true,
 }
 
-const maxFileSize = 5 * 1024 * 1024 // 5MB
+var allowedVideoExts = map[string]bool{
+	".mp4":  true,
+	".mov":  true,
+	".webm": true,
+	".m4v":  true,
+}
 
-// SaveUploadedImage 保存上传的图片到 uploadDir，返回可访问的 URL 路径（如 /uploads/xxx.jpg）
+const maxImageSize = 10 * 1024 * 1024  // 10MB
+const maxVideoSize = 80 * 1024 * 1024  // 80MB，约覆盖手机 60 秒录像
+
+// SaveUploadedImage 保存上传的图片（兼容旧调用）
 func SaveUploadedImage(file *multipart.FileHeader, uploadDir string) (string, error) {
-	if file.Size > maxFileSize {
-		return "", errors.New("图片大小不能超过 5MB")
+	return SaveUploadedMedia(file, uploadDir)
+}
+
+// SaveUploadedMedia 保存图片或视频，返回可访问路径（如 /uploads/xxx.mp4）
+func SaveUploadedMedia(file *multipart.FileHeader, uploadDir string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	isImage := allowedImageExts[ext]
+	isVideo := allowedVideoExts[ext]
+	if !isImage && !isVideo {
+		return "", fmt.Errorf("不支持的文件格式: %s（请上传图片或视频）", ext)
 	}
 
-	ext := strings.ToLower(filepath.Ext(file.Filename))
-	if !allowedImageExts[ext] {
-		return "", fmt.Errorf("不支持的图片格式: %s", ext)
+	maxSize := int64(maxImageSize)
+	if isVideo {
+		maxSize = maxVideoSize
+	}
+	if file.Size > maxSize {
+		if isVideo {
+			return "", errors.New("视频大小不能超过 80MB（建议时长不超过 60 秒）")
+		}
+		return "", errors.New("图片大小不能超过 10MB")
 	}
 
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
@@ -58,4 +80,10 @@ func SaveUploadedImage(file *multipart.FileHeader, uploadDir string) (string, er
 	}
 
 	return "/uploads/" + randomName, nil
+}
+
+// IsVideoURL 根据 URL 扩展名判断是否为视频
+func IsVideoURL(url string) bool {
+	ext := strings.ToLower(filepath.Ext(strings.Split(url, "?")[0]))
+	return allowedVideoExts[ext]
 }

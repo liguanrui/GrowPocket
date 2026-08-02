@@ -39,10 +39,10 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-primary-50 p-6">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-bg via-white to-bg-secondary p-6">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-gray-100 p-8">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 mx-auto bg-primary-100 rounded-2xl flex items-center justify-center mb-4 text-3xl">
+          <div className="w-16 h-16 mx-auto bg-primary/15 rounded-2xl flex items-center justify-center mb-4 text-3xl">
             🌟
           </div>
           <h1 className="text-2xl font-bold text-gray-900">创建家长账号</h1>
@@ -55,7 +55,7 @@ export default function RegisterPage() {
             <input
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition"
               placeholder="请输入昵称（如：爸爸）"
             />
           </div>
@@ -65,7 +65,7 @@ export default function RegisterPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition"
               placeholder="至少 6 位"
             />
           </div>
@@ -75,7 +75,7 @@ export default function RegisterPage() {
               type="password"
               value={password2}
               onChange={(e) => setPassword2(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition"
               placeholder="请再次输入密码"
             />
           </div>
@@ -84,7 +84,7 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 active:scale-95 transition disabled:opacity-60 disabled:cursor-not-allowed shadow-md shadow-primary-200"
+            className="w-full py-3 bg-gradient-to-r from-primary to-warm-light hover:from-primary-dark hover:to-warm-dark text-white font-semibold rounded-xl active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-primary/25"
           >
             {loading ? '注册中...' : '注册并登录'}
           </button>
@@ -92,7 +92,7 @@ export default function RegisterPage() {
 
         <div className="mt-6 text-center text-sm text-gray-500">
           已有账号？
-          <Link to="/login" className="text-primary-600 font-medium hover:text-primary-700 ml-1">
+          <Link to="/login" className="text-primary font-medium hover:text-primary-dark ml-1">
             去登录
           </Link>
         </div>

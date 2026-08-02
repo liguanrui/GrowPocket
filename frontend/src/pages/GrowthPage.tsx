@@ -14,6 +14,7 @@ import * as communityService from '../services/community';
 import { getChildScores, getGrowthIndex, getAbilities } from '../services/ability';
 import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
 import { IPPAvatar } from '../components/IPPAvatar';
+import { MobileDatePicker } from '../components/MobileDatePicker';
 import { getCurrentCycle, setGoal, createCycle, updateCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
 import { listStories, parseAbilitySummary } from '../services/growthStory';
@@ -124,12 +125,13 @@ function MasteryBadge({ masteryCount, isGrandMaster }: { masteryCount: number; i
 }
 
 // 原生 SVG 雷达图（自适应维度数，V3.1 模块 B 追加精通星环 + 金色六边形）
-function RadarChartSVG({ scores, expertMode }: { scores: EnrichedScore[]; expertMode: boolean }) {
-  const size = 200;
+// 轴标签仅显示短名；分数/等级在展开列表中展示，避免与雷达图重复拥挤
+function RadarChartSVG({ scores }: { scores: EnrichedScore[] }) {
+  const size = 220;
   const cx = size / 2;
   const cy = size / 2;
-  const maxRadius = 70;
-  const labelRadius = 90;
+  const maxRadius = 78;
+  const labelRadius = 100;
   const levels = [maxRadius, maxRadius * 2 / 3, maxRadius / 3];
   const n = scores.length;
   const angles = Array.from({ length: n }, (_, i) => -90 + (360 / n) * i);
@@ -139,7 +141,7 @@ function RadarChartSVG({ scores, expertMode }: { scores: EnrichedScore[]; expert
   const showStarRing = masteredCount >= 1; // ≥1 维度精通时叠加星环
   const allMastered = n > 0 && masteredCount === n; // 6 维全精通 → 金色六边形
   // 星环配置：每组 5 颗小圆点，沿轴向外排列
-  const starStart = 73;
+  const starStart = 81;
   const starStep = 3;
   const starR = 1.7;
   const GOLD = '#F0B848';
@@ -170,7 +172,7 @@ function RadarChartSVG({ scores, expertMode }: { scores: EnrichedScore[]; expert
   }
 
   return (
-    <svg width={180} height={180} viewBox={`0 0 ${size} ${size}`}>
+    <svg width={240} height={240} viewBox={`0 0 ${size} ${size}`} className="mx-auto block">
       {/* 三层同心多边形网格 */}
       {levels.map((r, i) => (
         <polygon key={i} points={polygonPoints(r)} fill="none" stroke="#e5e7eb" strokeWidth="1" />
@@ -215,14 +217,13 @@ function RadarChartSVG({ scores, expertMode }: { scores: EnrichedScore[]; expert
           );
         });
       })}
-      {/* 轴标签：维度名 + 主轴徽标 + 等级名称/原始分数 */}
+      {/* 轴标签：仅短名 + 主轴星标（分数/等级见展开列表） */}
       {scores.map((s, i) => {
         const p = getPoint(angles[i], labelRadius);
-        const scoreLabel = expertMode ? `${s.score}` : getAbilityLevelName(s.score);
         const isPrimary = s.focus_level === 'primary';
         return (
-          <text key={i} x={p.x} y={p.y} fontSize="10" fill="#6b7280" textAnchor="middle" dominantBaseline="middle">
-            {isPrimary ? '🌟 ' : ''}{s.dimension_name} {scoreLabel}
+          <text key={i} x={p.x} y={p.y} fontSize="11" fill="#6b7280" textAnchor="middle" dominantBaseline="middle">
+            {isPrimary ? '★ ' : ''}{s.dimension_name}
           </text>
         );
       })}
@@ -313,7 +314,7 @@ function ShareModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end justify-center">
       <div className="bg-white rounded-t-3xl w-full max-w-lg p-5 pb-24 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-text-primary text-lg">分享成长</h3>
@@ -639,6 +640,8 @@ export function GrowthPage() {
   const [latentTipDim, setLatentTipDim] = useState<string | null>(null);
   // V3.1 模块 D：能力维度详情展开（点击维度名展开，值为 dimension_id）
   const [expandedDimId, setExpandedDimId] = useState<number | null>(null);
+  // 成长维度：各维度列表默认收起，降低首屏密度
+  const [showDimList, setShowDimList] = useState(false);
   // V3.1 模块 B：大师挑战横幅摘要（进行中数 / 可挑战数）
   const [masterSummary, setMasterSummary] = useState<{ inProgress: number; available: number } | null>(null);
 
@@ -825,8 +828,7 @@ export function GrowthPage() {
     focus_level: resolveFocusLevel(s, childGrade),
     mastery_stars: resolveMasteryStars(s),
   }));
-  const primaryDimensions = enrichedScores.filter(s => s.focus_level === 'primary');
-  const primaryCount = primaryDimensions.length;
+  const primaryCount = enrichedScores.filter((s) => s.focus_level === 'primary').length;
 
   // V3.1 模块 B：精通统计
   const masteredDims = enrichedScores.filter(s => isMastered(s));
@@ -1016,46 +1018,40 @@ export function GrowthPage() {
           )}
         </div>
 
-        {/* 2. 成长维度图（SVG雷达图 + IP等级 + 维度评分列表） */}
+        {/* 2. 成长维度图（全宽雷达 + 紧凑状态行 + 按需展开列表） */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-text-primary">成长维度</h2>
-            <div className="flex items-center gap-3">
-              {/* 专家模式开关：关闭显示等级名称，开启显示原始分数 */}
-              <button
-                onClick={() => setExpertMode(v => !v)}
-                className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-primary transition-colors"
-                title="开启后显示原始 0-100 分数"
-              >
-                <span className={expertMode ? 'text-primary font-medium' : ''}>专家模式</span>
-                <span className={`relative inline-block w-7 h-4 rounded-full transition-colors ${expertMode ? 'bg-primary' : 'bg-gray-300'}`}>
-                  <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${expertMode ? 'translate-x-3' : ''}`} />
-                </span>
-              </button>
-              <span className="text-xs text-text-tertiary">
-                {new Date().toLocaleDateString()} 更新
+            <button
+              onClick={() => setExpertMode((v) => !v)}
+              className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-primary transition-colors"
+              title="开启后显示原始 0-100 分数"
+            >
+              <span className={expertMode ? 'text-primary font-medium' : ''}>专家模式</span>
+              <span className={`relative inline-block w-7 h-4 rounded-full transition-colors ${expertMode ? 'bg-primary' : 'bg-gray-300'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${expertMode ? 'translate-x-3' : ''}`} />
               </span>
-            </div>
+            </button>
           </div>
 
           {scores.length > 0 ? (
             <>
-              {/* 雷达图 + IP 形象区 */}
-              <div className="flex items-center gap-2">
-                <div className="flex-shrink-0">
-                  <RadarChartSVG scores={enrichedScores} expertMode={expertMode} />
-                </div>
-                <div className="flex-1 flex flex-col items-center gap-2">
-                  {/* 小萌芽成长大师：金色藤叶头像框 */}
+              {/* 全宽雷达主视觉 */}
+              <div className="flex justify-center">
+                <RadarChartSVG scores={enrichedScores} />
+              </div>
+
+              {/* IP + 等级 + 成长值 + 冲刺简短提示 */}
+              <div className="flex flex-col items-center gap-2 mt-1 mb-1">
+                <div className="flex items-center gap-2.5">
                   <div
-                    className={`relative ${isGrandMaster ? 'p-1 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 shadow-lg shadow-amber-400/40' : ''}`}
+                    className={`relative flex-shrink-0 ${isGrandMaster ? 'p-0.5 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 shadow-md shadow-amber-400/30' : ''}`}
                   >
-                    <IPPAvatar growthIndex={growthIndex} expression="proud" size={64} />
+                    <IPPAvatar growthIndex={growthIndex} expression="proud" size={40} />
                     {isGrandMaster && (
-                      <span className="absolute -top-1.5 -right-1 text-sm select-none" title="成长大师">🌿</span>
+                      <span className="absolute -top-1 -right-0.5 text-xs select-none" title="成长大师">🌿</span>
                     )}
                   </div>
-                  {/* 成长指数精通徽章：≥1 项精通时替换数字等级展示 */}
                   {masteryCount >= 1 ? (
                     <MasteryBadge masteryCount={masteryCount} isGrandMaster={isGrandMaster} />
                   ) : (
@@ -1065,73 +1061,91 @@ export function GrowthPage() {
                   )}
                   <span className="text-xs text-text-tertiary">成长值 {selectedChild.balance}</span>
                 </div>
+                {primaryCount > 0 && (
+                  <p className="text-xs text-text-tertiary">
+                    本阶段重点 <span className="text-primary font-medium">{primaryCount}/6</span>
+                  </p>
+                )}
               </div>
 
-              {/* 本阶段可冲刺精通进度提示 */}
-              {primaryCount > 0 && (
-                <p className="text-xs text-text-tertiary mt-2 text-center leading-relaxed">
-                  本阶段可冲刺精通：<span className="text-primary font-medium">{primaryCount}/6 项</span>
-                  <span className="text-text-tertiary">（{primaryDimensions.map(d => d.dimension_name).join(' · ')}）</span>
-                </p>
-              )}
-
-              {/* 维度评分列表 */}
-              <div
-                className="grid gap-1 mt-3"
-                style={{ gridTemplateColumns: `repeat(${enrichedScores.length}, 1fr)` }}
+              {/* 查看各维度：折叠列表（分数/蓄势/学习详情） */}
+              <button
+                type="button"
+                onClick={() => setShowDimList((v) => !v)}
+                className="w-full mt-3 flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-medium text-text-secondary bg-gray-50 hover:bg-gray-100 transition-colors"
               >
-                {enrichedScores.map((s, i) => (
-                  <div key={s.dimension_id} className="flex flex-col items-center gap-0.5">
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: getDimensionColor(i) }}
-                    />
-                    {/* 主轴维显示分数/等级 */}
-                    <span className="text-xs font-semibold text-text-primary">
-                      {expertMode ? s.score : getAbilityLevelName(s.score)}
-                    </span>
-                    {/* V3.1 模块 D：维度名可点击展开详情面板（学习认知维度展示学业趋势+里程碑） */}
-                    <button
-                      onClick={() =>
-                        setExpandedDimId((cur) => (cur === s.dimension_id ? null : s.dimension_id))
-                      }
-                      className="text-[10px] text-text-tertiary flex items-center gap-0.5 hover:text-primary transition-colors"
-                      title={`查看${s.dimension_name}详情`}
-                    >
-                      {s.focus_level === 'primary' && <span title="本阶段重点">🌟</span>}
-                      {s.dimension_name}
-                      {(s.dimension_code === 'learning' || s.dimension_id === 4) && (
-                        <ChevronDown
-                          size={10}
-                          className={expandedDimId === s.dimension_id ? 'rotate-180 transition-transform' : 'transition-transform'}
-                        />
-                      )}
-                    </button>
-                    {/* 蓄势维「🔒 成长中」标签 + 问号小贴士 */}
-                    {s.focus_level === 'latent' && (
-                      <button
-                        onClick={() => setLatentTipDim(s.dimension_code)}
-                        className="flex items-center gap-0.5 text-[9px] text-text-tertiary hover:text-primary transition-colors mt-0.5"
-                      >
-                        <span>🔒成长中</span>
-                        <HelpCircle size={10} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                {showDimList ? '收起各维度' : '查看各维度'}
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${showDimList ? 'rotate-180' : ''}`}
+                />
+              </button>
 
-              {/* V3.1 模块 D：学习认知维度详情面板（4 条趋势折线 + 里程碑历史） */}
-              {expandedDimId !== null && (
-                (() => {
-                  const dim = enrichedScores.find(
-                    (s) =>
-                      s.dimension_id === expandedDimId &&
-                      (s.dimension_code === 'learning' || s.dimension_id === 4),
-                  );
-                  if (!dim || !selectedChildId) return null;
-                  return <LearningDetailPanel childId={selectedChildId} />;
-                })()
+              {(showDimList || expandedDimId !== null) && (
+                <div className="mt-3 space-y-2">
+                  {enrichedScores.map((s, i) => {
+                    const isLearning = s.dimension_code === 'learning' || s.dimension_id === 4;
+                    const isExpanded = expandedDimId === s.dimension_id;
+                    return (
+                      <div key={s.dimension_id}>
+                        <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-gray-50">
+                          <div
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: getDimensionColor(i) }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!isLearning) return;
+                              setShowDimList(true);
+                              setExpandedDimId((cur) => (cur === s.dimension_id ? null : s.dimension_id));
+                            }}
+                            className={`flex-1 min-w-0 text-left text-sm font-medium text-text-primary flex items-center gap-1 ${
+                              isLearning ? 'hover:text-primary' : ''
+                            }`}
+                            title={isLearning ? `查看${s.dimension_name}详情` : undefined}
+                          >
+                            {s.dimension_name}
+                            {s.focus_level === 'primary' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-medium">
+                                重点
+                              </span>
+                            )}
+                            {s.focus_level === 'latent' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-gray-200 text-text-tertiary">
+                                蓄势
+                              </span>
+                            )}
+                            {isLearning && (
+                              <ChevronDown
+                                size={14}
+                                className={`text-text-tertiary transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                              />
+                            )}
+                          </button>
+                          <span className="text-xs font-semibold text-text-primary flex-shrink-0">
+                            {expertMode ? s.score : getAbilityLevelName(s.score)}
+                          </span>
+                          {s.focus_level === 'latent' && (
+                            <button
+                              type="button"
+                              onClick={() => setLatentTipDim(s.dimension_code)}
+                              className="flex items-center gap-0.5 text-[10px] text-text-tertiary hover:text-primary transition-colors flex-shrink-0"
+                            >
+                              <span>成长中</span>
+                              <HelpCircle size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {isExpanded && isLearning && selectedChildId && (
+                          <div className="mt-2">
+                            <LearningDetailPanel childId={selectedChildId} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </>
           ) : (
@@ -1235,7 +1249,7 @@ export function GrowthPage() {
 
       {/* 阶段目标设置面板 */}
       {showGoalSetup && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-semibold text-text-primary">
@@ -1253,18 +1267,18 @@ export function GrowthPage() {
             <div className="mb-5">
               <label className="block text-sm font-medium text-text-primary mb-2">阶段时间区间</label>
               <div className="flex items-center gap-2">
-                <input
-                  type="date"
+                <MobileDatePicker
                   value={setupStartDate}
-                  onChange={(e) => setSetupStartDate(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-text-primary"
+                  onChange={setSetupStartDate}
+                  placeholder="开始"
+                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
                 />
                 <span className="text-text-tertiary">~</span>
-                <input
-                  type="date"
+                <MobileDatePicker
                   value={setupEndDate}
-                  onChange={(e) => setSetupEndDate(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-text-primary"
+                  onChange={setSetupEndDate}
+                  placeholder="结束"
+                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
                 />
               </div>
               <p className="text-xs text-text-tertiary mt-1.5">阶段结束时将触发成长回顾</p>
@@ -1349,7 +1363,7 @@ export function GrowthPage() {
       {/* 蓄势维小贴士弹窗 */}
       {latentTipDim && (
         <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
           onClick={() => setLatentTipDim(null)}
         >
           <div
