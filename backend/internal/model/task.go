@@ -1,7 +1,6 @@
 package model
 
 import "time"
-
 // Task 任务表
 // status: 1=进行中, 2=待验收, 3=已完成, 4=已拒绝
 // points: 可正可负（对于奖惩任务），默认正数
@@ -27,6 +26,7 @@ type Task struct {
 	AbilityDimensionID  uint   `gorm:"index" json:"ability_dimension_id,omitempty"`           // 主能力维度ID
 	SecondaryDimensions string `gorm:"size:100" json:"secondary_dimensions,omitempty"`        // 次维度ID JSON数组，如 "[2,5]"
 	AIGenerated         bool   `gorm:"default:false" json:"ai_generated"`                     // 是否AI生成
+	RuleSanitized       bool   `gorm:"default:false" json:"rule_sanitized"`                   // 模块 C：是否经过三段式混合生成的规则守门员清洗
 }
 
 const (

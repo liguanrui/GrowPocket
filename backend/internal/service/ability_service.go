@@ -103,8 +103,85 @@ func (s *AbilityService) AwardTaskCompletion(task *model.Task) error {
 }
 
 // AddScoreForDimension 公开方法，供问卷服务调用累加维度分值
+// V3.1：按年级·维度发展矩阵对问卷基线进行压低（latent 维按 weight 压缩 delta）
+// 并施加发展硬 Cap（latent 不超过 cap 的 85%，secondary/primary 不超过 cap）
 func (s *AbilityService) AddScoreForDimension(childID, familyID, dimensionID uint, delta int) error {
-	return s.addScore(childID, familyID, dimensionID, delta)
+	if delta <= 0 {
+		return nil
+	}
+
+	// 查询孩子当前年级
+	grade := s.resolveChildGrade(childID)
+
+	// 查年级·维度发展指南
+	guide, _ := s.GetGradeGuide(grade, dimensionID)
+
+	// 蓄势维（latent）：按 weight 压低 delta
+	adjustedDelta := delta
+	if guide.FocusLevel == "latent" {
+		adjustedDelta = int(float64(delta) * guide.Weight)
+		if adjustedDelta < 0 {
+			adjustedDelta = 0
+		}
+	}
+
+	// 先走原有累加逻辑（保留 score>100 → 100 的兜底）
+	if err := s.addScore(childID, familyID, dimensionID, adjustedDelta); err != nil {
+		return err
+	}
+
+	// 计算本年级发展硬上限：latent 不超过 cap 的 85%，其余维度为 cap
+	effectiveCap := guide.Cap
+	if guide.FocusLevel == "latent" {
+		effectiveCap = int(float64(guide.Cap) * 0.85)
+	}
+	if effectiveCap <= 0 {
+		return nil
+	}
+
+	// 二次 clamp：若累加后超过发展 Cap，则下压到 Cap
+	var score model.ChildAbilityScore
+	if err := database.DB.Where("child_id = ? AND dimension_id = ?", childID, dimensionID).First(&score).Error; err == nil {
+		if score.Score > effectiveCap {
+			score.Score = effectiveCap
+			if err := database.DB.Save(&score).Error; err != nil {
+				log.Printf("[Ability] 应用发展 Cap 失败 child=%d dim=%d: %v", childID, dimensionID, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetGradeGuide 查询年级·维度发展指南
+// grade<1 或 >6 时回退到 grade=1；查不到记录时返回默认值 {Weight:1.0, Cap:100, FocusLevel:"secondary"}
+func (s *AbilityService) GetGradeGuide(grade int, dimID uint) (model.GradeDimensionGuide, error) {
+	if grade < 1 || grade > 6 {
+		grade = 1
+	}
+	var guide model.GradeDimensionGuide
+	if err := database.DB.Where("grade = ? AND dimension_id = ?", grade, dimID).First(&guide).Error; err != nil {
+		// 查不到返回默认值，避免阻塞调用方
+		return model.GradeDimensionGuide{
+			Weight:     1.0,
+			Cap:        100,
+			FocusLevel: "secondary",
+		}, nil
+	}
+	return guide, nil
+}
+
+// resolveChildGrade 查询孩子当前年级（用 child_service.ResolveGrade 推算），异常时回退到 1
+func (s *AbilityService) resolveChildGrade(childID uint) int {
+	var child model.User
+	if err := database.DB.First(&child, childID).Error; err != nil {
+		return 1
+	}
+	grade, _ := ResolveGrade(&child)
+	if grade < 1 || grade > 6 {
+		return 1
+	}
+	return grade
 }
 
 // addScore 累加维度分值（上限 100）
@@ -192,6 +269,9 @@ func (s *AbilityService) ReassessScores(aiService *AIService, childID, familyID 
 		return nil, errors.New("无能力维度数据")
 	}
 
+	// V3.1：查询孩子当前年级，用于构造发展约束 prompt 与硬 clamp
+	grade := s.resolveChildGrade(childID)
+
 	// 1. 读取当前能力得分作为基线
 	oldScores, _ := s.GetChildScores(childID, familyID)
 	oldScoreMap := make(map[uint]int)
@@ -234,6 +314,23 @@ func (s *AbilityService) ReassessScores(aiService *AIService, childID, familyID 
 	parts = append(parts, "- 评定应体现成长，但避免虚高")
 	parts = append(parts, "返回纯 JSON（不要 markdown 代码块），格式：{\"1\": 35, \"2\": 28, ...}（key 为 dimension_id，value 为新得分）")
 
+	// V3.1：追加年级发展约束（软约束，引导 AI 按主轴/次轴/蓄势维差异化加分）
+	var capParts []string
+	for _, d := range dimensions {
+		g, _ := s.GetGradeGuide(grade, d.ID)
+		capParts = append(capParts, fmt.Sprintf("%d=%s Cap=%d", d.ID, d.Name, g.Cap))
+	}
+	parts = append(parts, "年级发展约束（严格执行）：")
+	parts = append(parts, "- 主轴维（primary）：可大胆加分（+3~+8）")
+	parts = append(parts, "- 次轴维（secondary）：正常加分（+1~+5）")
+	parts = append(parts, "- 蓄势维（latent）：即使任务多也只能 +0~+2，且不得超过本年级 Cap")
+	parts = append(parts, "各维度 Cap："+strings.Join(capParts, ", "))
+
+	// V3.1 模块 D：追加学业趋势软参考（仅作 AI 参考，不直接加能力分）
+	if trendRef := s.buildAcademicTrendReference(childID, familyID); trendRef != "" {
+		parts = append(parts, trendRef)
+	}
+
 	// 4. 调用 AI
 	reply, err := aiService.Chat(strings.Join(parts, "\n"), nil, "请评定能力维度得分")
 	if err != nil {
@@ -272,12 +369,29 @@ func (s *AbilityService) ReassessScores(aiService *AIService, childID, familyID 
 		if !ok {
 			newScore = oldScoreMap[d.ID] // AI 未评定则保留原值
 		}
+		// V3.1：按年级发展 Cap 进行硬 clamp
+		newScore = s.ClampWithDevelopmentalCap(grade, d.ID, newScore)
+		if ok {
+			// 仅当 AI 给出评定时才同步回 map，保留 buildDeltas 对未评定维度的原有行为
+			newScoreMap[d.ID] = newScore
+		}
 		if err := s.setScore(childID, familyID, d.ID, newScore); err != nil {
 			log.Printf("[Ability] 更新能力得分失败 child=%d dim=%d: %v", childID, d.ID, err)
 		}
 	}
 
 	return s.buildDeltas(oldScoreMap, newScoreMap, dimensions), nil
+}
+
+// ClampWithDevelopmentalCap 按年级·维度发展 Cap 对得分进行硬 clamp
+// 若 score 超过该年级该维度的 Cap，则下压到 Cap 并记录日志
+func (s *AbilityService) ClampWithDevelopmentalCap(grade int, dimID uint, score int) int {
+	guide, _ := s.GetGradeGuide(grade, dimID)
+	if score > guide.Cap {
+		log.Printf("[Ability] DEVELOPMENT_CAP_APPLIED grade=%d dim=%d raw=%d clamped=%d", grade, dimID, score, guide.Cap)
+		return guide.Cap
+	}
+	return score
 }
 
 // buildDeltas 构造新旧得分对比
@@ -334,4 +448,155 @@ func cleanAbilityJSONResponse(s string) string {
 	s = strings.TrimPrefix(s, "```")
 	s = strings.TrimSuffix(s, "```")
 	return strings.TrimSpace(s)
+}
+
+// buildAcademicTrendReference 构造学业趋势软参考文本（V3.1 模块 D）
+// 查询当前周期内的学业趋势档位，按 (subject, metric_type) 分组取最近 6 条
+// 返回多行文本，形如：
+//   学业趋势参考（仅作参考，不直接加能力分）：
+//   - 语文作业档：最近 6 次为 A, B, A, A, B, A（趋势上升）
+//   - 数学测验档：最近 3 次为 B, C, B（需关注）
+//
+// 无数据时返回空串（prompt 不追加）
+func (s *AbilityService) buildAcademicTrendReference(childID, familyID uint) string {
+	// 查询最近一个成长周期获取时间范围（ReassessScores 在阶段回顾时调用，对应周期为最近一条）
+	var cycle model.GrowthCycle
+	cycleErr := database.DB.Where("child_id = ? AND family_id = ?", childID, familyID).
+		Order("start_date DESC").First(&cycle).Error
+
+	var entries []model.AcademicTrendEntry
+	if cycleErr == nil && cycle.ID > 0 {
+		// 按周期时间范围查询（与 tasks 过滤逻辑一致，使用 created_at）
+		database.DB.Where("child_id = ? AND family_id = ? AND created_at >= ? AND created_at <= ?",
+			childID, familyID, cycle.StartDate, cycle.EndDate).
+			Order("created_at ASC").Find(&entries)
+	} else {
+		// 无周期时降级：取最近 30 条
+		database.DB.Where("child_id = ? AND family_id = ?", childID, familyID).
+			Order("created_at DESC").Limit(30).Find(&entries)
+	}
+	if len(entries) == 0 {
+		return ""
+	}
+
+	// 按 (subject, metric_type) 分组，保留首次出现顺序
+	groupKey := func(e model.AcademicTrendEntry) string {
+		return e.Subject + "|" + e.MetricType
+	}
+	groups := make(map[string][]model.AcademicTrendEntry)
+	groupOrder := make([]string, 0)
+	for _, e := range entries {
+		key := groupKey(e)
+		if _, ok := groups[key]; !ok {
+			groupOrder = append(groupOrder, key)
+		}
+		groups[key] = append(groups[key], e)
+	}
+
+	subjectNames := map[string]string{
+		"chinese": "语文", "math": "数学", "english": "英语", "other": "其他",
+	}
+	metricNames := map[string]string{
+		"homework":          "作业档",
+		"quiz":              "测验档",
+		"midterm_final":     "期中期末档",
+		"self_study_duration": "自习时长档",
+	}
+
+	lines := make([]string, 0, len(groupOrder)+1)
+	lines = append(lines, "学业趋势参考（仅作参考，不直接加能力分）：")
+	for _, key := range groupOrder {
+		group := groups[key]
+		// 取最近 6 条（entries 已按时间正序，末尾为最新）
+		if len(group) > 6 {
+			group = group[len(group)-6:]
+		}
+		keyParts := strings.SplitN(key, "|", 2)
+		if len(keyParts) != 2 {
+			continue
+		}
+		subject, metricType := keyParts[0], keyParts[1]
+		subjectName := subjectNames[subject]
+		if subjectName == "" {
+			subjectName = subject
+		}
+		metricName := metricNames[metricType]
+		if metricName == "" {
+			metricName = metricType
+		}
+		values := make([]string, 0, len(group))
+		for _, e := range group {
+			values = append(values, e.ValueABC)
+		}
+		trend := analyzeABCTrend(values)
+		lines = append(lines, fmt.Sprintf("- %s%s：最近 %d 次为 %s（%s）",
+			subjectName, metricName, len(values), strings.Join(values, ", "), trend))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// analyzeABCTrend 根据 ABC 档位序列判断趋势（上升 / 需关注 / 保持稳定 / 数据不足）
+// 评分：A+=4, A=3, B=2, C=1；比较后半段均值与前半段均值
+func analyzeABCTrend(values []string) string {
+	if len(values) < 2 {
+		return "数据不足"
+	}
+	scoreOf := func(v string) int {
+		switch v {
+		case "A+":
+			return 4
+		case "A":
+			return 3
+		case "B":
+			return 2
+		case "C":
+			return 1
+		}
+		return 0
+	}
+	n := len(values)
+	mid := n / 2
+	if mid == 0 {
+		mid = 1
+	}
+	firstSum, secondSum := 0, 0
+	for i := 0; i < mid; i++ {
+		firstSum += scoreOf(values[i])
+	}
+	for i := mid; i < n; i++ {
+		secondSum += scoreOf(values[i])
+	}
+	firstAvg := float64(firstSum) / float64(mid)
+	secondAvg := float64(secondSum) / float64(n-mid)
+	if secondAvg > firstAvg+0.01 {
+		return "趋势上升"
+	}
+	if secondAvg < firstAvg-0.01 {
+		return "需关注"
+	}
+	return "保持稳定"
+}
+
+// AwardMasteryStar 精通星数 +1（上限 5）
+// V3.1 模块 B：大师挑战验收通过后调用，对模板 PrimaryDimIDs 中的每个维度加 1 颗精通星
+// 已达 5 星的维度不再累加，避免越界
+func (s *AbilityService) AwardMasteryStar(childID, dimID uint) error {
+	var score model.ChildAbilityScore
+	err := database.DB.Where("child_id = ? AND dimension_id = ?", childID, dimID).First(&score).Error
+	if err != nil {
+		// 不存在该维度得分记录时静默跳过（未评定过的维度不发星）
+		log.Printf("[Ability] AwardMasteryStar 跳过：未找到 child=%d dim=%d 的能力得分记录", childID, dimID)
+		return nil
+	}
+	if score.MasteryStars >= 5 {
+		log.Printf("[Ability] AwardMasteryStar 跳过：child=%d dim=%d 已达 5 星上限", childID, dimID)
+		return nil
+	}
+	score.MasteryStars++
+	if err := database.DB.Save(&score).Error; err != nil {
+		log.Printf("[Ability] AwardMasteryStar 失败 child=%d dim=%d: %v", childID, dimID, err)
+		return err
+	}
+	log.Printf("[Ability] AwardMasteryStar 成功 child=%d dim=%d stars=%d", childID, dimID, score.MasteryStars)
+	return nil
 }

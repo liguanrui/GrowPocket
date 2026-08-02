@@ -21,6 +21,10 @@ export interface GrowthStory {
   ability_summary: string; // 能力提升摘要 JSON 字符串（AbilityDelta[]）
   photo_urls: string; // 精选相册 JSON 字符串
   created_at: string;
+  // V3.1 模块 B：故事类型 cycle（周期回顾）/ project（大师挑战）
+  type?: string;
+  // 大师挑战故事关联的实例 ID（仅 type=project 时有值）
+  master_challenge_instance_id?: number | null;
 }
 
 // 成长故事列表响应

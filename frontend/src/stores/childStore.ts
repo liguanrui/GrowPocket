@@ -3,18 +3,24 @@ import * as childrenService from '../services/children';
 
 export interface Child {
   id: number;
-  familyId: number;
+  family_id: number;
+  familyId?: number;
   role: 'child';
   nickname: string;
   avatar?: string;
   gender?: 0 | 1;
-  birthday?: string;
-  grade?: number; // 1-6 年级
-  age?: number;
+  birthday?: string | null;
+  grade?: number | null; // 1-6 年级（手动覆盖值，展示时优先 derived_grade）
+  grade_overridden?: boolean;
+  age?: number | null;
   hobbies?: string; // JSON 数组字符串
   balance: number;
   created_at?: string;
   updated_at?: string;
+  // 后端派生字段（Birthday 为主驱动，滚动计算）
+  derived_age?: number;
+  derived_grade?: number;
+  is_birthday_today?: boolean;
 }
 
 interface ChildState {
@@ -22,8 +28,28 @@ interface ChildState {
   currentChildId: number | null;
   loading: boolean;
   fetchChildren: () => Promise<void>;
-  addChild: (input: { nickname: string; gender?: 0 | 1; birthday?: string; grade?: number; age?: number; hobbies?: string }) => Promise<Child>;
-  updateChild: (id: number, input: Partial<{ nickname: string; gender?: 0 | 1; birthday?: string; avatar?: string; grade?: number; age?: number; hobbies?: string }>) => Promise<void>;
+  addChild: (input: {
+    nickname: string;
+    gender?: 0 | 1;
+    birthday?: string;
+    grade?: number;
+    grade_overridden?: boolean;
+    age?: number;
+    hobbies?: string;
+  }) => Promise<Child>;
+  updateChild: (
+    id: number,
+    input: Partial<{
+      nickname: string;
+      gender?: 0 | 1;
+      birthday?: string;
+      avatar?: string;
+      grade?: number;
+      grade_overridden?: boolean;
+      age?: number;
+      hobbies?: string;
+    }>,
+  ) => Promise<void>;
   removeChild: (id: number) => Promise<void>;
   setCurrentChildId: (id: number | null) => void;
   getCurrentChild: () => Child | null;

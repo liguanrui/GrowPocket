@@ -146,10 +146,10 @@
         "group": 1,
         "layoutSnapshot": {
           "version": 1,
-          "contentHeight": 900,
+          "contentHeight": 1070,
           "viewportWidth": 375,
           "sourceHash": "fnv1a-cadabf2f",
-          "measuredAt": 1785588042139
+          "measuredAt": 1785589024997
         }
       },
       "devMetadata": {
@@ -190,10 +190,10 @@
         "group": 1,
         "layoutSnapshot": {
           "version": 1,
-          "contentHeight": 900,
+          "contentHeight": 1210,
           "viewportWidth": 375,
           "sourceHash": "fnv1a-02df5d5d",
-          "measuredAt": 1785588042139
+          "measuredAt": 1785589024997
         }
       },
       "devMetadata": {
@@ -213,10 +213,10 @@
         "group": 1,
         "layoutSnapshot": {
           "version": 1,
-          "contentHeight": 900,
+          "contentHeight": 1642,
           "viewportWidth": 375,
           "sourceHash": "fnv1a-f563f912",
-          "measuredAt": 1785588042139
+          "measuredAt": 1785589024997
         }
       },
       "devMetadata": {

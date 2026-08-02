@@ -96,8 +96,12 @@ export function QuestionnairePage() {
       const res = await submitQuestionnaire(questionnaire.id, stage, childId, answerList);
       // 检测是否从 onboarding 进入：若是则返回 Onboarding Step 6 展示雷达图+目标设置+任务生成
       const returnTo = searchParams.get('return');
-      if (returnTo === 'onboarding') {
-        navigate(`/onboarding?step=6&child_id=${childId}`, { replace: true });
+      if (returnTo && (returnTo === 'onboarding' || returnTo.startsWith('onboarding'))) {
+        // 解析可能带的 mode 参数（格式 "onboarding&mode=add_child"）
+        let mode = 'register';
+        const modeMatch = returnTo.match(/mode=([^&]+)/);
+        if (modeMatch) mode = modeMatch[1];
+        navigate(`/onboarding?step=6&child_id=${childId}&mode=${encodeURIComponent(mode)}`, { replace: true });
       } else {
         toast.success(`问卷完成！获得 ${res.reward} 积分`);
         setTimeout(() => navigate('/growth'), 1500);

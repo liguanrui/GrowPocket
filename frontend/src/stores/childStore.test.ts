@@ -18,9 +18,9 @@ vi.mock('../services/children', () => ({
 
 describe('stores/childStore.ts — 状态管理', () => {
   const mockChildren = [
-    { id: 1, familyId: 1, role: 'child' as const, nickname: 'Ming', balance: 100 },
-    { id: 2, familyId: 1, role: 'child' as const, nickname: 'Hong', balance: 50 },
-    { id: 3, familyId: 1, role: 'child' as const, nickname: 'Hua', balance: 200 },
+    { id: 1, family_id: 1, familyId: 1, role: 'child' as const, nickname: 'Ming', balance: 100 },
+    { id: 2, family_id: 1, familyId: 1, role: 'child' as const, nickname: 'Hong', balance: 50 },
+    { id: 3, family_id: 1, familyId: 1, role: 'child' as const, nickname: 'Hua', balance: 200 },
   ];
 
   beforeEach(() => {
@@ -79,7 +79,7 @@ describe('stores/childStore.ts — 状态管理', () => {
 
   describe('addChild', () => {
     it('addChild 追加到 children 列表末尾', async () => {
-      const newChild = { id: 4, familyId: 1, role: 'child' as const, nickname: 'Liang', balance: 0 };
+      const newChild = { id: 4, family_id: 1, familyId: 1, role: 'child' as const, nickname: 'Liang', balance: 0 };
       addChildMock.mockResolvedValueOnce(newChild);
       useChildStore.setState({ children: [mockChildren[0]] });
 
@@ -90,7 +90,7 @@ describe('stores/childStore.ts — 状态管理', () => {
     });
 
     it('addChild 后 currentChildId 为 null 时，自动切换到新孩子', async () => {
-      const newChild = { id: 5, familyId: 1, role: 'child' as const, nickname: 'Xing', balance: 0 };
+      const newChild = { id: 5, family_id: 1, familyId: 1, role: 'child' as const, nickname: 'Xing', balance: 0 };
       addChildMock.mockResolvedValueOnce(newChild);
       useChildStore.setState({ children: [], currentChildId: null });
 
@@ -133,7 +133,7 @@ describe('stores/childStore.ts — 状态管理', () => {
     });
 
     it('removeChild 移除最后孩子后 currentChildId 置 null', async () => {
-      const loneList = [{ id: 10, familyId: 1, role: 'child' as const, nickname: 'Only', balance: 0 }];
+      const loneList = [{ id: 10, family_id: 1, familyId: 1, role: 'child' as const, nickname: 'Only', balance: 0 }];
       deleteChildMock.mockResolvedValueOnce(undefined);
       useChildStore.setState({ children: [...loneList], currentChildId: 10 });
 

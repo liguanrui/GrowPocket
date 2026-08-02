@@ -214,6 +214,175 @@ func (s *GrowthStoryService) GetStory(cycleID uint) (*model.GrowthStory, error) 
 	return &story, nil
 }
 
+// GenerateProjectStory 为指定大师挑战实例生成项目式成长故事
+// V3.1 模块 B：写入 GrowthStory（type='project'，master_challenge_instance_id=instanceID）
+// 幂等：若该实例已有 project 故事记录，直接返回已有故事
+func (s *GrowthStoryService) GenerateProjectStory(instanceID uint) (*model.GrowthStory, error) {
+	// 0. 幂等检查
+	var existing model.GrowthStory
+	if err := database.DB.Where("type = ? AND master_challenge_instance_id = ?", "project", instanceID).First(&existing).Error; err == nil {
+		log.Printf("[GrowthStory] 大师挑战实例 %d 已有项目故事 story=%d，返回已有故事", instanceID, existing.ID)
+		return &existing, nil
+	}
+
+	// 1. 查询实例
+	var instance model.MasterChallengeInstance
+	if err := database.DB.First(&instance, instanceID).Error; err != nil {
+		return nil, errors.New("大师挑战实例不存在")
+	}
+
+	// 2. 查询阶段与提交
+	var stages []model.MasterChallengeStage
+	database.DB.Where("instance_id = ?", instanceID).Order("stage_index ASC").Find(&stages)
+
+	var submission model.MasterChallengeSubmission
+	hasSubmission := false
+	if err := database.DB.Where("instance_id = ?", instanceID).Order("created_at DESC").First(&submission).Error; err == nil {
+		hasSubmission = true
+	}
+
+	// 查询孩子姓名
+	childName := ""
+	var child model.User
+	if err := database.DB.Where("id = ? AND role = ?", instance.ChildID, model.RoleChild).First(&child).Error; err == nil {
+		childName = child.Nickname
+	}
+
+	// 3. 构造 AI prompt
+	prompt := s.buildProjectStoryPrompt(childName, instance, stages, submission, hasSubmission)
+
+	// 4. 调用 AI
+	reply, err := s.aiService.Chat(prompt, nil, "请根据上述信息生成大师挑战项目式成长故事，返回 JSON 格式")
+	if err != nil {
+		log.Printf("[GrowthStory] AI 调用失败 instance=%d: %v", instanceID, err)
+	}
+
+	// 5. 解析 AI 返回（解析失败时降级）
+	title := "大师挑战成长故事：" + instance.Title
+	content := ""
+	if reply != "" {
+		cleaned := cleanJSONResponse(reply)
+		if strings.HasPrefix(cleaned, "{") {
+			var result aiStoryResult
+			if json.Unmarshal([]byte(cleaned), &result) == nil {
+				if result.Title != "" {
+					title = result.Title
+				}
+				if result.Content != "" {
+					content = result.Content
+				}
+			} else {
+				content = reply
+			}
+		} else {
+			content = reply
+		}
+	}
+
+	// 6. 拼接能力摘要（参与维度 + 评分）
+	abilitySummary := ""
+	if hasSubmission {
+		summary := map[string]interface{}{
+			"participation_score": submission.ParticipationScore,
+			"application_score":   submission.ApplicationScore,
+			"quality_score":       submission.QualityScore,
+			"passed":              submission.Passed,
+			"points_awarded":      submission.PointsAwarded,
+		}
+		if data, err := json.Marshal(summary); err == nil {
+			abilitySummary = string(data)
+		}
+	}
+
+	// 7. 提取附件作为相册（最多 5 张）
+	photoURLs := make([]string, 0, 5)
+	if hasSubmission && submission.Attachments != "" {
+		var urls []string
+		if json.Unmarshal([]byte(submission.Attachments), &urls) == nil {
+			for _, u := range urls {
+				if len(photoURLs) >= 5 {
+					break
+				}
+				photoURLs = append(photoURLs, u)
+			}
+		}
+	}
+	photosJSON := ""
+	if len(photoURLs) > 0 {
+		data, _ := json.Marshal(photoURLs)
+		photosJSON = string(data)
+	}
+
+	// 8. 写入 GrowthStory（type='project'）
+	instanceIDVal := instanceID
+	story := &model.GrowthStory{
+		CycleID:                   0, // 项目故事不关联周期
+		FamilyID:                  instance.FamilyID,
+		ChildID:                   instance.ChildID,
+		Title:                     title,
+		Content:                   content,
+		AbilitySummary:            abilitySummary,
+		PhotoUrls:                 photosJSON,
+		Type:                      "project",
+		MasterChallengeInstanceID: &instanceIDVal,
+	}
+	if err := database.DB.Create(story).Error; err != nil {
+		log.Printf("[GrowthStory] 保存项目故事失败 instance=%d: %v", instanceID, err)
+		return nil, errors.New("保存项目成长故事失败")
+	}
+
+	log.Printf("[GrowthStory] 大师挑战实例 %d 项目故事生成完成 story=%d", instanceID, story.ID)
+	return story, nil
+}
+
+// buildProjectStoryPrompt 构造大师挑战项目故事生成提示词
+func (s *GrowthStoryService) buildProjectStoryPrompt(childName string, instance model.MasterChallengeInstance, stages []model.MasterChallengeStage, submission model.MasterChallengeSubmission, hasSubmission bool) string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("你是儿童成长记录师。请为儿童 %s 完成的大师挑战项目 [%s] 生成一段项目式成长故事。",
+		childName, instance.Title))
+	parts = append(parts, fmt.Sprintf("项目状态：%s，启动时间：%s。", instance.Status, instance.StartedAt.Format("2006-01-02")))
+	if instance.FinalSummary != "" {
+		parts = append(parts, fmt.Sprintf("孩子总结：%s", instance.FinalSummary))
+	}
+
+	// 阶段进展
+	if len(stages) > 0 {
+		parts = append(parts, fmt.Sprintf("项目共分 %d 个阶段：", len(stages)))
+		for _, st := range stages {
+			statusText := st.Status
+			if statusText == "" {
+				statusText = "pending"
+			}
+			line := fmt.Sprintf("- 阶段%d [%s] %s（状态：%s", st.StageIndex+1, st.Title, st.Description, statusText)
+			if st.Notes != "" {
+				line += "，孩子记录：" + st.Notes
+			}
+			if st.SelfRating > 0 {
+				line += fmt.Sprintf("，自评进度：%d/5", st.SelfRating)
+			}
+			line += "）"
+			parts = append(parts, line)
+		}
+	}
+
+	// 验收评分
+	if hasSubmission {
+		parts = append(parts, fmt.Sprintf("家长验收评分：参与度 %d/5，能力应用度 %d/5，成果满意度 %d/5，%s。",
+			submission.ParticipationScore, submission.ApplicationScore, submission.QualityScore,
+			map[bool]string{true: "通过", false: "未通过"}[submission.Passed]))
+		if submission.ChildSummary != "" {
+			parts = append(parts, fmt.Sprintf("孩子一句话总结：%s", submission.ChildSummary))
+		}
+		if submission.PointsAwarded > 0 {
+			parts = append(parts, fmt.Sprintf("获得稀有积分奖励：%d。", submission.PointsAwarded))
+		}
+	}
+
+	parts = append(parts, "要求：生成富有温度的项目式成长故事，突出孩子在项目中展现的能力进阶与心路历程，包含标题、正文（300-600 字）。")
+	parts = append(parts, "返回纯 JSON（不要 markdown 代码块），格式：{\"title\":\"...\",\"content\":\"...\"}")
+	return strings.Join(parts, "\n")
+}
+
 // ListStories 查询儿童所有成长故事（按时间倒序）
 func (s *GrowthStoryService) ListStories(childID, familyID uint, page, pageSize int) ([]model.GrowthStory, int64, error) {
 	if page < 1 {

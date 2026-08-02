@@ -8,6 +8,8 @@ import { MallPage } from './pages/MallPage';
 import { GrowthPage } from './pages/GrowthPage';
 import { GrowthStoryPage } from './pages/GrowthStoryPage';
 import { GrowthStoryListPage } from './pages/GrowthStoryListPage';
+import { MasterChallengePoolPage } from './pages/MasterChallengePoolPage';
+import { MasterChallengeDetailPage } from './pages/MasterChallengeDetailPage';
 import { FamilyPage } from './pages/FamilyPage';
 import { CommunityPage } from './pages/CommunityPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
@@ -76,6 +78,8 @@ export default function App() {
         <Route path="growth" element={<GrowthPage />} />
         <Route path="growth/story" element={<GrowthStoryPage />} />
         <Route path="growth/stories" element={<GrowthStoryListPage />} />
+        <Route path="master-challenges" element={<MasterChallengePoolPage />} />
+        <Route path="master-challenges/:instanceId" element={<MasterChallengeDetailPage />} />
         <Route path="family" element={<FamilyPage />} />
         <Route path="community" element={<CommunityPage />} />
         <Route path="community/activities/new" element={<CreateActivityPage />} />

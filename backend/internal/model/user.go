@@ -18,12 +18,13 @@ type User struct {
 	Password  string    `gorm:"size:255" json:"-"` // 仅家长填写；孩子的 password 为空
 	Avatar    string    `gorm:"size:500" json:"avatar,omitempty"`
 	// 以下字段仅 role=child 时填写
-	Gender   *int       `json:"gender,omitempty"` // 0=男 1=女
-	Birthday *time.Time `json:"birthday,omitempty"`
-	Grade    *int       `json:"grade,omitempty"` // 1-6 年级
-	Age      *int       `json:"age,omitempty"`   // 年龄（冗余，由 birthday 计算）
-	Hobbies  string     `gorm:"type:text" json:"hobbies,omitempty"` // JSON 数组，如 ["阅读","拼搭积木"]
-	Balance  int        `gorm:"default:0" json:"balance"`
+	Gender         *int       `json:"gender,omitempty"` // 0=男 1=女
+	Birthday       *time.Time `json:"birthday,omitempty"`
+	Grade          *int       `json:"grade,omitempty"` // 1-6 年级（手动覆盖时使用）
+	GradeOverridden bool      `gorm:"default:false;column:grade_overridden" json:"grade_overridden,omitempty"` // 家长是否手动覆盖了年级
+	Age            *int       `json:"age,omitempty"`   // 年龄（冗余缓存，由 birthday 计算）
+	Hobbies        string     `gorm:"type:text" json:"hobbies,omitempty"` // JSON 数组，如 ["阅读","拼搭积木"]
+	Balance        int        `gorm:"default:0" json:"balance"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

@@ -193,6 +193,24 @@ func main() {
 		questionnaireHandler := handler.NewQuestionnaireHandler()
 		authorized.GET("/questionnaires/:stage", questionnaireHandler.GetByStage)
 		authorized.POST("/questionnaires/submit", questionnaireHandler.Submit)
+
+		// 大师挑战（V3.1 模块 B）
+		masterChallengeHandler := handler.NewMasterChallengeHandler(service.NewMasterChallengeService(aiService))
+		authorized.GET("/master-challenges/templates", masterChallengeHandler.GetTemplates)
+		authorized.POST("/master-challenges/start", masterChallengeHandler.StartInstance)
+		authorized.GET("/master-challenges/instances/:child_id", masterChallengeHandler.ListInstances)
+		authorized.GET("/master-challenges/instances/detail/:instance_id", masterChallengeHandler.GetInstanceDetail)
+		authorized.PUT("/master-challenges/stages/:stage_id", masterChallengeHandler.UpdateStage)
+		authorized.POST("/master-challenges/submit/:instance_id", masterChallengeHandler.SubmitForReview)
+		authorized.POST("/master-challenges/review/:submission_id", masterChallengeHandler.Review)
+
+		// 学业双层结构（v3.1 模块 D：学业趋势档位 + 学业奖励池）
+		academicHandler := handler.NewAcademicHandler()
+		authorized.POST("/academic/milestones", academicHandler.RecordMilestone)
+		authorized.GET("/academic/milestones/:child_id", academicHandler.GetMilestones)
+		authorized.POST("/academic/trends", academicHandler.RecordTrend)
+		authorized.GET("/academic/trends/:child_id", academicHandler.GetTrends)
+		authorized.GET("/academic/allowed-types/:child_id", academicHandler.GetAllowedTypes)
 	}
 
 	log.Printf("服务启动于端口 %s", cfg.Port)

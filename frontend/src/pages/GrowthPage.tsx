@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ChevronRight, Share2, Sparkles, Image, FileText, Send, X, Target, Check, Sliders, History, BookOpen, ArrowRight, Gift } from 'lucide-react';
+import { ChevronRight, Share2, Sparkles, Image, FileText, Send, X, Target, Check, Sliders, History, BookOpen, ArrowRight, Gift, HelpCircle, ChevronDown, Star } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
 import { useAuthStore } from '../stores/authStore';
@@ -9,13 +12,17 @@ import * as tasksService from '../services/tasks';
 import type { Task } from '../services/tasks';
 import * as communityService from '../services/community';
 import { getChildScores, getGrowthIndex, getAbilities } from '../services/ability';
-import type { ChildAbilityScore, AbilityDimension } from '../services/ability';
+import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { getCurrentCycle, setGoal, createCycle, updateCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
 import { listStories, parseAbilitySummary } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
 import { useToastStore } from '../stores/toastStore';
+import { masterChallengeApi } from '../services/masterChallenge';
+import { academicApi } from '../services/academic';
+import type { AcademicTrendEntry, AcademicMilestone } from '../services/academic';
+import { ABC_VALUE_MAP, ABC_LABEL_MAP, TREND_METRIC } from '../services/academic';
 
 // 维度颜色映射
 const DIMENSION_COLORS = ['#10b981', '#6DBF7B', '#5B9BD5', '#F0B848', '#E87461'];
@@ -32,8 +39,92 @@ function getLevelInfo(growthIndex: number) {
   return { level: 5, name: '大树期' };
 }
 
-// 原生 SVG 五维雷达图
-function RadarChartSVG({ scores }: { scores: ChildAbilityScore[] }) {
+// ===== V3.1 模块 A：分阶段能力增长 =====
+
+// 临时 focus_level 映射（后端 Task A4 上线后可移除）
+// 数据源：V3.1 PRD「年级 × 维度权重矩阵」
+// key: grade(1-6)，value: { dimension_code: focus_level }
+const FOCUS_LEVEL_FALLBACK: Record<number, Record<string, FocusLevel>> = {
+  1: { self_care: 'primary', independence: 'latent', hands_on: 'secondary', learning: 'primary', social_emotional: 'latent', health: 'primary' },
+  2: { self_care: 'primary', independence: 'latent', hands_on: 'primary', learning: 'secondary', social_emotional: 'secondary', health: 'primary' },
+  3: { self_care: 'secondary', independence: 'secondary', hands_on: 'primary', learning: 'primary', social_emotional: 'secondary', health: 'secondary' },
+  4: { self_care: 'latent', independence: 'secondary', hands_on: 'secondary', learning: 'primary', social_emotional: 'primary', health: 'secondary' },
+  5: { self_care: 'secondary', independence: 'primary', hands_on: 'secondary', learning: 'primary', social_emotional: 'primary', health: 'secondary' },
+  6: { self_care: 'primary', independence: 'primary', hands_on: 'primary', learning: 'secondary', social_emotional: 'primary', health: 'primary' },
+};
+
+// 蓄势维儿童发展小贴士（按 dimension_code 动态切换）
+const LATENT_TIPS: Record<string, string> = {
+  independence: '这个阶段的孩子还在发展基础自理能力，独立决策能力会在 3 年级后加速发展。现在多给选择权，不急于求成。',
+  social_emotional: '低年级孩子的社交正在从"平行游戏"向"合作游戏"过渡。不必急于要求高阶共情，先从分享和轮流开始。',
+};
+const DEFAULT_LATENT_TIP = '这个维度在孩子当前年级属于「蓄势期」，能力发展有其自然节奏。现阶段以轻量体验为主，不必追求分数提升，等身心准备好后自然会加速成长。';
+
+// 能力等级名称映射（专家模式关闭时显示等级名称，开启时显示原始分数）
+function getAbilityLevelName(score: number): string {
+  if (score >= 95) return '精通⭐';
+  if (score >= 85) return '熟练🌻';
+  if (score >= 60) return '精进🌳';
+  if (score >= 30) return '成长🌿';
+  return '启蒙🌱';
+}
+
+// 带必填 focus_level 的分数（API 返回或 fallback 兜底）
+interface EnrichedScore extends ChildAbilityScore {
+  focus_level: FocusLevel;
+  // 解析后的精通星数（0-5）：优先用后端 mastery_stars，缺失时按 score 兜底
+  mastery_stars: number;
+}
+
+// 获取维度 focus_level：优先用 API 返回值，否则用年级×维度 fallback 映射
+function resolveFocusLevel(score: ChildAbilityScore, grade: number | null | undefined): FocusLevel {
+  if (score.focus_level) return score.focus_level;
+  const g = grade ?? 1;
+  return FOCUS_LEVEL_FALLBACK[g]?.[score.dimension_code] || 'secondary';
+}
+
+// 解析维度精通星数：后端返回的 mastery_stars 优先；未返回时，精通（≥95）至少 1 星，否则 0 星
+function resolveMasteryStars(score: ChildAbilityScore): number {
+  if (typeof score.mastery_stars === 'number') return Math.max(0, Math.min(5, score.mastery_stars));
+  return score.score >= 95 ? 1 : 0;
+}
+
+// 判断维度是否进入精通（score≥95）
+function isMastered(score: { score: number }): boolean {
+  return score.score >= 95;
+}
+
+// V3.1 模块 B：成长指数精通徽章
+// masteryCount：精通维度数；isGrandMaster：6 维全精通且每维≥2 星
+function MasteryBadge({ masteryCount, isGrandMaster }: { masteryCount: number; isGrandMaster: boolean }) {
+  if (isGrandMaster) {
+    return (
+      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold text-white shadow-md bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500">
+        <span>🏆</span>小萌芽成长大师
+      </span>
+    );
+  }
+  let label = '';
+  let stars = '';
+  if (masteryCount >= 5) {
+    label = '全面发展';
+    stars = '⭐⭐⭐⭐⭐';
+  } else if (masteryCount >= 3) {
+    label = '三项全能';
+    stars = '⭐⭐⭐';
+  } else {
+    label = '单项精通';
+    stars = '⭐';
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold text-white shadow-md bg-gradient-to-r from-amber-400 to-yellow-500">
+      {label} {stars}
+    </span>
+  );
+}
+
+// 原生 SVG 雷达图（自适应维度数，V3.1 模块 B 追加精通星环 + 金色六边形）
+function RadarChartSVG({ scores, expertMode }: { scores: EnrichedScore[]; expertMode: boolean }) {
   const size = 200;
   const cx = size / 2;
   const cy = size / 2;
@@ -42,6 +133,17 @@ function RadarChartSVG({ scores }: { scores: ChildAbilityScore[] }) {
   const levels = [maxRadius, maxRadius * 2 / 3, maxRadius / 3];
   const n = scores.length;
   const angles = Array.from({ length: n }, (_, i) => -90 + (360 / n) * i);
+
+  // V3.1 模块 B：精通相关计算
+  const masteredCount = scores.filter(s => isMastered(s)).length;
+  const showStarRing = masteredCount >= 1; // ≥1 维度精通时叠加星环
+  const allMastered = n > 0 && masteredCount === n; // 6 维全精通 → 金色六边形
+  // 星环配置：每组 5 颗小圆点，沿轴向外排列
+  const starStart = 73;
+  const starStep = 3;
+  const starR = 1.7;
+  const GOLD = '#F0B848';
+  const GRAY = '#d1d5db';
 
   function getPoint(angle: number, radius: number) {
     const rad = (angle * Math.PI) / 180;
@@ -61,33 +163,66 @@ function RadarChartSVG({ scores }: { scores: ChildAbilityScore[] }) {
   });
   const dataPolygonStr = dataPoints.map(p => `${p.x},${p.y}`).join(' ');
 
+  // 某维度在星环中应实心金色的颗数：全精通时统一 5 颗；精通维至少 1 颗；未精通按 mastery_stars（通常 0）
+  function filledStarsFor(s: EnrichedScore): number {
+    if (allMastered) return 5;
+    return isMastered(s) ? Math.max(s.mastery_stars, 1) : s.mastery_stars;
+  }
+
   return (
     <svg width={180} height={180} viewBox={`0 0 ${size} ${size}`}>
-      {/* 三层同心五边形网格 */}
+      {/* 三层同心多边形网格 */}
       {levels.map((r, i) => (
         <polygon key={i} points={polygonPoints(r)} fill="none" stroke="#e5e7eb" strokeWidth="1" />
       ))}
-      {/* 五条轴线 */}
+      {/* 轴线 */}
       {angles.map((a, i) => {
         const p = getPoint(a, maxRadius);
         return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#e5e7eb" strokeWidth="1" />;
       })}
-      {/* 数据多边形 */}
+      {/* 数据多边形（全精通时变金色六边形） */}
       {n > 0 && (
         <>
-          <polygon points={dataPolygonStr} fill="rgba(126, 200, 80, 0.15)" stroke="#7EC850" strokeWidth="2" />
+          <polygon
+            points={dataPolygonStr}
+            fill={allMastered ? 'rgba(240, 184, 72, 0.18)' : 'rgba(126, 200, 80, 0.15)'}
+            stroke={allMastered ? GOLD : '#7EC850'}
+            strokeWidth={allMastered ? 2.5 : 2}
+          />
           {/* 数据点 */}
           {dataPoints.map((p, i) => (
-            <circle key={i} cx={p.x} cy={p.y} r="3" fill="#7EC850" />
+            <circle key={i} cx={p.x} cy={p.y} r="3" fill={allMastered ? GOLD : '#7EC850'} />
           ))}
         </>
       )}
-      {/* 轴标签：维度名+分数 */}
+      {/* V3.1 模块 B：精通星环（每组 5 颗，沿各轴向外排列） */}
+      {showStarRing && scores.map((s, i) => {
+        const filled = filledStarsFor(s);
+        return Array.from({ length: 5 }, (_, k) => {
+          const r = starStart + k * starStep;
+          const p = getPoint(angles[i], r);
+          const isFilled = k < filled;
+          return (
+            <circle
+              key={`star-${i}-${k}`}
+              cx={p.x}
+              cy={p.y}
+              r={starR}
+              fill={isFilled ? GOLD : '#ffffff'}
+              stroke={isFilled ? GOLD : GRAY}
+              strokeWidth={isFilled ? 0 : 1}
+            />
+          );
+        });
+      })}
+      {/* 轴标签：维度名 + 主轴徽标 + 等级名称/原始分数 */}
       {scores.map((s, i) => {
         const p = getPoint(angles[i], labelRadius);
+        const scoreLabel = expertMode ? `${s.score}` : getAbilityLevelName(s.score);
+        const isPrimary = s.focus_level === 'primary';
         return (
           <text key={i} x={p.x} y={p.y} fontSize="10" fill="#6b7280" textAnchor="middle" dominantBaseline="middle">
-            {s.dimension_name} {s.score}
+            {isPrimary ? '🌟 ' : ''}{s.dimension_name} {scoreLabel}
           </text>
         );
       })}
@@ -304,6 +439,173 @@ function ShareModal({
   );
 }
 
+// ===== V3.1 模块 D：学习认知详情面板（4 条趋势折线 + 里程碑历史）=====
+
+// 4 个 metric_type 配置：标题 + 颜色 + 接口参数
+const TREND_METRICS: { key: string; label: string; color: string }[] = [
+  { key: TREND_METRIC.HOMEWORK, label: '作业完成档', color: '#10b981' },
+  { key: TREND_METRIC.QUIZ, label: '测验档', color: '#5B9BD5' },
+  { key: TREND_METRIC.MIDTERM_FINAL, label: '期中期末档', color: '#F0B848' },
+  { key: TREND_METRIC.SELF_STUDY_DURATION, label: '自主学习时长档', color: '#E87461' },
+];
+
+// 把趋势条目转为折线图数据点：取最近 6 条并按时间正序（旧→新）
+function buildTrendChartData(entries: AcademicTrendEntry[]) {
+  const recent = entries.slice(0, 6).reverse(); // 后端返回倒序，取前 6 后反转
+  return recent.map((e) => ({
+    week: e.occurred_week ? e.occurred_week.replace(/^\d{4}-W/, 'W') : '·',
+    value: ABC_VALUE_MAP[e.value_abc] ?? 0,
+    label: e.value_abc,
+  }));
+}
+
+// 单条折线图卡片
+function TrendLineCard({ label, color, data }: { label: string; color: string; data: { week: string; value: number; label: string }[] }) {
+  const hasData = data.length > 0;
+  return (
+    <div className="bg-gray-50 rounded-xl p-3">
+      <div className="text-xs font-medium text-text-secondary mb-2">{label}</div>
+      {hasData ? (
+        <ResponsiveContainer width="100%" height={90}>
+          <LineChart data={data} margin={{ top: 4, right: 6, bottom: 0, left: -18 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+            <XAxis
+              dataKey="week"
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis
+              domain={[2, 5]}
+              ticks={[2, 3, 4, 5]}
+              tickFormatter={(v: number) => ABC_LABEL_MAP[v] || ''}
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              width={24}
+            />
+            <Tooltip
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb', padding: '4px 8px' }}
+              formatter={(_value: number, _name: string, item: any) => [`档位 ${item?.payload?.label || '-'}`, label]}
+              labelFormatter={(l) => `周次 ${l}`}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={color}
+              strokeWidth={2}
+              dot={{ r: 3, fill: color }}
+              activeDot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      ) : (
+        <div className="h-[90px] flex items-center justify-center text-xs text-text-tertiary">暂无数据</div>
+      )}
+    </div>
+  );
+}
+
+// 学习认知详情面板：4 条折线 + 里程碑历史（最近 5 条）
+function LearningDetailPanel({ childId }: { childId: number }) {
+  const [loading, setLoading] = useState(true);
+  const [trendMap, setTrendMap] = useState<Record<string, AcademicTrendEntry[]>>({});
+  const [milestones, setMilestones] = useState<AcademicMilestone[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      setLoading(true);
+      try {
+        // 并行拉取 4 条趋势 + 里程碑历史；任一失败不阻塞其它
+        const [hw, quiz, mid, self, ms] = await Promise.all([
+          academicApi.getTrends(childId, TREND_METRIC.HOMEWORK, 6).catch(() => [] as AcademicTrendEntry[]),
+          academicApi.getTrends(childId, TREND_METRIC.QUIZ, 6).catch(() => [] as AcademicTrendEntry[]),
+          academicApi.getTrends(childId, TREND_METRIC.MIDTERM_FINAL, 6).catch(() => [] as AcademicTrendEntry[]),
+          academicApi.getTrends(childId, TREND_METRIC.SELF_STUDY_DURATION, 6).catch(() => [] as AcademicTrendEntry[]),
+          academicApi.getMilestones(childId, 5).catch(() => [] as AcademicMilestone[]),
+        ]);
+        if (mounted) {
+          setTrendMap({
+            [TREND_METRIC.HOMEWORK]: hw,
+            [TREND_METRIC.QUIZ]: quiz,
+            [TREND_METRIC.MIDTERM_FINAL]: mid,
+            [TREND_METRIC.SELF_STUDY_DURATION]: self,
+          });
+          setMilestones(ms);
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [childId]);
+
+  // 4 条折线是否全部无数据
+  const allEmpty = Object.values(trendMap).every((arr) => !arr || arr.length === 0);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+      <div className="flex items-center gap-1.5">
+        <BookOpen size={14} className="text-primary" />
+        <span className="text-xs font-semibold text-text-primary">学习认知详情</span>
+      </div>
+
+      {loading ? (
+        <div className="py-4 text-center text-xs text-text-tertiary">加载中...</div>
+      ) : allEmpty ? (
+        <div className="py-4 text-center text-xs text-text-tertiary">
+          暂无学业趋势数据，点击「📚 录好事」记录吧
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {TREND_METRICS.map((m) => (
+            <TrendLineCard
+              key={m.key}
+              label={m.label}
+              color={m.color}
+              data={buildTrendChartData(trendMap[m.key] || [])}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* 里程碑历史（最近 5 条） */}
+      <div className="flex items-center gap-1.5 pt-1">
+        <Star size={14} className="text-amber-400" />
+        <span className="text-xs font-semibold text-text-primary">学业里程碑（最近 5 条）</span>
+      </div>
+      {milestones.length > 0 ? (
+        <div className="space-y-1.5">
+          {milestones.map((m) => (
+            <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
+              <span className="flex items-center gap-0.5 flex-shrink-0">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Star
+                    key={i}
+                    size={10}
+                    className={i < m.star_level ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}
+                  />
+                ))}
+              </span>
+              <span className="text-xs font-medium text-text-primary flex-1 truncate">{m.title}</span>
+              <span className="text-[10px] text-text-tertiary flex-shrink-0">
+                {m.occurred_at ? new Date(m.occurred_at).toLocaleDateString() : ''}
+              </span>
+              <span className="text-[10px] font-medium text-primary flex-shrink-0">+{m.points_awarded}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="py-2 text-center text-xs text-text-tertiary">暂无里程碑记录</div>
+      )}
+    </div>
+  );
+}
+
 export function GrowthPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -331,6 +633,14 @@ export function GrowthPage() {
   const [setupEndDate, setSetupEndDate] = useState('');
   const [setupGoals, setSetupGoals] = useState<Record<number, number>>({});
   const [goalSubmitting, setGoalSubmitting] = useState(false);
+  // 专家模式开关（localStorage 持久化）：关闭显示等级名称，开启显示原始 0-100 分数
+  const [expertMode, setExpertMode] = useState<boolean>(() => localStorage.getItem('growthExpertMode') === 'true');
+  // 蓄势维小贴士弹窗（点击问号图标触发，值为 dimension_code）
+  const [latentTipDim, setLatentTipDim] = useState<string | null>(null);
+  // V3.1 模块 D：能力维度详情展开（点击维度名展开，值为 dimension_id）
+  const [expandedDimId, setExpandedDimId] = useState<number | null>(null);
+  // V3.1 模块 B：大师挑战横幅摘要（进行中数 / 可挑战数）
+  const [masterSummary, setMasterSummary] = useState<{ inProgress: number; available: number } | null>(null);
 
   const children = childStore.children;
   const [selectedChildId, setSelectedChildId] = useState<number | null>(() => {
@@ -351,6 +661,11 @@ export function GrowthPage() {
       setSearchParams({ child_id: String(selectedChildId) }, { replace: true });
     }
   }, [selectedChildId, setSearchParams]);
+
+  // 专家模式选择持久化到 localStorage
+  useEffect(() => {
+    localStorage.setItem('growthExpertMode', String(expertMode));
+  }, [expertMode]);
 
   useEffect(() => {
     let mounted = true;
@@ -503,6 +818,56 @@ export function GrowthPage() {
     });
   })();
 
+  // V3.1：为分数追加 focus_level（API 优先，fallback 兜底）+ 主轴维度统计
+  const childGrade = selectedChild?.derived_grade || selectedChild?.grade || null;
+  const enrichedScores: EnrichedScore[] = scores.map(s => ({
+    ...s,
+    focus_level: resolveFocusLevel(s, childGrade),
+    mastery_stars: resolveMasteryStars(s),
+  }));
+  const primaryDimensions = enrichedScores.filter(s => s.focus_level === 'primary');
+  const primaryCount = primaryDimensions.length;
+
+  // V3.1 模块 B：精通统计
+  const masteredDims = enrichedScores.filter(s => isMastered(s));
+  const masteryCount = masteredDims.length; // 精通维度数（score≥95）
+  const allMastered = enrichedScores.length > 0 && enrichedScores.every(s => isMastered(s));
+  // 小萌芽成长大师：6 维全精通 + 每维≥2 星
+  const isGrandMaster =
+    allMastered &&
+    enrichedScores.length > 0 &&
+    enrichedScores.every(s => s.mastery_stars >= 2);
+
+  // V3.1 模块 B：当孩子 ≥1 项精通时，拉取大师挑战摘要（进行中 / 可挑战）用于顶部横幅
+  // 注意：放在 masteryCount 计算之后、早退 return 之前，保证 hooks 调用顺序稳定
+  useEffect(() => {
+    let mounted = true;
+    if (!selectedChildId || masteryCount < 1) {
+      setMasterSummary(null);
+      return;
+    }
+    async function loadMasterSummary() {
+      try {
+        const [instancesRes, templatesRes] = await Promise.all([
+          masterChallengeApi.getInstances(selectedChildId!),
+          masterChallengeApi.getTemplates(selectedChildId!),
+        ]);
+        if (!mounted) return;
+        // 进行中 = in_progress + submitted（未完成验收）
+        const inProgress = instancesRes.items.filter(
+          (i) => i.status === 'in_progress' || i.status === 'submitted',
+        ).length;
+        setMasterSummary({ inProgress, available: templatesRes.total });
+      } catch {
+        if (mounted) setMasterSummary(null);
+      }
+    }
+    loadMasterSummary();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedChildId, masteryCount]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-bg pb-24 flex items-center justify-center">
@@ -557,6 +922,20 @@ export function GrowthPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
+        {/* V3.1 模块 B：大师挑战横幅（≥1 项精通时显示） */}
+        {masteryCount >= 1 && masterSummary && (masterSummary.inProgress > 0 || masterSummary.available > 0) && (
+          <button
+            onClick={() => navigate(`/master-challenges?child_id=${selectedChild.id}`)}
+            className="w-full mb-3 flex items-center gap-2 p-3 rounded-2xl text-white text-sm font-medium shadow-md transition-transform active:scale-[0.99] bg-gradient-to-r from-amber-400 to-yellow-500"
+          >
+            <span className="text-base">⭐</span>
+            <span className="flex-1 text-left">
+              大师挑战 {masterSummary.inProgress} 个进行中 / {masterSummary.available} 个可挑战
+            </span>
+            <ChevronRight size={16} />
+          </button>
+        )}
+
         {/* 1. 阶段目标（三按钮 + 单一进度条 + 阶段标签） */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
           <div className="flex items-center justify-between">
@@ -641,9 +1020,22 @@ export function GrowthPage() {
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-text-primary">成长维度</h2>
-            <span className="text-xs text-text-tertiary">
-              {new Date().toLocaleDateString()} 更新
-            </span>
+            <div className="flex items-center gap-3">
+              {/* 专家模式开关：关闭显示等级名称，开启显示原始分数 */}
+              <button
+                onClick={() => setExpertMode(v => !v)}
+                className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-primary transition-colors"
+                title="开启后显示原始 0-100 分数"
+              >
+                <span className={expertMode ? 'text-primary font-medium' : ''}>专家模式</span>
+                <span className={`relative inline-block w-7 h-4 rounded-full transition-colors ${expertMode ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${expertMode ? 'translate-x-3' : ''}`} />
+                </span>
+              </button>
+              <span className="text-xs text-text-tertiary">
+                {new Date().toLocaleDateString()} 更新
+              </span>
+            </div>
           </div>
 
           {scores.length > 0 ? (
@@ -651,33 +1043,96 @@ export function GrowthPage() {
               {/* 雷达图 + IP 形象区 */}
               <div className="flex items-center gap-2">
                 <div className="flex-shrink-0">
-                  <RadarChartSVG scores={scores} />
+                  <RadarChartSVG scores={enrichedScores} expertMode={expertMode} />
                 </div>
                 <div className="flex-1 flex flex-col items-center gap-2">
-                  <IPPAvatar growthIndex={growthIndex} expression="proud" size={64} />
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary">
-                    Lv.{levelInfo.level} {levelInfo.name}
-                  </span>
+                  {/* 小萌芽成长大师：金色藤叶头像框 */}
+                  <div
+                    className={`relative ${isGrandMaster ? 'p-1 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 shadow-lg shadow-amber-400/40' : ''}`}
+                  >
+                    <IPPAvatar growthIndex={growthIndex} expression="proud" size={64} />
+                    {isGrandMaster && (
+                      <span className="absolute -top-1.5 -right-1 text-sm select-none" title="成长大师">🌿</span>
+                    )}
+                  </div>
+                  {/* 成长指数精通徽章：≥1 项精通时替换数字等级展示 */}
+                  {masteryCount >= 1 ? (
+                    <MasteryBadge masteryCount={masteryCount} isGrandMaster={isGrandMaster} />
+                  ) : (
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary">
+                      Lv.{levelInfo.level} {levelInfo.name}
+                    </span>
+                  )}
                   <span className="text-xs text-text-tertiary">成长值 {selectedChild.balance}</span>
                 </div>
               </div>
 
+              {/* 本阶段可冲刺精通进度提示 */}
+              {primaryCount > 0 && (
+                <p className="text-xs text-text-tertiary mt-2 text-center leading-relaxed">
+                  本阶段可冲刺精通：<span className="text-primary font-medium">{primaryCount}/6 项</span>
+                  <span className="text-text-tertiary">（{primaryDimensions.map(d => d.dimension_name).join(' · ')}）</span>
+                </p>
+              )}
+
               {/* 维度评分列表 */}
               <div
                 className="grid gap-1 mt-3"
-                style={{ gridTemplateColumns: `repeat(${scores.length}, 1fr)` }}
+                style={{ gridTemplateColumns: `repeat(${enrichedScores.length}, 1fr)` }}
               >
-                {scores.map((s, i) => (
+                {enrichedScores.map((s, i) => (
                   <div key={s.dimension_id} className="flex flex-col items-center gap-0.5">
                     <div
                       className="w-2 h-2 rounded-full"
                       style={{ backgroundColor: getDimensionColor(i) }}
                     />
-                    <span className="text-xs font-semibold text-text-primary">{s.score}</span>
-                    <span className="text-[10px] text-text-tertiary">{s.dimension_name}</span>
+                    {/* 主轴维显示分数/等级 */}
+                    <span className="text-xs font-semibold text-text-primary">
+                      {expertMode ? s.score : getAbilityLevelName(s.score)}
+                    </span>
+                    {/* V3.1 模块 D：维度名可点击展开详情面板（学习认知维度展示学业趋势+里程碑） */}
+                    <button
+                      onClick={() =>
+                        setExpandedDimId((cur) => (cur === s.dimension_id ? null : s.dimension_id))
+                      }
+                      className="text-[10px] text-text-tertiary flex items-center gap-0.5 hover:text-primary transition-colors"
+                      title={`查看${s.dimension_name}详情`}
+                    >
+                      {s.focus_level === 'primary' && <span title="本阶段重点">🌟</span>}
+                      {s.dimension_name}
+                      {(s.dimension_code === 'learning' || s.dimension_id === 4) && (
+                        <ChevronDown
+                          size={10}
+                          className={expandedDimId === s.dimension_id ? 'rotate-180 transition-transform' : 'transition-transform'}
+                        />
+                      )}
+                    </button>
+                    {/* 蓄势维「🔒 成长中」标签 + 问号小贴士 */}
+                    {s.focus_level === 'latent' && (
+                      <button
+                        onClick={() => setLatentTipDim(s.dimension_code)}
+                        className="flex items-center gap-0.5 text-[9px] text-text-tertiary hover:text-primary transition-colors mt-0.5"
+                      >
+                        <span>🔒成长中</span>
+                        <HelpCircle size={10} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
+
+              {/* V3.1 模块 D：学习认知维度详情面板（4 条趋势折线 + 里程碑历史） */}
+              {expandedDimId !== null && (
+                (() => {
+                  const dim = enrichedScores.find(
+                    (s) =>
+                      s.dimension_id === expandedDimId &&
+                      (s.dimension_code === 'learning' || s.dimension_id === 4),
+                  );
+                  if (!dim || !selectedChildId) return null;
+                  return <LearningDetailPanel childId={selectedChildId} />;
+                })()
+              )}
             </>
           ) : (
             <div className="h-48 flex items-center justify-center text-text-tertiary text-sm">
@@ -887,6 +1342,34 @@ export function GrowthPage() {
                 {goalSubmitting ? '保存中...' : '保存'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 蓄势维小贴士弹窗 */}
+      {latentTipDim && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setLatentTipDim(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-sm p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-text-primary text-base flex items-center gap-1.5">
+                <span>🔒</span> 成长中
+              </h3>
+              <button
+                onClick={() => setLatentTipDim(null)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-sm text-text-secondary leading-relaxed">
+              {LATENT_TIPS[latentTipDim] || DEFAULT_LATENT_TIP}
+            </p>
           </div>
         </div>
       )}

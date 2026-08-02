@@ -5,6 +5,7 @@ import { useChildStore } from '../stores/childStore';
 import * as tasksService from '../services/tasks';
 import type { Task, TaskStatus } from '../services/tasks';
 import type { TaskCategory } from '../types';
+import { AcademicMilestoneModal } from '../components/AcademicMilestoneModal';
 
 const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any }[] = [
   { id: 'all', label: '全部', icon: FileText },
@@ -31,6 +32,8 @@ export function TaskListPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 学业里程碑录入弹窗（V3.1 模块 D：录一件学业上的好事）
+  const [showAcademicModal, setShowAcademicModal] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -140,12 +143,22 @@ export function TaskListPage() {
                 {currentChild.nickname} 的所有任务
               </p>
             </div>
-            <button
-              onClick={() => navigate('/tasks/new')}
-              className="flex items-center gap-1 px-3 py-2 bg-white/20 text-white text-sm rounded-xl hover:bg-white/30 transition-colors"
-            >
-              <Plus size={16} /> 新建
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAcademicModal(true)}
+                className="flex items-center gap-1 px-3 py-2 bg-white/20 text-white text-sm rounded-xl hover:bg-white/30 transition-colors"
+                title="录一件学业上的好事"
+              >
+                <span>📚</span>
+                <span className="hidden sm:inline">录好事</span>
+              </button>
+              <button
+                onClick={() => navigate('/tasks/new')}
+                className="flex items-center gap-1 px-3 py-2 bg-white/20 text-white text-sm rounded-xl hover:bg-white/30 transition-colors"
+              >
+                <Plus size={16} /> 新建
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-4 gap-2 mt-5">
@@ -283,12 +296,30 @@ export function TaskListPage() {
         )}
       </div>
 
-      <button
-        onClick={() => navigate('/tasks/new')}
-        className="fixed bottom-24 right-4 w-14 h-14 bg-primary text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center z-40"
-      >
+      <div className="fixed bottom-24 right-4 flex flex-col items-center gap-3 z-40">
+        {/* V3.1 模块 D：录一件学业上的好事（圆形小按钮） */}
+        <button
+          onClick={() => setShowAcademicModal(true)}
+          className="w-12 h-12 bg-amber-500 text-white rounded-full shadow-lg hover:shadow-xl hover:bg-amber-600 transition-all flex items-center justify-center"
+          title="录一件学业上的好事"
+          aria-label="录一件学业上的好事"
+        >
+          <span className="text-xl leading-none">📚</span>
+        </button>
+        <button
+          onClick={() => navigate('/tasks/new')}
+          className="w-14 h-14 bg-primary text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center"
+        >
           <Plus size={24} />
         </button>
+      </div>
+
+      {/* 学业里程碑录入弹窗 */}
+      <AcademicMilestoneModal
+        open={showAcademicModal}
+        childId={currentChild?.id ?? null}
+        onClose={() => setShowAcademicModal(false)}
+      />
     </div>
   );
 }

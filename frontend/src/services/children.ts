@@ -2,18 +2,24 @@ import { request } from './api';
 
 export interface Child {
   id: number;
-  familyId: number;
+  family_id: number;
+  familyId?: number;
   role: 'child';
   nickname: string;
   avatar?: string;
   gender?: 0 | 1;
-  birthday?: string;
-  grade?: number; // 1-6 年级
-  age?: number;
+  birthday?: string | null;
+  grade?: number | null; // 手动覆盖值，展示时优先 derived_grade
+  grade_overridden?: boolean;
+  age?: number | null;
   hobbies?: string; // JSON 数组字符串
   balance: number;
   created_at?: string;
   updated_at?: string;
+  // 后端派生字段（滚动计算，前端直接用）
+  derived_age?: number;
+  derived_grade?: number;
+  is_birthday_today?: boolean;
 }
 
 export interface AddChildInput {
@@ -21,6 +27,7 @@ export interface AddChildInput {
   gender?: 0 | 1;
   birthday?: string;
   grade?: number;
+  grade_overridden?: boolean;
   age?: number;
   hobbies?: string; // JSON 数组字符串
 }
@@ -47,7 +54,7 @@ export async function addChild(input: AddChildInput): Promise<Child> {
   });
 }
 
-export async function updateChild(id: number, input: Partial<AddChildInput> & { avatar?: string }): Promise<Child> {
+export async function updateChild(id: number, input: Partial<AddChildInput> & { avatar?: string; grade_overridden?: boolean }): Promise<Child> {
   return request<Child>({
     method: 'PUT',
     url: `/children/${id}`,

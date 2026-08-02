@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Check, Sparkles, Target } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Sparkles, Target, Award, BookOpen } from 'lucide-react';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
@@ -27,6 +27,45 @@ const HOBBY_TAGS = [
 function gradeToLevel(grade: number): string {
   const map: Record<number, string> = { 1: 'L1', 2: 'L2', 3: 'L3', 4: 'L4', 5: 'L5', 6: 'L6' };
   return map[grade] || 'L1';
+}
+
+// 前端与后端一致的周岁计算
+export function computeAge(birthdayISO: string): number {
+  const b = new Date(birthdayISO);
+  const now = new Date();
+  if (isNaN(b.getTime())) return 0;
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age < 0 ? 0 : age;
+}
+
+// 前端与后端一致的 9/1 入学规则年级推算（0=幼儿园/未入学, 1-6 小学）
+export function computeGrade(birthdayISO: string): number {
+  const b = new Date(birthdayISO);
+  const now = new Date();
+  if (isNaN(b.getTime())) return 0;
+  const enrollAge = 6;
+  let baseYear = now.getFullYear();
+  if (now.getMonth() + 1 < 9) baseYear--;
+  let enrollYear = b.getFullYear() + enrollAge;
+  if (b.getMonth() + 1 >= 9) enrollYear++;
+  let g = (baseYear - enrollYear) + 1;
+  if (g < 0) g = 0;
+  if (g > 6) g = 6;
+  return g;
+}
+
+function gradeName(g: number): string {
+  if (g <= 0) return '幼儿园';
+  return ['一', '二', '三', '四', '五', '六'][g - 1] + '年级';
+}
+
+function formatBirthdayMD(birthdayISO: string | null | undefined): string {
+  if (!birthdayISO) return '';
+  const d = new Date(birthdayISO);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
 // 各档位题数（用于 Step 5 预告，实际以后端返回为准）
@@ -63,7 +102,7 @@ function RadarChartSVG({ scores }: { scores: ChildAbilityScore[] }) {
   const dataPolygonStr = dataPoints.map((p) => `${p.x},${p.y}`).join(' ');
 
   return (
-    <svg width={180} height={180} viewBox={`0 0 ${size} ${size}`}>
+    <svg width={220} height={180} viewBox={`0 0 ${size} ${size}`}>
       {levels.map((r, i) => (
         <polygon key={i} points={polygonPoints(r)} fill="none" stroke="#e5e7eb" strokeWidth="1" />
       ))}
@@ -103,12 +142,24 @@ export function OnboardingPage() {
 
   const [step, setStep] = useState(initialStep); // 1-6
   const [nickname, setNickname] = useState('');
-  const [age, setAge] = useState<number | null>(null);
-  const [grade, setGrade] = useState<number | null>(null);
+  const [birthday, setBirthday] = useState<string>(''); // YYYY-MM-DD
+  const [age, setAge] = useState<number | null>(null); // 冗余，若用户未提供 birthday 时 fallback
+  const [grade, setGrade] = useState<number | null>(null); // 手动覆盖的 grade（若覆盖）
+  const [gradeOverridden, setGradeOverridden] = useState<boolean>(false);
   const [hobbies, setHobbies] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const level = grade ? gradeToLevel(grade) : 'L1';
+  const onboardingMode = searchParams.get('mode') || 'register'; // 'register' (首次) | 'add_child' (从家庭管理添加)
+
+  // 推算的年龄/年级（以 Birthday 为主驱动）
+  const derivedAge = useMemo(() => (birthday ? computeAge(birthday) : age ?? 0), [birthday, age]);
+  const derivedGrade = useMemo(() => {
+    if (gradeOverridden && grade !== null) return grade;
+    if (birthday) return computeGrade(birthday);
+    return grade ?? 0;
+  }, [birthday, grade, gradeOverridden]);
+  // 兼容现有 UI/问卷映射：如果是 0（幼儿园），也需要档位 —— 回退到 L1（保证旧题库可用）
+  const level = gradeToLevel(derivedGrade);
   const questionCount = LEVEL_QUESTION_COUNT[level] || 16;
 
   // Step 6 状态
@@ -163,7 +214,7 @@ export function OnboardingPage() {
     }
   };
 
-  // Step 5: 创建儿童档案并跳转问卷
+  // Step 5: 创建儿童档案并跳转问卷（birthday 主驱动）
   const handleStartQuestionnaire = async () => {
     if (submitting) return;
     setSubmitting(true);
@@ -171,14 +222,18 @@ export function OnboardingPage() {
       const hobbiesJSON = JSON.stringify(hobbies);
       const child = await childStore.addChild({
         nickname: nickname.trim(),
-        age: age || undefined,
-        grade: grade || undefined,
+        birthday: birthday || undefined,
+        grade: (gradeOverridden && grade !== null) ? grade : (birthday ? undefined : grade || undefined),
+        grade_overridden: gradeOverridden,
+        age: birthday ? undefined : (age || undefined),
         hobbies: hobbiesJSON,
       });
       childStore.setCurrentChildId(child.id);
       toast.success('档案创建成功！');
       // 增加 return=onboarding 参数，问卷完成后返回 Onboarding Step 6
-      navigate(`/questionnaire?stage=register&level=${level}&child_id=${child.id}&return=onboarding`, { replace: true });
+      // mode 参数传递：add_child 走完后跳回家庭管理
+      const returnPath = `onboarding&mode=${onboardingMode}`;
+      navigate(`/questionnaire?stage=register&level=${level}&child_id=${child.id}&return=${encodeURIComponent(returnPath)}`, { replace: true });
     } catch (e: any) {
       toast.error(e instanceof Error ? e.message : '创建档案失败');
     } finally {
@@ -239,7 +294,7 @@ export function OnboardingPage() {
   const canNext =
     step === 1 ? true
     : step === 2 ? nickname.trim().length > 0 && nickname.trim().length <= 20
-    : step === 3 ? grade !== null && age !== null
+    : step === 3 ? !!birthday // birthday 必填，作为唯一可信源
     : step === 4 ? hobbies.length > 0
     : true;
 
@@ -299,15 +354,55 @@ export function OnboardingPage() {
             </div>
           )}
 
-          {/* Step 1: 欢迎页 */}
+          {/* Step 1: 欢迎页 + 平台简介（3 卡） */}
           {step === 1 && (
             <div className="text-center">
-              <h1 className="text-2xl font-bold mb-2" style={{ color: '#2D2A26' }}>
-                嗨！我是小萌芽 🌱
+              {/* IP 对话气泡 */}
+              <div className="inline-flex items-start gap-2 px-4 py-2.5 rounded-2xl rounded-tl-sm shadow-sm mb-3" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                <p className="text-sm text-left leading-6" style={{ color: '#2D2A26' }}>
+                  嗨！我是小萌芽 🌱<br />一颗会和小朋友一起「长大」的小种子～
+                </p>
+              </div>
+
+              <h1 className="text-xl font-bold mb-1" style={{ color: '#2D2A26' }}>
+                童劳童得
               </h1>
-              <p className="text-sm mb-8" style={{ color: C.mutedFg }}>
-                一颗会陪着你一起长大的小种子，很高兴认识你！
+              <p className="text-sm mb-6" style={{ color: C.mutedFg }}>
+                陪孩子认真长大的家庭成长伙伴
               </p>
+
+              {/* 3 张能力卡片 */}
+              <div className="space-y-3 text-left">
+                <div className="flex items-start gap-3 p-4 rounded-2xl shadow-sm" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#FFF1E6' }}>
+                    <Target size={18} style={{ color: C.primary }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold mb-0.5" style={{ color: '#2D2A26' }}>任务 · 目标 · 积分</p>
+                    <p className="text-xs leading-5" style={{ color: C.mutedFg }}>完成适合的小任务，积分兑换家庭小奖励</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-4 rounded-2xl shadow-sm" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#FFF1E6' }}>
+                    <Award size={18} style={{ color: C.primary }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold mb-0.5" style={{ color: '#2D2A26' }}>AI 六维能力评估</p>
+                    <p className="text-xs leading-5" style={{ color: C.mutedFg }}>专属问卷了解孩子，AI 个性化生成每日成长任务</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-4 rounded-2xl shadow-sm" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#FFF1E6' }}>
+                    <BookOpen size={18} style={{ color: C.primary }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold mb-0.5" style={{ color: '#2D2A26' }}>阶段回顾 · 成长故事</p>
+                    <p className="text-xs leading-5" style={{ color: C.mutedFg }}>每月回顾能力变化，生成可珍藏的成长故事绘本</p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -333,50 +428,89 @@ export function OnboardingPage() {
             </div>
           )}
 
-          {/* Step 3: 年龄年级收集 */}
+          {/* Step 3: 生日 / 年龄 / 年级（生日为主驱动，每年自动滚动） */}
           {step === 3 && (
             <div className="text-center">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl rounded-tl-sm shadow-sm mb-6" style={{ background: C.card, border: `1px solid ${C.border}` }}>
-                <p className="text-sm" style={{ color: '#2D2A26' }}>小朋友几岁啦？上几年级呢？</p>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl rounded-tl-sm shadow-sm mb-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                <p className="text-sm" style={{ color: '#2D2A26' }}>小朋友是哪一天出生的呀？🎂</p>
               </div>
 
-              {/* 年龄选择 */}
-              <p className="text-xs font-semibold mb-2" style={{ color: C.mutedFg }}>年龄</p>
-              <div className="flex flex-wrap justify-center gap-2 mb-6">
-                {[6, 7, 8, 9, 10, 11, 12].map((a) => (
-                  <button
-                    key={a}
-                    onClick={() => setAge(a)}
-                    className="w-12 h-12 rounded-lg font-bold text-sm transition-all active:scale-95"
-                    style={{
-                      background: age === a ? C.primary : C.muted,
-                      color: age === a ? C.primaryFg : '#2D2A26',
-                      border: `2px solid ${age === a ? C.primary : 'transparent'}`,
-                    }}
-                  >
-                    {a}
-                  </button>
-                ))}
+              {/* 生日日期选择器 */}
+              <p className="text-xs font-semibold mb-2" style={{ color: C.mutedFg }}>出生年月日</p>
+              <input
+                type="date"
+                value={birthday}
+                max={new Date().toISOString().slice(0, 10)}
+                min="2010-01-01"
+                onChange={(e) => {
+                  setBirthday(e.target.value);
+                  // 若用户手动覆盖过，生日改变时默认取消覆盖（让它重新推算）
+                  if (gradeOverridden) setGradeOverridden(false);
+                }}
+                className="w-full max-w-xs mx-auto px-4 py-3 rounded-lg outline-none text-center text-base font-medium block mb-5"
+                style={{ background: C.muted, border: `2px solid ${birthday ? C.primary : C.border}`, color: '#2D2A26' }}
+              />
+
+              {/* 推算显示：年龄 · 年级 · 生日 MD */}
+              <div className="rounded-2xl p-4 mb-4 shadow-sm inline-block min-w-[260px]" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                {birthday ? (
+                  <div>
+                    <p className="text-lg font-bold mb-1" style={{ color: '#2D2A26' }}>
+                      {derivedAge} 岁 · {gradeName(derivedGrade)}
+                    </p>
+                    <p className="text-xs" style={{ color: C.mutedFg }}>
+                      今年 {formatBirthdayMD(birthday)} 过生日 🎂
+                    </p>
+                    <p className="text-[11px] mt-2" style={{ color: C.mutedFg }}>
+                      按 9 月 1 日入学规则自动推算
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs" style={{ color: C.mutedFg }}>选择生日后会自动显示年龄和年级哦</p>
+                )}
               </div>
 
-              {/* 年级选择 */}
-              <p className="text-xs font-semibold mb-2" style={{ color: C.mutedFg }}>年级</p>
-              <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto">
-                {[1, 2, 3, 4, 5, 6].map((g) => (
+              {/* 手动调整年级 */}
+              {birthday && (
+                <div>
                   <button
-                    key={g}
-                    onClick={() => setGrade(g)}
-                    className="py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95"
-                    style={{
-                      background: grade === g ? C.primary : C.muted,
-                      color: grade === g ? C.primaryFg : '#2D2A26',
-                      border: `2px solid ${grade === g ? C.primary : 'transparent'}`,
+                    onClick={() => {
+                      if (!gradeOverridden) {
+                        setGrade(derivedGrade);
+                        setGradeOverridden(true);
+                      } else {
+                        setGradeOverridden(false);
+                      }
                     }}
+                    className="text-xs underline mb-2"
+                    style={{ color: C.primary }}
                   >
-                    {['一', '二', '三', '四', '五', '六'][g - 1]}年级
+                    {gradeOverridden ? '使用系统推算年级' : '不对？手动调整年级'}
                   </button>
-                ))}
-              </div>
+
+                  {gradeOverridden && (
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold mb-2" style={{ color: C.mutedFg }}>选择年级</p>
+                      <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto">
+                        {[0, 1, 2, 3, 4, 5, 6].map((g) => (
+                          <button
+                            key={g}
+                            onClick={() => setGrade(g)}
+                            className="py-2 rounded-lg text-xs font-medium transition-all active:scale-95"
+                            style={{
+                              background: grade === g ? C.primary : C.muted,
+                              color: grade === g ? C.primaryFg : '#2D2A26',
+                              border: `2px solid ${grade === g ? C.primary : 'transparent'}`,
+                            }}
+                          >
+                            {gradeName(g)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -612,11 +746,17 @@ export function OnboardingPage() {
           )}
           {step === 6 && goalSaved && generatedTasks.length > 0 && (
             <button
-              onClick={() => navigate('/growth', { replace: true })}
+              onClick={() => {
+                if (onboardingMode === 'add_child') {
+                  navigate('/settings/family', { replace: true });
+                } else {
+                  navigate('/growth', { replace: true });
+                }
+              }}
               className="w-full py-3.5 rounded-xl font-semibold text-base transition-all active:scale-95 flex items-center justify-center gap-2"
               style={{ background: C.primary, color: C.primaryFg }}
             >
-              进入成长主页
+              {onboardingMode === 'add_child' ? '回到家庭管理' : '进入成长主页'}
               <ChevronRight size={18} />
             </button>
           )}

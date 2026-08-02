@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, TrendingUp, Sparkles, BookOpen } from 'lucide-react';
+import { ChevronLeft, TrendingUp, Sparkles, BookOpen, Trophy } from 'lucide-react';
 import { useChildStore } from '../stores/childStore';
 import { IPPAvatar } from '../components/IPPAvatar';
-import { listStories, parseAbilitySummary } from '../services/growthStory';
+import { listStories, parseAbilitySummary, parsePhotoUrls } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
 import { getGrowthIndex } from '../services/ability';
 
@@ -58,6 +58,8 @@ export function GrowthStoryListPage() {
   const [total, setTotal] = useState<number>(0);
   const [activeFilter, setActiveFilter] = useState<string>('全部');
   const [growthIndex, setGrowthIndex] = useState<number>(0);
+  // V3.1 模块 B：故事类型 segment（全部 / 阶段回顾 / 大师挑战）
+  const [storyType, setStoryType] = useState<'all' | 'cycle' | 'project'>('all');
 
   // 加载故事列表
   const loadStories = async (pageNum: number, append: boolean) => {
@@ -99,14 +101,25 @@ export function GrowthStoryListPage() {
     return { name, count, color: DIMENSION_COLORS[i] };
   });
 
-  // 过滤后的故事
+  // 过滤后的故事：先按 segment 类型筛，再按维度筛
+  const storiesByType = stories.filter((s) => {
+    // type 缺失视为 cycle（兼容旧数据）
+    const t = s.type || 'cycle';
+    if (storyType === 'all') return true;
+    return storyType === t;
+  });
+
   const filteredStories =
     activeFilter === '全部'
-      ? stories
-      : stories.filter((s) => {
+      ? storiesByType
+      : storiesByType.filter((s) => {
           const deltas = parseAbilitySummary(s.ability_summary);
           return deltas.some((d) => d.dimension_name.includes(activeFilter));
         });
+
+  // 大师挑战故事数（用于 segment 计数）
+  const projectCount = stories.filter((s) => (s.type || 'cycle') === 'project').length;
+  const cycleCount = stories.filter((s) => (s.type || 'cycle') === 'cycle').length;
 
   const handleBack = () => navigate(-1);
 
@@ -172,22 +185,45 @@ export function GrowthStoryListPage() {
           </div>
         </div>
 
-        {/* 3. Dimension Filter Tags */}
-        <div className="mt-4 overflow-x-auto flex gap-2 pb-1" style={{ scrollbarWidth: 'none' }}>
-          {['全部', ...DIMENSION_NAMES].map((tag) => (
+        {/* V3.1 模块 B：故事类型 segment 切换 */}
+        <div className="mt-4 flex bg-gray-100 rounded-xl p-1">
+          {[
+            { key: 'all' as const, label: '全部' },
+            { key: 'cycle' as const, label: `阶段回顾 (${cycleCount})` },
+            { key: 'project' as const, label: `大师挑战 (${projectCount})` },
+          ].map((seg) => (
             <button
-              key={tag}
-              onClick={() => setActiveFilter(tag)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                activeFilter === tag
-                  ? 'bg-primary text-white'
-                  : 'bg-card border border-gray-200 text-text-primary'
+              key={seg.key}
+              onClick={() => setStoryType(seg.key)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                storyType === seg.key
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-text-tertiary'
               }`}
             >
-              {tag}
+              {seg.label}
             </button>
           ))}
         </div>
+
+        {/* 3. Dimension Filter Tags（大师挑战故事不展示维度筛选） */}
+        {storyType !== 'project' && (
+          <div className="mt-3 overflow-x-auto flex gap-2 pb-1" style={{ scrollbarWidth: 'none' }}>
+            {['全部', ...DIMENSION_NAMES].map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setActiveFilter(tag)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                  activeFilter === tag
+                    ? 'bg-primary text-white'
+                    : 'bg-card border border-gray-200 text-text-primary'
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 4. Vertical Timeline */}
         {loading ? (
@@ -205,17 +241,84 @@ export function GrowthStoryListPage() {
             {/* vertical line */}
             <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-gray-200" />
             {filteredStories.map((story) => {
+              const isProject = (story.type || 'cycle') === 'project';
               const deltas = parseAbilitySummary(story.ability_summary);
               const totalDelta = deltas.reduce((sum, d) => sum + Math.max(0, d.delta), 0);
               const firstDelta = deltas[0];
               const dimName = firstDelta?.dimension_name || '成长';
-              const dotColor = getDimensionColor(dimName);
+              const dotColor = isProject ? '#F0B848' : getDimensionColor(dimName);
               const bgClass = getDimensionBgClass(dimName);
               const previewContent = story.content
                 .replace(/[#*`-]/g, '')
                 .slice(0, 100);
               const aiComment = story.content.slice(0, 80);
 
+              // 大师挑战故事：项目封面图 + 项目标题（而非周期性通用封面）
+              if (isProject) {
+                const photos = parsePhotoUrls(story.photo_urls);
+                const cover = photos[0];
+                return (
+                  <div key={story.id} className="relative mb-4">
+                    {/* dot */}
+                    <div
+                      className="absolute -left-4 top-3 w-3 h-3 rounded-full border-2 border-white"
+                      style={{ backgroundColor: dotColor }}
+                    />
+                    {/* project card */}
+                    <div
+                      className="bg-card rounded-2xl shadow-sm cursor-pointer active:scale-[0.99] transition-transform overflow-hidden border border-amber-100"
+                      onClick={() => handleStoryClick(story)}
+                    >
+                      {/* 项目封面图 */}
+                      {cover ? (
+                        <div className="aspect-[16/9] bg-amber-50">
+                          <img src={cover} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="aspect-[16/9] bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
+                          <Trophy size={36} className="text-white" />
+                        </div>
+                      )}
+                      <div className="p-4">
+                        {/* top row: 大师挑战标签 + 日期 */}
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-600 flex items-center gap-1">
+                            <Trophy size={10} />
+                            大师挑战
+                          </span>
+                          <span className="text-xs text-text-tertiary">
+                            {formatDate(story.created_at)}
+                          </span>
+                        </div>
+                        {/* 项目标题 */}
+                        <div className="text-sm font-semibold text-text-primary mb-1 line-clamp-2">
+                          {story.title}
+                        </div>
+                        {/* content preview */}
+                        <div className="text-xs text-text-tertiary leading-relaxed mb-2.5 line-clamp-2">
+                          {previewContent}
+                        </div>
+                        {/* bottom row */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1">
+                            <Sparkles size={12} className="text-amber-500" />
+                            <span className="text-xs text-amber-500">
+                              +{totalDelta * 10} 成长值
+                            </span>
+                          </div>
+                          {firstDelta && (
+                            <span className="text-xs text-emerald-600">
+                              {firstDelta.dimension_name} +{firstDelta.delta}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // 周期回顾故事：沿用原有卡片样式
               return (
                 <div key={story.id} className="relative mb-4">
                   {/* dot */}

@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "id": "image-001",
+      "title": "Sprouty 重新设计 - 萌芽英雄",
+      "type": "image",
+      "version": 1,
+      "createdAt": 1785588000000,
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "naturalSize": {
+          "width": 1920,
+          "height": 1920
+        }
+      },
+      "devMetadata": {
+        "imageSrc": "assets/sprouty-redesign-hero.jpg"
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": true,
+    "deviceType": "freeSize",
+    "projectName": "Sprouty IP 形象重新设计"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "renderBlockingErrorCount": 0,
+  "softWarningCount": 0,
+  "errors": [],
+  "warnings": [],
+  "projectFileHashes": {
+    "sprouty-ip-redesign.design": "e1f9b33d5892022b61a5a2ea78e918359c1900c35e4c2f3a6c9b972bda17759d",
+    "runtime-orchestration-summary.json": "6194420f440734da0c8cce9f3e7e6bd453cc80db5047550ecba920dd26edc0e8",
+    "assets/sprouty-redesign-hero.jpg": "6e75670ec252f2c2978fea8e8634dd98e42c8a9ff0a452aafbc31b0e1ad7ee80"
+  },
+  "designDir": "/Users/Admin1/Workhome/GrowPocket/sprouty-ip-redesign",
+  "checkedAt": "2026-08-01T12:55:10.103Z"
+}

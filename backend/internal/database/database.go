@@ -71,6 +71,7 @@ func Init(dbPath string) {
 		&model.TaskTemplate{},
 		&model.TaskRecurringConfig{},
 		&model.AbilityDimension{},
+		&model.GradeDimensionGuide{},
 		&model.ChildAbilityScore{},
 		&model.GrowthCycle{},
 		&model.Goal{},
@@ -79,6 +80,14 @@ func Init(dbPath string) {
 		&model.ChatSession{},
 		&model.ChatMessage{},
 		&model.GrowthStory{},
+		// V3.1 模块 D：学业双层结构（学业趋势档位 + 学业奖励池）
+		&model.AcademicMilestone{},
+		&model.AcademicTrendEntry{},
+		// V3.1 模块 B：大师挑战
+		&model.MasterChallengeTemplate{},
+		&model.MasterChallengeInstance{},
+		&model.MasterChallengeStage{},
+		&model.MasterChallengeSubmission{},
 	)
 	if err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
@@ -97,8 +106,16 @@ func Init(dbPath string) {
 		log.Printf("能力维度 Seed 数据失败: %v", err)
 	}
 
+	if err := seedGradeDimensionGuides(db); err != nil {
+		log.Printf("年级·维度发展矩阵 Seed 数据失败: %v", err)
+	}
+
 	if err := seedQuestionnaires(db); err != nil {
 		log.Printf("问卷数据初始化失败: %v", err)
+	}
+
+	if err := seedMasterChallengeTemplates(db); err != nil {
+		log.Printf("大师挑战模板 Seed 数据失败: %v", err)
 	}
 
 	log.Printf("数据库初始化完成: %s", dbPath)
@@ -208,5 +225,68 @@ func seedAbilityDimensions(db *gorm.DB) error {
 		}
 	}
 	log.Printf("已创建 6 个能力维度")
+	return nil
+}
+
+// seedGradeDimensionGuides 初始化年级·维度发展指南矩阵（6 年级 × 6 维 = 36 行）
+// 维度 ID 1-6 分别对应：1=生活自理, 2=独立自主, 3=动手实践, 4=学习认知, 5=社交情感, 6=身心健康
+// 矩阵数据格式：weight / cap / focus_level(primary 主轴 / secondary 次轴 / latent 蓄势)
+func seedGradeDimensionGuides(db *gorm.DB) error {
+	var count int64
+	db.Model(&model.GradeDimensionGuide{}).Count(&count)
+	if count > 0 {
+		return nil // 幂等：已存在则跳过
+	}
+
+	guides := []model.GradeDimensionGuide{
+		// 年级 1
+		{Grade: 1, DimensionID: 1, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 1, DimensionID: 2, Weight: 0.3, Cap: 40, FocusLevel: "latent"},
+		{Grade: 1, DimensionID: 3, Weight: 1.0, Cap: 80, FocusLevel: "secondary"},
+		{Grade: 1, DimensionID: 4, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 1, DimensionID: 5, Weight: 0.3, Cap: 35, FocusLevel: "latent"},
+		{Grade: 1, DimensionID: 6, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		// 年级 2
+		{Grade: 2, DimensionID: 1, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 2, DimensionID: 2, Weight: 0.4, Cap: 50, FocusLevel: "latent"},
+		{Grade: 2, DimensionID: 3, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 2, DimensionID: 4, Weight: 1.2, Cap: 100, FocusLevel: "secondary"},
+		{Grade: 2, DimensionID: 5, Weight: 1.0, Cap: 70, FocusLevel: "secondary"},
+		{Grade: 2, DimensionID: 6, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		// 年级 3
+		{Grade: 3, DimensionID: 1, Weight: 1.0, Cap: 85, FocusLevel: "secondary"},
+		{Grade: 3, DimensionID: 2, Weight: 1.2, Cap: 75, FocusLevel: "secondary"},
+		{Grade: 3, DimensionID: 3, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 3, DimensionID: 4, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 3, DimensionID: 5, Weight: 1.0, Cap: 85, FocusLevel: "secondary"},
+		{Grade: 3, DimensionID: 6, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
+		// 年级 4
+		{Grade: 4, DimensionID: 1, Weight: 0.4, Cap: 90, FocusLevel: "latent"},
+		{Grade: 4, DimensionID: 2, Weight: 1.2, Cap: 90, FocusLevel: "secondary"},
+		{Grade: 4, DimensionID: 3, Weight: 1.2, Cap: 100, FocusLevel: "secondary"},
+		{Grade: 4, DimensionID: 4, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 4, DimensionID: 5, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 4, DimensionID: 6, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
+		// 年级 5
+		{Grade: 5, DimensionID: 1, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
+		{Grade: 5, DimensionID: 2, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 5, DimensionID: 3, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
+		{Grade: 5, DimensionID: 4, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 5, DimensionID: 5, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 5, DimensionID: 6, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
+		// 年级 6
+		{Grade: 6, DimensionID: 1, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 6, DimensionID: 2, Weight: 2.0, Cap: 100, FocusLevel: "primary"},
+		{Grade: 6, DimensionID: 3, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 6, DimensionID: 4, Weight: 1.2, Cap: 100, FocusLevel: "secondary"},
+		{Grade: 6, DimensionID: 5, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 6, DimensionID: 6, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+	}
+	for i := range guides {
+		if err := db.Create(&guides[i]).Error; err != nil {
+			return err
+		}
+	}
+	log.Printf("已创建 %d 行年级·维度发展指南", len(guides))
 	return nil
 }
