@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, Calendar, MapPin, Users, Trophy, Tag, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import * as communityService from '../services/community';
+import { MobileDatePicker } from '../components/MobileDatePicker';
 
 const activityTypes = [
   { id: 1, label: '捡垃圾', emoji: '🗑️' },
@@ -141,11 +142,12 @@ export default function CreateActivityPage() {
             <label className="text-sm font-medium text-text-primary block mb-2 flex items-center gap-1">
               <Calendar size={14} className="text-primary" /> 活动时间 *
             </label>
-            <input
-              type="datetime-local"
+            <MobileDatePicker
+              mode="datetime"
               value={eventTime}
-              onChange={(e) => setEventTime(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
+              onChange={setEventTime}
+              placeholder="选择活动时间"
+              className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary text-left flex items-center justify-between"
             />
           </div>
         </div>

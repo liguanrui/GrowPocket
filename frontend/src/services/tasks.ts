@@ -1,4 +1,5 @@
-import { request } from './api';
+import api, { request } from './api';
+import type { ApiResponse } from './api';
 import * as growthService from './growth';
 
 // 任务状态：1=进行中 2=待验收 3=已完成 4=已拒绝
@@ -110,13 +111,35 @@ export async function deleteTask(id: number): Promise<void> {
   });
 }
 
-// 提交成果（上传照片或传照片URL）
-export async function submitTask(id: number, photo: string): Promise<Task> {
+// 上传成果媒体（图片或视频），返回可访问 URL
+export async function uploadMedia(file: File): Promise<{ url: string; type: 'image' | 'video' }> {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await api.post<ApiResponse<{ url: string; type: 'image' | 'video' }>>(
+    '/upload',
+    form,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    },
+  );
+  const data = response.data?.data;
+  if (!data?.url) throw new Error('上传失败');
+  return data;
+}
+
+// 提交验收（photo 可选：图片/视频 URL，或空字符串表示无附件）
+export async function submitTask(id: number, photo?: string): Promise<Task> {
   return request<Task>({
     method: 'PUT',
     url: `/tasks/${id}/submit`,
-    data: { photo },
+    data: { photo: photo || '' },
   });
+}
+
+export function isVideoMediaUrl(url?: string): boolean {
+  if (!url) return false;
+  return /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
 }
 
 // 家长验收

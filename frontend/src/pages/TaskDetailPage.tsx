@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, ImageIcon, Star, Calendar, User, Upload, CheckCircle2, XCircle, Edit3, Trash2, Sparkles } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Star, Calendar, Upload, CheckCircle2, XCircle, Trash2, Sparkles, Camera, Images, X, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
+import { isVideoMediaUrl } from '../services/tasks';
 import * as scoreService from '../services/score';
 import { getAbilities } from '../services/ability';
 import type { Task } from '../services/tasks';
@@ -17,35 +18,178 @@ const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> =
   4: { label: '已拒绝', color: 'text-danger', bg: 'bg-danger/10' },
 };
 
-function PhotoUploader({ photoUrl, onUpload, disabled }: { photoUrl?: string; onUpload: (url: string) => void; disabled?: boolean }) {
-  const handleUpload = () => {
-    const mockUrl = `https://picsum.photos/400/300?random=${Date.now()}`;
-    onUpload(mockUrl);
+const MAX_VIDEO_SECONDS = 60;
+
+function getVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      const d = video.duration;
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(d) ? d : 0);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('无法读取视频信息'));
+    };
+    video.src = url;
+  });
+}
+
+function MediaUploader({
+  mediaUrl,
+  onUpload,
+  onClear,
+  disabled,
+}: {
+  mediaUrl?: string;
+  onUpload: (url: string) => void;
+  onClear: () => void;
+  disabled?: boolean;
+}) {
+  const toast = useToastStore();
+  const albumRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const processFile = async (file: File | undefined) => {
+    if (!file || disabled || uploading) return;
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    if (!isVideo && !isImage) {
+      toast.error('请选择图片或视频');
+      return;
+    }
+    if (isVideo) {
+      try {
+        const duration = await getVideoDuration(file);
+        if (duration > MAX_VIDEO_SECONDS + 0.5) {
+          toast.error(`视频不能超过 ${MAX_VIDEO_SECONDS} 秒`);
+          return;
+        }
+      } catch {
+        toast.error('无法读取视频，请换一个文件重试');
+        return;
+      }
+    }
+    setUploading(true);
+    try {
+      const res = await tasksService.uploadMedia(file);
+      onUpload(res.url);
+      toast.success(isVideo ? '视频已上传' : '照片已上传');
+    } catch (e: any) {
+      toast.error(e?.message || '上传失败');
+    } finally {
+      setUploading(false);
+    }
   };
+
+  const isVideo = isVideoMediaUrl(mediaUrl);
 
   return (
     <div>
-      {photoUrl ? (
-        <div className="rounded-2xl overflow-hidden relative group">
-          <img src={photoUrl} alt="成果" className="w-full aspect-[4/3] object-cover" />
+      <input
+        ref={albumRef}
+        type="file"
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          void processFile(f);
+        }}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*,video/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          void processFile(f);
+        }}
+      />
+
+      {mediaUrl ? (
+        <div className="rounded-2xl overflow-hidden relative bg-black/5">
+          {isVideo ? (
+            <video src={mediaUrl} controls className="w-full aspect-[4/3] object-contain bg-black" />
+          ) : (
+            <img src={mediaUrl} alt="成果" className="w-full aspect-[4/3] object-cover" />
+          )}
           {!disabled && (
             <button
-              onClick={handleUpload}
-              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+              type="button"
+              onClick={onClear}
+              className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
+              aria-label="移除"
             >
-              <span className="text-white font-medium">更换照片</span>
+              <X size={16} />
             </button>
           )}
         </div>
       ) : (
-        <button
-          onClick={() => !disabled && handleUpload()}
-          disabled={disabled}
-          className="w-full aspect-[4/3] bg-bg border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-primary/5 transition-colors"
-        >
-          <Upload size={32} className="text-text-tertiary" />
-          <span className="text-sm text-text-secondary">上传任务成果照片</span>
-        </button>
+        <div className="w-full aspect-[4/3] bg-bg border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center gap-3 px-4">
+          {uploading ? (
+            <>
+              <Loader2 size={32} className="text-primary animate-spin" />
+              <span className="text-sm text-text-secondary">上传中...</span>
+            </>
+          ) : (
+            <>
+              <Upload size={28} className="text-text-tertiary" />
+              <span className="text-sm text-text-secondary text-center">
+                上传成果照片或视频（可选）
+              </span>
+              <span className="text-xs text-text-tertiary">视频不超过 60 秒</span>
+              {!disabled && (
+                <div className="flex gap-2 w-full max-w-xs mt-1">
+                  <button
+                    type="button"
+                    onClick={() => cameraRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary text-white text-sm font-medium"
+                  >
+                    <Camera size={16} />
+                    拍摄
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => albumRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-100 text-text-primary text-sm font-medium"
+                  >
+                    <Images size={16} />
+                    相册
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {mediaUrl && !disabled && !uploading && (
+        <div className="flex gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => cameraRef.current?.click()}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-100 text-sm text-text-primary"
+          >
+            <Camera size={14} />
+            重新拍摄
+          </button>
+          <button
+            type="button"
+            onClick={() => albumRef.current?.click()}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-100 text-sm text-text-primary"
+          >
+            <Images size={14} />
+            换一张
+          </button>
+        </div>
       )}
     </div>
   );
@@ -260,9 +404,8 @@ export function TaskDetailPage() {
     .filter((d): d is AbilityDimension => !!d);
 
   const handleSubmit = async () => {
-    if (!photo) return;
     try {
-      const updated = await tasksService.submitTask(task.id, photo);
+      const updated = await tasksService.submitTask(task.id, photo || '');
       setTask(updated);
       toast.success('任务已提交验收');
     } catch (e: any) {
@@ -358,24 +501,30 @@ export function TaskDetailPage() {
 
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
         <div className="bg-card rounded-2xl p-4 shadow-sm">
-          <h3 className="font-semibold text-text-primary mb-3">成果照片</h3>
-          <PhotoUploader
-            photoUrl={photo}
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-text-primary">成果照片 / 视频</h3>
+            <span className="text-xs text-text-tertiary">可选</span>
+          </div>
+          <MediaUploader
+            mediaUrl={photo}
             onUpload={(url) => setPhoto(url)}
-            disabled={task.status === 3}
+            onClear={() => setPhoto(undefined)}
+            disabled={task.status === 2 || task.status === 3}
           />
-          {!photo && (
-            <p className="mt-3 text-sm text-text-tertiary">
-              {task.status === 1
-                ? '上传孩子完成任务的照片后，提交给家长验收'
-                : task.status === 3
-                  ? '任务已完成，照片已存档'
-                  : '尚未提交成果照片'}
-            </p>
-          )}
+          <p className="mt-3 text-sm text-text-tertiary">
+            {task.status === 1 || task.status === 4
+              ? '可从相册选择或直接拍摄；支持图片与 60 秒内视频，不上传也可提交验收'
+              : task.status === 3
+                ? photo
+                  ? '任务已完成，成果已存档'
+                  : '任务已完成（未附带成果媒体）'
+                : photo
+                  ? '已提交成果，等待家长验收'
+                  : '已提交验收（未附带成果媒体）'}
+          </p>
         </div>
 
-        {task.status === 1 && photo && (
+        {task.status === 1 && (
           <button
             onClick={handleSubmit}
             className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
@@ -383,7 +532,7 @@ export function TaskDetailPage() {
             提交验收
           </button>
         )}
-        {task.status === 4 && photo && (
+        {task.status === 4 && (
           <button
             onClick={handleSubmit}
             className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"

@@ -3,6 +3,7 @@ import { X, Star, Loader2, Plus, Trash2, ChevronLeft, Send } from 'lucide-react'
 import { academicApi } from '../services/academic';
 import type { MilestoneTypeOption } from '../services/academic';
 import { useToastStore } from '../stores/toastStore';
+import { MobileDatePicker } from './MobileDatePicker';
 
 // 星级展示：1-4 颗星
 function StarLevel({ level }: { level: number }) {
@@ -207,11 +208,11 @@ export function AcademicMilestoneModal({ open, childId, onClose, onSubmitted }: 
             {/* 发生日期 */}
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">发生日期</label>
-              <input
-                type="date"
+              <MobileDatePicker
                 value={occurredAt}
-                onChange={(e) => setOccurredAt(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-100 text-sm text-text-primary focus:border-primary outline-none"
+                onChange={setOccurredAt}
+                placeholder="选择发生日期"
+                className="w-full px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
               />
             </div>
 

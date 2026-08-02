@@ -412,7 +412,7 @@ export function HomePage() {
   const children = childStore.children;
 
   const [selectedChildId, setSelectedChildId] = useState<number | null>(childStore.currentChildId);
-  const [activeStatus, setActiveStatus] = useState<'all' | TaskStatus>('all');
+  const [activeStatus, setActiveStatus] = useState<'all' | TaskStatus>(1);
   const [tasks, setTasks] = useState<Task[]>([]);
   const hasPrevBalance = uiStore.previousBalance != null;
   const [balance, setBalance] = useState(hasPrevBalance ? uiStore.previousBalance! : 0);

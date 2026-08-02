@@ -67,7 +67,15 @@ export function QuestionnairePage() {
 
   const handleSelect = (optionIdx: number) => {
     if (!currentQ) return;
+    const wasEmpty = answers[currentQ.id] === undefined;
     setAnswers({ ...answers, [currentQ.id]: optionIdx });
+    // 首次作答（空 → 有值）且非最后一题：自动进入下一题；改选不跳转
+    if (wasEmpty && currentIdx < questions.length - 1) {
+      const fromIdx = currentIdx;
+      setTimeout(() => {
+        setCurrentIdx((i) => (i === fromIdx ? i + 1 : i));
+      }, 280);
+    }
   };
 
   const handleNext = () => {
@@ -103,7 +111,7 @@ export function QuestionnairePage() {
         if (modeMatch) mode = modeMatch[1];
         navigate(`/onboarding?step=6&child_id=${childId}&mode=${encodeURIComponent(mode)}`, { replace: true });
       } else {
-        toast.success(`问卷完成！获得 ${res.reward} 积分`);
+        toast.success(res.reward > 0 ? `问卷完成！获得 ${res.reward} 积分` : '问卷完成！');
         setTimeout(() => navigate('/growth'), 1500);
       }
     } catch {
@@ -148,39 +156,18 @@ export function QuestionnairePage() {
             <div className="w-9" />
           </div>
 
-          {/* 关卡节点路径 */}
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide py-1">
-            {questions.map((q, idx) => {
-              const answered = answers[q.id] !== undefined;
-              const isCurrent = idx === currentIdx;
-              const isDone = idx < currentIdx;
-              return (
-                <div
-                  key={q.id}
-                  className="flex-shrink-0 flex items-center"
-                >
-                  <div
-                    className={`rounded-full flex items-center justify-center transition-all ${isCurrent ? 'w-6 h-6' : 'w-4 h-4'}`}
-                    style={{
-                      background: answered || isDone ? C.primaryFg : 'rgba(255,255,255,0.3)',
-                      border: isCurrent ? `2px solid ${C.primaryFg}` : 'none',
-                      animation: isCurrent ? 'pulse 1.5s ease-in-out infinite' : undefined,
-                    }}
-                  >
-                    {answered && !isCurrent && <Check size={10} style={{ color: C.primary }} />}
-                    {isCurrent && (
-                      <span className="text-xs font-bold" style={{ color: C.primary }}>{idx + 1}</span>
-                    )}
-                  </div>
-                  {idx < questions.length - 1 && (
-                    <div
-                      className="w-2 h-0.5 mx-0.5"
-                      style={{ background: isDone ? C.primaryFg : 'rgba(255,255,255,0.3)' }}
-                    />
-                  )}
-                </div>
-              );
-            })}
+          {/* 连续进度条 */}
+          <div
+            className="h-2 rounded-full overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.28)' }}
+          >
+            <div
+              className="h-full rounded-full transition-all duration-300 ease-out"
+              style={{
+                width: `${Math.min(100, Math.max(0, progress))}%`,
+                background: C.primaryFg,
+              }}
+            />
           </div>
           <div className="text-center text-xs mt-2" style={{ color: 'rgba(255,255,255,0.85)' }}>
             第 {currentIdx + 1} / {questions.length} 题 · 进度 {Math.round(progress)}%

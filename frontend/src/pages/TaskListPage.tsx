@@ -27,7 +27,7 @@ const CATEGORY_TABS: { id: 'all' | TaskCategory; label: string; icon: any; color
 export function TaskListPage() {
   const navigate = useNavigate();
   const childStore = useChildStore();
-  const [statusTab, setStatusTab] = useState<'all' | TaskStatus>('all');
+  const [statusTab, setStatusTab] = useState<'all' | TaskStatus>(1);
   const [categoryTab, setCategoryTab] = useState<'all' | TaskCategory>('all');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);

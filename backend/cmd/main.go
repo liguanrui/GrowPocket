@@ -84,6 +84,10 @@ func main() {
 		authorized.PUT("/tasks/:id/submit", taskHandler.SubmitTask)
 		authorized.PUT("/tasks/:id/review", taskHandler.ReviewTask)
 
+		// 通用媒体上传（任务成果图/视频等）
+		uploadHandler := handler.NewUploadHandler(cfg)
+		authorized.POST("/upload", uploadHandler.Upload)
+
 		// AI 任务审核（v3）
 		taskGenHandler := handler.NewTaskGenerationHandler().WithService(taskGenService)
 		authorized.PUT("/tasks/:id/ai-review", taskGenHandler.ReviewAITask)

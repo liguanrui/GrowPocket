@@ -203,29 +203,24 @@ func (h *TaskHandler) SubmitTask(c *gin.Context) {
 
 	photo := ""
 
-	// 尝试 multipart 文件上传
+	// 尝试 multipart 文件上传（图片或视频，可选）
 	file, header, err := c.Request.FormFile("photo")
 	if err == nil && file != nil && header != nil {
 		defer file.Close()
-		url, saveErr := util.SaveUploadedImage(header, h.cfg.UploadDir)
+		url, saveErr := util.SaveUploadedMedia(header, h.cfg.UploadDir)
 		if saveErr != nil {
 			util.FailBadRequest(c, saveErr.Error())
 			return
 		}
 		photo = url
 	} else {
-		// 尝试 JSON body 形式
+		// 尝试 JSON body（photo 可选；空字符串表示无附件提交）
 		var body struct {
 			Photo string `json:"photo"`
 		}
 		if err := c.ShouldBindJSON(&body); err == nil {
 			photo = body.Photo
 		}
-	}
-
-	if photo == "" {
-		util.FailBadRequest(c, "请上传成果照片（photo 字段）")
-		return
 	}
 
 	task, err := h.service.SubmitTask(id, middleware.GetFamilyID(c), photo)

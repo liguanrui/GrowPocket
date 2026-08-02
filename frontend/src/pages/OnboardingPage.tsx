@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Check, Sparkles, Target, Award, BookOpen } from 'lucide-react';
 import { IPPAvatar } from '../components/IPPAvatar';
+import { MobileDatePicker } from '../components/MobileDatePicker';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { getChildScores, getAbilities } from '../services/ability';
-import type { ChildAbilityScore, AbilityDimension } from '../services/ability';
+import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
 import { setGoal, createCycle } from '../services/growthCycle';
 import { generateAITasks } from '../services/tasks';
 import type { Task } from '../services/tasks';
@@ -15,6 +16,49 @@ const C = {
   bg: '#FFFAF4', primary: '#F59E6B', primaryFg: '#FFFFFF',
   card: '#FFFFFF', muted: '#FFF1E6', mutedFg: '#7A7168', border: '#F5E6D3',
 };
+
+// 快速区间预设
+const QUICK_RANGES = [
+  { label: '7天', days: 7 },
+  { label: '14天', days: 14 },
+  { label: '1个月', days: 30 },
+] as const;
+
+// 与 GrowthPage 一致：年级 × 维度权重（primary 为主轴推荐）
+const FOCUS_LEVEL_FALLBACK: Record<number, Record<string, FocusLevel>> = {
+  1: { self_care: 'primary', independence: 'latent', hands_on: 'secondary', learning: 'primary', social_emotional: 'latent', health: 'primary' },
+  2: { self_care: 'primary', independence: 'latent', hands_on: 'primary', learning: 'secondary', social_emotional: 'secondary', health: 'primary' },
+  3: { self_care: 'secondary', independence: 'secondary', hands_on: 'primary', learning: 'primary', social_emotional: 'secondary', health: 'secondary' },
+  4: { self_care: 'latent', independence: 'secondary', hands_on: 'secondary', learning: 'primary', social_emotional: 'primary', health: 'secondary' },
+  5: { self_care: 'secondary', independence: 'primary', hands_on: 'secondary', learning: 'primary', social_emotional: 'primary', health: 'secondary' },
+  6: { self_care: 'primary', independence: 'primary', hands_on: 'primary', learning: 'secondary', social_emotional: 'primary', health: 'primary' },
+};
+
+function resolveDimFocus(code: string, grade: number): FocusLevel {
+  const g = grade >= 1 && grade <= 6 ? grade : 1;
+  return FOCUS_LEVEL_FALLBACK[g]?.[code] || 'secondary';
+}
+
+function formatDateISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function addDays(dateISO: string, days: number): string {
+  const d = new Date(dateISO + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return formatDateISO(d);
+}
+
+function diffDays(startISO: string, endISO: string): number | null {
+  if (!startISO || !endISO) return null;
+  const a = new Date(startISO + 'T00:00:00').getTime();
+  const b = new Date(endISO + 'T00:00:00').getTime();
+  if (isNaN(a) || isNaN(b)) return null;
+  return Math.round((b - a) / (24 * 60 * 60 * 1000));
+}
 
 // 爱好标签清单
 const HOBBY_TAGS = [
@@ -172,20 +216,57 @@ export function OnboardingPage() {
   const [goalSaved, setGoalSaved] = useState(false);
   const [generatedTasks, setGeneratedTasks] = useState<Task[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [step6Grade, setStep6Grade] = useState(0);
+  const [goalsPrefilled, setGoalsPrefilled] = useState(false);
 
-  // Step 6 初始化：加载能力分数和维度
+  // Step 6 初始化：加载能力分数、维度、年级
   useEffect(() => {
     if (step === 6 && urlChildId) {
       getChildScores(urlChildId).then(setScores).catch(() => {});
       getAbilities().then(setDimensions).catch(() => {});
-      // 默认今天起 30 天
-      const now = new Date();
-      const end = new Date(now);
-      end.setDate(end.getDate() + 30);
-      setSetupStartDate(now.toISOString().slice(0, 10));
-      setSetupEndDate(end.toISOString().slice(0, 10));
+      // 默认今天起 30 天（1个月）
+      const start = formatDateISO(new Date());
+      setSetupStartDate(start);
+      setSetupEndDate(addDays(start, 30));
+      // 从孩子档案取年级（问卷返回后本地 birthday 状态可能已丢失）
+      childStore.fetchChildren().then(() => {
+        const child = useChildStore.getState().children.find((c) => c.id === urlChildId);
+        const g = child?.derived_grade ?? child?.grade ?? derivedGrade ?? 1;
+        setStep6Grade(g && g > 0 ? g : 1);
+      }).catch(() => {
+        setStep6Grade(derivedGrade > 0 ? derivedGrade : 1);
+      });
     }
   }, [step, urlChildId]);
+
+  // 按年级预勾选主轴维度（仅首次）
+  useEffect(() => {
+    if (step !== 6 || goalsPrefilled || dimensions.length === 0 || !step6Grade) return;
+    const goals: Record<number, number> = {};
+    for (const dim of dimensions) {
+      if (resolveDimFocus(dim.code, step6Grade) === 'primary') {
+        goals[dim.id] = 20;
+      }
+    }
+    setSetupGoals(goals);
+    setGoalsPrefilled(true);
+  }, [step, dimensions, step6Grade, goalsPrefilled]);
+
+  const activeQuickDays = useMemo(
+    () => diffDays(setupStartDate, setupEndDate),
+    [setupStartDate, setupEndDate],
+  );
+
+  const applyQuickRange = (days: number) => {
+    const start = setupStartDate || formatDateISO(new Date());
+    setSetupStartDate(start);
+    setSetupEndDate(addDays(start, days));
+  };
+
+  const recommendedDims = useMemo(() => {
+    if (!step6Grade || dimensions.length === 0) return [];
+    return dimensions.filter((d) => resolveDimFocus(d.code, step6Grade) === 'primary');
+  }, [dimensions, step6Grade]);
 
   // IP 表情联动
   const ipExpression: 'happy' | 'encourage' | 'think' | 'proud' =
@@ -437,19 +518,20 @@ export function OnboardingPage() {
 
               {/* 生日日期选择器 */}
               <p className="text-xs font-semibold mb-2" style={{ color: C.mutedFg }}>出生年月日</p>
-              <input
-                type="date"
-                value={birthday}
-                max={new Date().toISOString().slice(0, 10)}
-                min="2010-01-01"
-                onChange={(e) => {
-                  setBirthday(e.target.value);
-                  // 若用户手动覆盖过，生日改变时默认取消覆盖（让它重新推算）
-                  if (gradeOverridden) setGradeOverridden(false);
-                }}
-                className="w-full max-w-xs mx-auto px-4 py-3 rounded-lg outline-none text-center text-base font-medium block mb-5"
-                style={{ background: C.muted, border: `2px solid ${birthday ? C.primary : C.border}`, color: '#2D2A26' }}
-              />
+              <div className="w-full max-w-xs mx-auto mb-5">
+                <MobileDatePicker
+                  value={birthday}
+                  max={new Date().toISOString().slice(0, 10)}
+                  min="2010-01-01"
+                  placeholder="选择出生日期"
+                  onChange={(v) => {
+                    setBirthday(v);
+                    if (gradeOverridden) setGradeOverridden(false);
+                  }}
+                  className="w-full px-4 py-3 rounded-lg outline-none text-base font-medium flex items-center justify-between"
+                  style={{ background: C.muted, border: `2px solid ${birthday ? C.primary : C.border}`, color: '#2D2A26' }}
+                />
+              </div>
 
               {/* 推算显示：年龄 · 年级 · 生日 MD */}
               <div className="rounded-2xl p-4 mb-4 shadow-sm inline-block min-w-[260px]" style={{ background: C.card, border: `1px solid ${C.border}` }}>
@@ -618,36 +700,85 @@ export function OnboardingPage() {
                     <Target size={16} style={{ color: C.primary }} />
                     <p className="text-sm font-semibold" style={{ color: '#2D2A26' }}>设置阶段目标</p>
                   </div>
+                  {/* 快速区间 */}
+                  <div className="mb-3">
+                    <p className="text-xs mb-1.5" style={{ color: C.mutedFg }}>快速设置区间</p>
+                    <div className="flex gap-2">
+                      {QUICK_RANGES.map((r) => {
+                        const active = activeQuickDays === r.days;
+                        return (
+                          <button
+                            key={r.days}
+                            type="button"
+                            onClick={() => applyQuickRange(r.days)}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all active:scale-95"
+                            style={{
+                              background: active ? C.primary : C.muted,
+                              color: active ? C.primaryFg : '#2D2A26',
+                              border: `1px solid ${active ? C.primary : C.border}`,
+                            }}
+                          >
+                            {r.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   {/* 日期区间 */}
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     <div>
                       <p className="text-xs mb-1" style={{ color: C.mutedFg }}>开始</p>
-                      <input
-                        type="date"
+                      <MobileDatePicker
                         value={setupStartDate}
-                        onChange={(e) => setSetupStartDate(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                        onChange={(v) => {
+                          setSetupStartDate(v);
+                          if (v && activeQuickDays && QUICK_RANGES.some((r) => r.days === activeQuickDays)) {
+                            setSetupEndDate(addDays(v, activeQuickDays));
+                          }
+                        }}
+                        placeholder="开始日期"
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none flex items-center justify-between"
                         style={{ background: C.muted, border: `1px solid ${C.border}`, color: '#2D2A26' }}
                       />
                     </div>
                     <div>
                       <p className="text-xs mb-1" style={{ color: C.mutedFg }}>结束</p>
-                      <input
-                        type="date"
+                      <MobileDatePicker
                         value={setupEndDate}
-                        onChange={(e) => setSetupEndDate(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                        onChange={setSetupEndDate}
+                        placeholder="结束日期"
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none flex items-center justify-between"
                         style={{ background: C.muted, border: `1px solid ${C.border}`, color: '#2D2A26' }}
                       />
                     </div>
                   </div>
+                  {/* 年级推荐提示 */}
+                  {step6Grade > 0 && recommendedDims.length > 0 && (
+                    <div
+                      className="rounded-xl px-3 py-2.5 mb-3 text-xs leading-relaxed"
+                      style={{ background: 'rgba(245,158,107,0.12)', color: '#2D2A26', border: `1px solid ${C.border}` }}
+                    >
+                      根据<strong>{gradeName(step6Grade)}</strong>推荐优先设置：
+                      {recommendedDims.map((d) => d.name).join('、')}
+                      <span style={{ color: C.mutedFg }}>（已预勾选，可按需调整）</span>
+                    </div>
+                  )}
                   {/* 维度目标列表 */}
                   <div className="space-y-2 mb-4">
                     {dimensions.map((dim) => {
                       const selected = !!setupGoals[dim.id];
                       const targetScore = setupGoals[dim.id] || 20;
+                      const focus = resolveDimFocus(dim.code, step6Grade || 1);
+                      const recommended = focus === 'primary';
                       return (
-                        <div key={dim.id} className="flex items-center gap-2">
+                        <div
+                          key={dim.id}
+                          className="flex items-center gap-2 rounded-xl px-2 py-1.5"
+                          style={{
+                            background: recommended ? 'rgba(245,158,107,0.08)' : 'transparent',
+                            border: recommended ? `1px solid rgba(245,158,107,0.25)` : '1px solid transparent',
+                          }}
+                        >
                           <button
                             onClick={() => toggleGoalDim(dim.id)}
                             className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
@@ -658,7 +789,25 @@ export function OnboardingPage() {
                           >
                             {selected && <Check size={14} style={{ color: C.primaryFg }} />}
                           </button>
-                          <span className="text-sm flex-1" style={{ color: '#2D2A26' }}>{dim.name}</span>
+                          <span className="text-sm flex-1 flex items-center gap-1.5" style={{ color: '#2D2A26' }}>
+                            {dim.name}
+                            {recommended && (
+                              <span
+                                className="text-[10px] px-1.5 py-0.5 rounded-md font-medium"
+                                style={{ background: C.primary, color: C.primaryFg }}
+                              >
+                                推荐
+                              </span>
+                            )}
+                            {focus === 'latent' && (
+                              <span
+                                className="text-[10px] px-1.5 py-0.5 rounded-md"
+                                style={{ background: C.muted, color: C.mutedFg }}
+                              >
+                                蓄势
+                              </span>
+                            )}
+                          </span>
                           <select
                             value={targetScore}
                             onChange={(e) => setGoalScore(dim.id, Number(e.target.value))}

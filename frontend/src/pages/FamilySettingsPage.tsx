@@ -7,6 +7,7 @@ import * as childService from '../services/children';
 import type { Child } from '../services/children';
 import { Users, Plus, Edit2, Trash2, X, Check, Home, Sparkles } from 'lucide-react';
 import { IPPAvatar } from '../components/IPPAvatar';
+import { MobileDatePicker } from '../components/MobileDatePicker';
 import { useToastStore } from '../stores/toastStore';
 
 // 与 OnboardingPage 共用的爱好标签
@@ -163,16 +164,15 @@ function ChildForm({
           {/* 生日 */}
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">生日</label>
-            <input
-              type="date"
+            <MobileDatePicker
               value={birthday}
               max={new Date().toISOString().slice(0, 10)}
               min="2010-01-01"
-              onChange={(e) => {
-                setBirthday(e.target.value);
+              placeholder="选择出生日期"
+              onChange={(v) => {
+                setBirthday(v);
                 if (gradeOverridden && !isEdit) setGradeOverridden(false);
               }}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
             />
           </div>
 
