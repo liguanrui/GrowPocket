@@ -5,7 +5,7 @@ import { useChildStore } from '../stores/childStore';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { listStories, parseAbilitySummary, parsePhotoUrls } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
-import { getGrowthIndex } from '../services/ability';
+// V3.1 思路 C：IP 不再按成长指数切形态，无需 getGrowthIndex import
 
 // 维度颜色映射
 const DIMENSION_COLORS = ['#10b981', '#6DBF7B', '#5B9BD5', '#F0B848', '#E87461'];
@@ -57,7 +57,6 @@ export function GrowthStoryListPage() {
   const [page, setPage] = useState<number>(1);
   const [total, setTotal] = useState<number>(0);
   const [activeFilter, setActiveFilter] = useState<string>('全部');
-  const [growthIndex, setGrowthIndex] = useState<number>(0);
   // V3.1 模块 B：故事类型 segment（全部 / 阶段回顾 / 大师挑战）
   const [storyType, setStoryType] = useState<'all' | 'cycle' | 'project'>('all');
 
@@ -84,11 +83,6 @@ export function GrowthStoryListPage() {
   // 初始加载 + childId 变化时重新加载
   useEffect(() => {
     loadStories(1, false);
-    if (childId) {
-      getGrowthIndex(childId)
-        .then((idx) => setGrowthIndex(idx))
-        .catch(() => setGrowthIndex(0));
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [childId]);
 
@@ -163,7 +157,7 @@ export function GrowthStoryListPage() {
           className="rounded-2xl border border-gray-100 p-4 flex items-center gap-3"
           style={{ background: 'linear-gradient(135deg, #F0FDF4 0%, #FFFFFF 100%)' }}
         >
-          <IPPAvatar growthIndex={growthIndex} expression="happy" size={56} />
+          <IPPAvatar expression="happy" size={56} />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-text-primary">{childName}的故事集</div>
             <div className="text-xs text-text-tertiary mt-0.5">
@@ -353,7 +347,7 @@ export function GrowthStoryListPage() {
 
                     {/* AI comment section */}
                     <div className="bg-gray-50 rounded-lg p-2.5 flex items-start gap-2 mb-2.5">
-                      <IPPAvatar growthIndex={growthIndex} expression="happy" size={24} />
+                      <IPPAvatar expression="happy" size={24} />
                       <div className="text-xs text-text-secondary leading-relaxed flex-1">
                         {aiComment}
                       </div>

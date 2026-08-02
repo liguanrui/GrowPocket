@@ -11,9 +11,10 @@ import { ChildTabs } from '../components/ChildTabs';
 import * as tasksService from '../services/tasks';
 import type { Task } from '../services/tasks';
 import * as communityService from '../services/community';
-import { getChildScores, getGrowthIndex, getAbilities } from '../services/ability';
+import { getChildScores, getAbilities } from '../services/ability';
+// V3.1 思路 C：移除 IP 阶段形态（Lv.X 种子期/萌芽期）+ 成长值 展示，不再需要 getGrowthIndex
 import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
-import { IPPAvatar } from '../components/IPPAvatar';
+// 注意：IPPAvatar 不在此页使用（阶段名+成长值块已移除），如需添加请从 '../components/IPPAvatar' 引入
 import { MobileDatePicker } from '../components/MobileDatePicker';
 import { getCurrentCycle, setGoal, createCycle, updateCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
@@ -32,13 +33,9 @@ function getDimensionColor(index: number): string {
   return DIMENSION_COLORS[index % DIMENSION_COLORS.length];
 }
 
-function getLevelInfo(growthIndex: number) {
-  if (growthIndex < 20) return { level: 1, name: '种子期' };
-  if (growthIndex < 40) return { level: 2, name: '萌芽期' };
-  if (growthIndex < 60) return { level: 3, name: '小苗期' };
-  if (growthIndex < 80) return { level: 4, name: '小树期' };
-  return { level: 5, name: '大树期' };
-}
+// V3.1 思路 C：旧的 5 阶段等级（种子期/萌芽期/小苗期/小树期/大树期）已移除，
+// 精通熟练度 5 星在雷达图外圈星环 + 精通徽章（MasteryBadge，原本页内嵌实现未使用，保留作备用）体现，
+// 成长阶段叙事交给「大师挑战 PBL 项目」模块承载。
 
 // ===== V3.1 模块 A：分阶段能力增长 =====
 
@@ -93,35 +90,6 @@ function resolveMasteryStars(score: ChildAbilityScore): number {
 // 判断维度是否进入精通（score≥95）
 function isMastered(score: { score: number }): boolean {
   return score.score >= 95;
-}
-
-// V3.1 模块 B：成长指数精通徽章
-// masteryCount：精通维度数；isGrandMaster：6 维全精通且每维≥2 星
-function MasteryBadge({ masteryCount, isGrandMaster }: { masteryCount: number; isGrandMaster: boolean }) {
-  if (isGrandMaster) {
-    return (
-      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold text-white shadow-md bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500">
-        <span>🏆</span>小萌芽成长大师
-      </span>
-    );
-  }
-  let label = '';
-  let stars = '';
-  if (masteryCount >= 5) {
-    label = '全面发展';
-    stars = '⭐⭐⭐⭐⭐';
-  } else if (masteryCount >= 3) {
-    label = '三项全能';
-    stars = '⭐⭐⭐';
-  } else {
-    label = '单项精通';
-    stars = '⭐';
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold text-white shadow-md bg-gradient-to-r from-amber-400 to-yellow-500">
-      {label} {stars}
-    </span>
-  );
 }
 
 // 原生 SVG 雷达图（自适应维度数，V3.1 模块 B 追加精通星环 + 金色六边形）
@@ -615,7 +583,6 @@ export function GrowthPage() {
   const isParent = authStore.user?.role === 'parent';
   const toast = useToastStore();
   const [scores, setScores] = useState<ChildAbilityScore[]>([]);
-  const [growthIndex, setGrowthIndex] = useState(0);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showShareModal, setShowShareModal] = useState(false);
   const [stories, setStories] = useState<GrowthStory[]>([]);
@@ -680,9 +647,8 @@ export function GrowthPage() {
       setLoading(true);
       setError(null);
       try {
-        const [scoresResult, growthIndexResult, tasksResult, cycleResult, dimsResult, storiesResult] = await Promise.all([
+        const [scoresResult, tasksResult, cycleResult, dimsResult, storiesResult] = await Promise.all([
           getChildScores(selectedChildId),
-          getGrowthIndex(selectedChildId),
           tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 100 }),
           getCurrentCycle(selectedChildId),
           getAbilities(),
@@ -690,7 +656,6 @@ export function GrowthPage() {
         ]);
         if (mounted) {
           setScores(scoresResult);
-          setGrowthIndex(growthIndexResult);
           setTasks(tasksResult.items);
           setStories(storiesResult.items);
           setDimensions(dimsResult);
@@ -718,10 +683,13 @@ export function GrowthPage() {
   }, [selectedChildId]);
 
   useEffect(() => {
-    if (children.length === 0) {
-      childStore.fetchChildren();
-    }
-  }, [children.length, childStore]);
+    if (children.length > 0) return;
+    if (childStore.loading) return; // 已经在请求中：直接跳过，避免和并发锁叠加产生无限 setState
+    childStore.fetchChildren().catch(() => {
+      // fetchChildren 失败不阻塞成长主页：用户可能是 child 角色，或接口在此时网络差
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [children.length, childStore.loading]);
 
   const handleChildSelect = (id: number) => {
     setSelectedChildId(id);
@@ -799,7 +767,6 @@ export function GrowthPage() {
     ? Math.round(progressList.reduce((sum, p) => sum + p.progress, 0) / progressList.length)
     : 0;
   const completedDimensions = progressList.filter(p => p.progress >= 100).length;
-  const levelInfo = getLevelInfo(growthIndex);
   const stageLabel = cycleName || '未设置阶段';
   const goalText = progressList.length > 0
     ? `提升${progressList.map(p => p.dimension_name).join('、')}能力`
@@ -1041,32 +1008,14 @@ export function GrowthPage() {
                 <RadarChartSVG scores={enrichedScores} />
               </div>
 
-              {/* IP + 等级 + 成长值 + 冲刺简短提示 */}
-              <div className="flex flex-col items-center gap-2 mt-1 mb-1">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={`relative flex-shrink-0 ${isGrandMaster ? 'p-0.5 rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 shadow-md shadow-amber-400/30' : ''}`}
-                  >
-                    <IPPAvatar growthIndex={growthIndex} expression="proud" size={40} />
-                    {isGrandMaster && (
-                      <span className="absolute -top-1 -right-0.5 text-xs select-none" title="成长大师">🌿</span>
-                    )}
-                  </div>
-                  {masteryCount >= 1 ? (
-                    <MasteryBadge masteryCount={masteryCount} isGrandMaster={isGrandMaster} />
-                  ) : (
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary">
-                      Lv.{levelInfo.level} {levelInfo.name}
-                    </span>
-                  )}
-                  <span className="text-xs text-text-tertiary">成长值 {selectedChild.balance}</span>
-                </div>
-                {primaryCount > 0 && (
+              {/* 本阶段重点简短提示（原 Lv.X + 成长值块已移除 — 思路 C） */}
+              {primaryCount > 0 && (
+                <div className="flex justify-center mt-1 mb-1">
                   <p className="text-xs text-text-tertiary">
                     本阶段重点 <span className="text-primary font-medium">{primaryCount}/6</span>
                   </p>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* 查看各维度：折叠列表（分数/蓄势/学习详情） */}
               <button

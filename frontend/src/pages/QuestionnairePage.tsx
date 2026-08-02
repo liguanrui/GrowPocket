@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import { getQuestionnaire, submitQuestionnaire } from '../services/questionnaire';
 import type { Question, Questionnaire as QuestionnaireType, AnswerInput } from '../services/questionnaire';
-import { getGrowthIndex } from '../services/ability';
+// V3.1 思路 C：IP 不再按成长指数切形态，无需 getGrowthIndex import
 import { IPPAvatar } from '../components/IPPAvatar';
 import { useToastStore } from '../stores/toastStore';
 
@@ -27,7 +27,6 @@ export function QuestionnairePage() {
   const [answers, setAnswers] = useState<Record<number, number>>({}); // questionId -> optionIndex
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [growthIndex, setGrowthIndex] = useState(0);
 
   useEffect(() => {
     getQuestionnaire(stage, level)
@@ -42,12 +41,6 @@ export function QuestionnairePage() {
       })
       .catch(() => setLoading(false));
   }, [stage, level]);
-
-  useEffect(() => {
-    if (childId) {
-      getGrowthIndex(childId).then(setGrowthIndex).catch(() => {});
-    }
-  }, [childId]);
 
   const currentQ = questions[currentIdx];
   const progress = questions.length > 0 ? ((currentIdx + 1) / questions.length) * 100 : 0;
@@ -181,7 +174,7 @@ export function QuestionnairePage() {
           {/* IP 提问者 */}
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: C.muted }}>
-              <IPPAvatar growthIndex={growthIndex} expression={ipExpression} size={40} />
+              <IPPAvatar expression={ipExpression} size={40} />
             </div>
             <div
               className="px-4 py-2 rounded-2xl rounded-tl-sm shadow-sm"

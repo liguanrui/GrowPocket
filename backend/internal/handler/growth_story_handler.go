@@ -105,6 +105,8 @@ func (h *GrowthStoryHandler) GenerateStory(c *gin.Context) {
 }
 
 // GetStory GET /api/growth-stories/:cycle_id
+// 注意：路由参数叫 :cycle_id，但语义是成长周期 ID（growth_cycles.id），不是故事主键 id。
+// 查询时强制加 family_id 归属校验，防止越权读别家故事。
 func (h *GrowthStoryHandler) GetStory(c *gin.Context) {
 	cycleID64, err := strconv.ParseUint(c.Param("cycle_id"), 10, 32)
 	if err != nil || cycleID64 == 0 {
@@ -112,8 +114,9 @@ func (h *GrowthStoryHandler) GetStory(c *gin.Context) {
 		return
 	}
 	cycleID := uint(cycleID64)
+	familyID := middleware.GetFamilyID(c)
 
-	story, err := h.service.GetStory(cycleID)
+	story, err := h.service.GetStory(cycleID, familyID)
 	if err != nil {
 		util.FailNotFound(c, err.Error())
 		return

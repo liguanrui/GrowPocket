@@ -277,9 +277,6 @@ export function OnboardingPage() {
     : step === 5 ? 'encourage'
     : 'proud'; // Step 6
 
-  // IP 阶段（Onboarding 期间固定 sprout 萌芽）
-  const ipGrowthIndex = 10;
-
   const handleNext = () => {
     if (step < 5) setStep(step + 1);
   };
@@ -430,7 +427,7 @@ export function OnboardingPage() {
           {step < 6 && (
             <div className="flex flex-col items-center mb-8">
               <div className="w-32 h-32 rounded-2xl shadow-md flex items-center justify-center mb-4" style={{ background: C.muted }}>
-                <IPPAvatar growthIndex={ipGrowthIndex} expression={ipExpression} size={96} animated />
+                <IPPAvatar expression={ipExpression} size={96} />
               </div>
             </div>
           )}
@@ -676,7 +673,7 @@ export function OnboardingPage() {
               {/* IP 头像 + 气泡 */}
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: C.muted }}>
-                  <IPPAvatar growthIndex={10} expression="proud" size={44} />
+                  <IPPAvatar expression="proud" size={44} />
                 </div>
                 <div className="px-4 py-2 rounded-2xl rounded-tl-sm shadow-sm" style={{ background: C.card, border: `1px solid ${C.border}` }}>
                   <p className="text-sm" style={{ color: '#2D2A26' }}>这是小朋友的能力小档案~</p>

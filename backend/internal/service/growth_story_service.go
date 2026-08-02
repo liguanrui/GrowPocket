@@ -146,9 +146,10 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		log.Printf("[GrowthStory] AI 调用失败 cycle=%d: %v", cycleID, err)
 	}
 
-	// 8. 解析 AI 返回（解析失败时降级）
-	title := "周期成长故事"
+	// 8. 解析 AI 返回（解析失败时降级为本地拼接的阶段总结，保证页面有内容可展示）
+	title := fmt.Sprintf("%s的阶段成长故事", childName)
 	content := ""
+	aiOK := false
 	if reply != "" {
 		cleaned := cleanJSONResponse(reply)
 		if strings.HasPrefix(cleaned, "{") {
@@ -159,13 +160,80 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 				}
 				if result.Content != "" {
 					content = result.Content
+					aiOK = true
 				}
 			} else {
 				content = reply
+				aiOK = true
 			}
-		} else {
+		} else if len(reply) > 20 {
+			// AI 正常返回但非 JSON 结构，也视为可用文本，不触发降级
 			content = reply
+			aiOK = true
 		}
+	}
+	// AI 降级：无 Key / 网络失败 / 返回为空 —— 基于任务与能力变化在本地生成一份可读总结，
+	// 保证用户至少能看到阶段框架、任务列表与能力变化，而不是返回 500 让前端白屏。
+	if !aiOK {
+		parts := []string{fmt.Sprintf("## %s 的阶段回顾\n", childName)}
+		startStr := cycle.StartDate.Format("2006 年 1 月 2 日")
+		endStr := ""
+		if !cycle.EndDate.IsZero() {
+			endStr = " 至 " + cycle.EndDate.Format("2006 年 1 月 2 日")
+		}
+		parts = append(parts, fmt.Sprintf("\n这一阶段从 **%s**%s 开始，我们一起记录了 %d 个完成的小任务。\n",
+			startStr, endStr, len(tasks)))
+		if len(tasks) > 0 {
+			parts = append(parts, "\n### 完成的任务\n")
+			for i, t := range tasks {
+				line := fmt.Sprintf("%d. **%s**", i+1, t.Title)
+				if t.Points > 0 {
+					line += fmt.Sprintf("（+%d 积分）", t.Points)
+				}
+				if t.Description != "" {
+					desc := t.Description
+					if len(desc) > 80 {
+						desc = desc[:80] + "…"
+					}
+					line += fmt.Sprintf("：%s", desc)
+				}
+				parts = append(parts, line)
+			}
+			parts = append(parts, "")
+		} else {
+			parts = append(parts, "\n> 这个阶段还没有完成的任务。下次多陪孩子一起完成任务，故事就会更丰富啦。\n")
+		}
+		if len(abilityDeltas) > 0 {
+			parts = append(parts, "\n### 能力变化\n")
+			for _, d := range abilityDeltas {
+				arrow := "↔"
+				if d.Delta > 0 {
+					arrow = "↑+"
+				} else if d.Delta < 0 {
+					arrow = "↓"
+				}
+				line := fmt.Sprintf("- **%s**：%d → %d（%s%d）",
+					d.DimensionName, d.OldScore, d.NewScore, arrow, absInt(d.Delta))
+				if d.TargetScore > 0 {
+					line += fmt.Sprintf("（阶段目标 %d）", d.TargetScore)
+				}
+				parts = append(parts, line)
+			}
+			parts = append(parts, "")
+		}
+		if len(photoURLs) > 0 {
+			parts = append(parts, fmt.Sprintf("\n这一阶段还留下了 %d 张珍贵的照片，都收藏在故事相册里啦。\n", len(photoURLs)))
+		}
+		if err != nil {
+			// AI 本身返回了错误（非空 reply 的降级已在上面覆盖），仅作为家长可见提示
+			log.Printf("[GrowthStory] cycle=%d 使用本地降级故事（AI 失败原因：%v）", cycleID, err)
+			parts = append(parts, "\n---\n> 提示：成长故事使用了本地总结版本。配置 AI_API_KEY 后可以重新生成更有温度的故事。\n")
+		} else {
+			parts = append(parts, "\n---\n> 提示：系统 AI 暂未配置，当前为本地总结版本。配置 AI_API_KEY 后可以重新生成更有温度的故事。\n")
+		}
+		content = strings.Join(parts, "\n")
+		// 降级故事的标题也更接地气一点
+		title = fmt.Sprintf("%s 的阶段回顾（本地方）", childName)
 	}
 
 	// 9. 创建 GrowthStory 记录
@@ -202,15 +270,17 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 	generationFailed = false
 
 	log.Printf("[GrowthStory] 周期 %d 成长故事生成完成 story=%d", cycleID, story.ID)
+	sanitizeGrowthStory(story)
 	return story, nil
 }
 
-// GetStory 按 cycle_id 查询成长故事
-func (s *GrowthStoryService) GetStory(cycleID uint) (*model.GrowthStory, error) {
+// GetStory 按 cycle_id + family_id 查询成长故事（加家庭归属校验，禁止越权读别家故事）
+func (s *GrowthStoryService) GetStory(cycleID, familyID uint) (*model.GrowthStory, error) {
 	var story model.GrowthStory
-	if err := database.DB.Where("cycle_id = ?", cycleID).First(&story).Error; err != nil {
+	if err := database.DB.Where("cycle_id = ? AND family_id = ?", cycleID, familyID).First(&story).Error; err != nil {
 		return nil, errors.New("成长故事不存在")
 	}
+	sanitizeGrowthStory(&story)
 	return &story, nil
 }
 
@@ -222,6 +292,7 @@ func (s *GrowthStoryService) GenerateProjectStory(instanceID uint) (*model.Growt
 	var existing model.GrowthStory
 	if err := database.DB.Where("type = ? AND master_challenge_instance_id = ?", "project", instanceID).First(&existing).Error; err == nil {
 		log.Printf("[GrowthStory] 大师挑战实例 %d 已有项目故事 story=%d，返回已有故事", instanceID, existing.ID)
+		sanitizeGrowthStory(&existing)
 		return &existing, nil
 	}
 
@@ -332,7 +403,62 @@ func (s *GrowthStoryService) GenerateProjectStory(instanceID uint) (*model.Growt
 	}
 
 	log.Printf("[GrowthStory] 大师挑战实例 %d 项目故事生成完成 story=%d", instanceID, story.ID)
+	sanitizeGrowthStory(story)
 	return story, nil
+}
+
+// sanitizeGrowthStory 清理成长故事长文本字段中的非法控制字符，
+// 确保 Go JSON 序列化后的响应能被前端 Node/axios 的严格 JSON.parse 正确解析。
+//
+// 根因背景：旧故事的 Content/Title/AbilitySummary 里可能含有未被转义的 LF/CR/FF/换页符
+// 或其他 C0/C1 控制字符。Gin 的 c.JSON（json.Marshal）通常只对 LF/CR/TAB 做转义，
+// 其他控制字符会以裸码点形式写入 JSON，导致前端 JSON.parse 抛出
+// "Bad control character in string literal" 错误，axios 直接进入 error 分支。
+func sanitizeGrowthStory(s *model.GrowthStory) {
+	if s == nil {
+		return
+	}
+	s.Title = sanitizeTextForJSON(s.Title)
+	s.Content = sanitizeTextForJSON(s.Content)
+	s.AbilitySummary = sanitizeTextForJSON(s.AbilitySummary)
+	s.PhotoUrls = sanitizeTextForJSON(s.PhotoUrls)
+}
+
+// sanitizeTextForJSON 把会破坏 JSON 严格解析的控制字符清理或规范化：
+//   - 移除：U+0000-U+001F 中除了 TAB(9)、LF(10)、CR(13) 之外的所有 C0 控制字符
+//   - 移除：DEL (U+007F) 与 C1 控制字符 (U+0080-U+009F)
+//   - 规范换行：\r\n、\r 统一为 \n；垂直制表 / 换页符 视作换行
+//   - 连续超过 2 个空行压缩为最多 2 个
+func sanitizeTextForJSON(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == 0x09: // TAB
+			b.WriteRune(r)
+		case r == 0x0D: // CR -> LF
+			b.WriteRune('\n')
+		case r == 0x0A: // LF
+			b.WriteRune('\n')
+		case r == 0x0B || r == 0x0C: // 垂直制表 / 换页 -> LF
+			b.WriteRune('\n')
+		case r <= 0x1F:
+			continue
+		case 0x7F <= r && r <= 0x9F:
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	out := b.String()
+	// 连续 3 个及以上空行折叠成 2 个
+	for strings.Contains(out, "\n\n\n") {
+		out = strings.ReplaceAll(out, "\n\n\n", "\n\n")
+	}
+	return out
 }
 
 // buildProjectStoryPrompt 构造大师挑战项目故事生成提示词
@@ -397,6 +523,9 @@ func (s *GrowthStoryService) ListStories(childID, familyID uint, page, pageSize 
 	db.Model(&model.GrowthStory{}).Count(&total)
 	if err := db.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&stories).Error; err != nil {
 		return nil, 0, err
+	}
+	for i := range stories {
+		sanitizeGrowthStory(&stories[i])
 	}
 	return stories, total, nil
 }

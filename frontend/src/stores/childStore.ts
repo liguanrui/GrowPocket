@@ -54,6 +54,8 @@ interface ChildState {
   setCurrentChildId: (id: number | null) => void;
   getCurrentChild: () => Child | null;
   updateBalance: (childId: number, newBalance: number) => void;
+  /** 内部并发锁：同一时刻只允许一个 fetchChildren 飞行中 */
+  _fetchingPromise: Promise<void> | null;
 }
 
 function getInitialChildId(): number | null {
@@ -69,21 +71,42 @@ export const useChildStore = create<ChildState>((set, get) => ({
   children: [],
   currentChildId: getInitialChildId(),
   loading: false,
+  _fetchingPromise: null,
 
   async fetchChildren() {
-    set({ loading: true });
-    try {
-      const list = await childrenService.getChildren();
-      set({ children: list, loading: false });
-      const state = get();
-      const selectedExists = state.currentChildId !== null && list.some((c) => c.id === state.currentChildId);
-      if (!selectedExists && list.length > 0) {
-        get().setCurrentChildId(list[0].id);
-      }
-    } catch (e) {
-      set({ loading: false });
-      throw e;
+    // 并发锁：调用方多次触发 fetchChildren 时，只真正发一次网络请求
+    // （防止 GrowthStoryPage/GrowthPage 等多组件同时 children.length===0 时并发多次 setState 引发无限重渲染）
+    const state0 = get();
+    if (state0.loading || state0._fetchingPromise) {
+      return state0._fetchingPromise || Promise.resolve();
     }
+    set({ loading: true });
+    const promise = (async () => {
+      try {
+        const list = await childrenService.getChildren();
+        const state = get();
+        const selectedExists =
+          state.currentChildId !== null && list.some((c) => c.id === state.currentChildId);
+        // 原子更新：children / loading / currentChildId 一次 set，避免多次触发组件 rerender
+        const next: Partial<ChildState> = { children: list, loading: false };
+        if (!selectedExists && list.length > 0 && state.currentChildId !== list[0].id) {
+          next.currentChildId = list[0].id;
+          localStorage.setItem('currentChildId', String(list[0].id));
+        }
+        set(next as ChildState);
+      } catch (e) {
+        set({ loading: false });
+        throw e;
+      } finally {
+        // 调用链结束前必须清除并发锁
+        const st = get();
+        if (st._fetchingPromise === promise) {
+          set({ _fetchingPromise: null } as Partial<ChildState> as ChildState);
+        }
+      }
+    })();
+    set({ _fetchingPromise: promise } as Partial<ChildState> as ChildState);
+    return promise;
   },
 
   async addChild(input) {

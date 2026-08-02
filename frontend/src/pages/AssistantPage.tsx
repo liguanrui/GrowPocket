@@ -9,7 +9,7 @@ import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
 import * as chatService from '../services/chat';
 import type { ChatMessage, ChatSession } from '../services/chat';
-import { getGrowthIndex } from '../services/ability';
+// V3.1 思路 C：IP 不再按成长指数切形态，无需 getGrowthIndex import
 import { IPPAvatar } from '../components/IPPAvatar';
 import { useToastStore } from '../stores/toastStore';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
@@ -265,7 +265,6 @@ export function AssistantPage() {
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<number>(0);
   const [loading, setLoading] = useState(false);
-  const [growthIndex, setGrowthIndex] = useState(0);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
@@ -310,7 +309,6 @@ export function AssistantPage() {
     if (selectedChildId) {
       loadRecentMessages(selectedChildId);
       loadSessions(selectedChildId);
-      getGrowthIndex(selectedChildId).then(setGrowthIndex).catch(() => {});
     } else {
       setMessages([]);
       setSessions([]);
@@ -629,7 +627,8 @@ export function AssistantPage() {
             /* 空状态 */
             <div className="flex flex-col items-center pt-8">
               <div className="w-32 h-32 rounded-2xl shadow-md mb-6 flex items-center justify-center bg-[#FFF1E6]">
-                <IPPAvatar growthIndex={growthIndex} expression="happy" size={96} animated />
+                {/* 思路 C 专属场景：首屏欢迎挥手，不用 generic happy */}
+                <IPPAvatar animationName="welcome" size={96} />
               </div>
               <h1 className="text-2xl font-bold text-[#2D2A26] mb-1">
                 {getGreeting()}，我是小萌芽
@@ -660,7 +659,7 @@ export function AssistantPage() {
                 <div key={msg.id} className={`flex items-start gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
                     <div className="w-8 h-8 rounded-full bg-[#F59E6B]/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      <IPPAvatar growthIndex={growthIndex} expression={intentToExpression(msg.intent)} size={32} />
+                      <IPPAvatar expression={intentToExpression(msg.intent)} size={32} />
                     </div>
                   )}
                   {msg.role === 'assistant' ? (
@@ -703,7 +702,8 @@ export function AssistantPage() {
               {loading && (
                 <div className="flex items-start gap-2 justify-start">
                   <div className="w-8 h-8 rounded-full bg-[#F59E6B]/10 flex items-center justify-center flex-shrink-0">
-                    <IPPAvatar growthIndex={growthIndex} expression="think" size={32} />
+                    {/* 思路 C 专属场景：AI 思考打字 Loading */}
+                    <IPPAvatar animationName="loading" size={32} />
                   </div>
                   <div className="bg-white border border-[#F5E6D3] rounded-lg rounded-tl-sm shadow-sm px-4 py-3">
                     <div className="flex gap-1 items-center">
