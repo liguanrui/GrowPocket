@@ -92,6 +92,12 @@ func Init(dbPath string) {
 		&model.MasterChallengeInstance{},
 		&model.MasterChallengeStage{},
 		&model.MasterChallengeSubmission{},
+		// V1.3 Phase 1：Cycle 计划 / 跨周期家长任务 / 技能树
+		&model.CyclePlan{},
+		&model.CycleGoalSetting{},
+		&model.ParentTask{},
+		&model.SkillTreeTemplate{},
+		&model.SkillUnlock{},
 	)
 	if err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)

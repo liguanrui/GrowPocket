@@ -41,6 +41,11 @@ func main() {
 	taskGenService := service.NewTaskGenerationService(aiService)
 	taskGenService.StartDailyScheduler()
 
+	// 启动 Cycle 课程表动态调度器（V1.3 Task 10）
+	// 每周日 20:00 唤醒,对处于 Cycle 结束前一周的孩子自动生成下个 Cycle 草稿
+	cyclePlanService := service.NewCyclePlanService()
+	cyclePlanService.StartCycleScheduler()
+
 	// Gin
 	r := gin.Default()
 
@@ -129,6 +134,7 @@ func main() {
 		authorized.PUT("/growth-cycles/:id", growthCycleHandler.UpdateCycle)
 		authorized.POST("/growth-cycles/:id/goals", growthCycleHandler.SetGoal)
 		authorized.GET("/growth-cycles/current/:child_id", growthCycleHandler.GetCurrentCycle)
+		authorized.GET("/growth-cycles/goal/:child_id", growthCycleHandler.GetGoal) // V1.3: 查询阶段目标
 
 		// 任务模板
 		taskTemplateHandler := handler.NewTaskTemplateHandler()
@@ -215,6 +221,20 @@ func main() {
 		authorized.POST("/academic/trends", academicHandler.RecordTrend)
 		authorized.GET("/academic/trends/:child_id", academicHandler.GetTrends)
 		authorized.GET("/academic/allowed-types/:child_id", academicHandler.GetAllowedTypes)
+
+		// Cycle 阶段目标 + 课程表（V1.3 Phase 3）
+		// V1.3 统一入口：阶段目标合并到 /growth-cycles/:id/goals，不再单独暴露 /cycle-goals
+		// cycleGoalHandler := handler.NewCycleGoalHandler()
+		// authorized.POST("/cycle-goals", cycleGoalHandler.SetGoal)
+
+		cyclePlanHandler := handler.NewCyclePlanHandler()
+		authorized.GET("/cycle-plans/preview", cyclePlanHandler.Preview)
+		authorized.POST("/cycle-plans/:id/lock", cyclePlanHandler.Lock)
+		authorized.POST("/cycle-plans/:id/regenerate", cyclePlanHandler.Regenerate)
+		authorized.POST("/cycle-plans/:id/task-adjust", cyclePlanHandler.TaskAdjust)
+		authorized.GET("/cycle-plans/replace-candidates", cyclePlanHandler.ReplaceCandidates)
+		authorized.POST("/cycle-plans/:id/toggle-theme-week", cyclePlanHandler.ToggleThemeWeek)
+		authorized.GET("/cycle-plans/:id/export-pdf", cyclePlanHandler.ExportPDF)
 	}
 
 	log.Printf("服务启动于端口 %s", cfg.Port)

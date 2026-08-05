@@ -7,7 +7,7 @@ import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { getChildScores, getAbilities } from '../services/ability';
 import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
-import { setGoal, createCycle } from '../services/growthCycle';
+import { setGoalByChildId } from '../services/growthCycle';
 import { generateAITasks } from '../services/tasks';
 import type { Task } from '../services/tasks';
 
@@ -319,13 +319,9 @@ export function OnboardingPage() {
     }
   };
 
-  // Step 6B: 保存阶段目标
+  // Step 6B: 保存阶段目标（V1.3.1: 改为 dim_targets 每维度独立提升分）
   const handleSaveGoals = async () => {
     if (!urlChildId) return;
-    if (!setupStartDate || !setupEndDate) {
-      toast.error('请选择时间区间');
-      return;
-    }
     const goalEntries = Object.entries(setupGoals).filter(([, v]) => v > 0);
     if (goalEntries.length === 0) {
       toast.error('请至少为一个维度设置目标');
@@ -333,13 +329,18 @@ export function OnboardingPage() {
     }
     setGoalSaving(true);
     try {
-      const startISO = new Date(setupStartDate + 'T00:00:00').toISOString();
-      const endISO = new Date(setupEndDate + 'T23:59:59').toISOString();
-      const name = `${setupStartDate.slice(5)}-${setupEndDate.slice(5)} 成长阶段`;
-      const cycle = await createCycle(urlChildId, name, startISO, endISO);
-      for (const [dimId, target] of goalEntries) {
-        await setGoal(cycle.id, urlChildId, Number(dimId), target);
+      // V1.3.1: 统一入口，focus_dims + dim_targets（每维度提升分）+ cycle_length_weeks=4
+      const focusDims = goalEntries.map(([dimId]) => Number(dimId));
+      const dimTargets: Record<number, number> = {};
+      for (const [dimId, v] of goalEntries) {
+        dimTargets[Number(dimId)] = v as number;
       }
+      await setGoalByChildId({
+        child_id: urlChildId,
+        cycle_length_weeks: 4,
+        focus_dims: focusDims,
+        dim_targets: dimTargets,
+      });
       toast.success('阶段目标已保存');
       setGoalSaved(true);
     } catch (e: any) {

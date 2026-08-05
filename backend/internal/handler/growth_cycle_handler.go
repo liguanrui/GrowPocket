@@ -23,7 +23,7 @@ func (h *GrowthCycleHandler) CreateCycle(c *gin.Context) {
 	var req struct {
 		ChildID   uint   `json:"child_id" binding:"required"`
 		Name      string `json:"name"`
-		StartDate string `json:"start_date" binding:"required"` // RFC3339
+		StartDate string `json:"start_date" binding:"required"`
 		EndDate   string `json:"end_date" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -54,33 +54,51 @@ func (h *GrowthCycleHandler) CreateCycle(c *gin.Context) {
 }
 
 // SetGoal POST /api/growth-cycles/:id/goals
+// V1.3 统一目标入口：合并原 /api/cycle-goals 能力
+// 接收参数：child_id + cycle_length_weeks(1-4) + focus_dims(1-3) + points_target(50/100/200/300/500)
+// 设置成功后自动调用 CyclePlanService.GenerateCyclePlan 生成课程表
 func (h *GrowthCycleHandler) SetGoal(c *gin.Context) {
-	cycleID64, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil || cycleID64 == 0 {
-		util.FailBadRequest(c, "无效的周期 ID")
-		return
-	}
-	cycleID := uint(cycleID64)
-	var req struct {
-		ChildID     uint `json:"child_id" binding:"required"`
-		DimensionID uint `json:"dimension_id" binding:"required"`
-		TargetScore int  `json:"target_score" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		util.FailBadRequest(c, "请提供 child_id, dimension_id, target_score")
-		return
-	}
 	if middleware.GetRole(c) != "parent" {
 		util.FailForbidden(c, "仅家长可设置阶段目标")
 		return
 	}
 	familyID := middleware.GetFamilyID(c)
-	goal, err := h.service.SetGoal(cycleID, familyID, req.ChildID, req.DimensionID, req.TargetScore)
+
+	var input service.SetGoalInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		util.FailBadRequest(c, "请提供 child_id, cycle_length_weeks, focus_dims, points_target")
+		return
+	}
+
+	cycle, err := h.service.SetGoal(familyID, input)
 	if err != nil {
 		util.FailInternal(c, err.Error())
 		return
 	}
-	util.OK(c, goal)
+	util.OK(c, cycle)
+}
+
+// GetGoal GET /api/growth-cycles/goal/:child_id
+// V1.3 新增：查询当前 active 周期的目标设置（替代原 cycleGoal.ts 的 getGoal 空实现）
+func (h *GrowthCycleHandler) GetGoal(c *gin.Context) {
+	childID64, err := strconv.ParseUint(c.Param("child_id"), 10, 32)
+	if err != nil || childID64 == 0 {
+		util.FailBadRequest(c, "无效的 child_id")
+		return
+	}
+	childID := uint(childID64)
+	familyID := middleware.GetFamilyID(c)
+
+	cycle, err := h.service.GetGoal(childID, familyID)
+	if err != nil {
+		util.FailInternal(c, err.Error())
+		return
+	}
+	if cycle == nil {
+		util.OK(c, gin.H{"cycle": nil})
+		return
+	}
+	util.OK(c, gin.H{"cycle": cycle})
 }
 
 // UpdateCycle PUT /api/growth-cycles/:id
@@ -141,7 +159,6 @@ func (h *GrowthCycleHandler) GetCurrentCycle(c *gin.Context) {
 		util.OK(c, gin.H{"cycle": nil, "goals": []interface{}{}})
 		return
 	}
-	// 查询进度
 	progress, _ := h.service.GetCycleProgress(cycle.ID)
 	util.OK(c, gin.H{"cycle": cycle, "goals": goals, "progress": progress})
 }

@@ -94,6 +94,10 @@ type TaskTemplate struct {
 	Tags          string    `gorm:"size:200" json:"tags,omitempty"`     // 标签，逗号分隔
 	IsSystem      bool      `gorm:"default:false" json:"is_system"`     // 是否系统内置模板
 	AbilityDimensionID uint `gorm:"index" json:"ability_dimension_id,omitempty"`
+	TaskKind      string    `gorm:"size:30;default:'daily_fixed'" json:"task_kind"` // daily_fixed/weekly_recurring/guardian_reqd/collaborative/parent_child/cycle_theme
+	ParentID      *uint     `gorm:"index" json:"parent_id,omitempty"`               // 关联 ParentTask
+	Supervision   string    `gorm:"type:text" json:"supervision,omitempty"`         // JSON 配置 {level: confirm/accompany/doorstep, sign_off_required: true}
+	PrerequisiteCode string `gorm:"size:200" json:"prerequisite_code,omitempty"` // 前置依赖编码 如 skill:S1-G3>=1
 }
 
 // TaskRecurringConfig 循环任务配置表

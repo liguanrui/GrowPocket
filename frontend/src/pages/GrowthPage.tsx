@@ -15,9 +15,9 @@ import { getChildScores, getAbilities } from '../services/ability';
 // V3.1 思路 C：移除 IP 阶段形态（Lv.X 种子期/萌芽期）+ 成长值 展示，不再需要 getGrowthIndex
 import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
 // 注意：IPPAvatar 不在此页使用（阶段名+成长值块已移除），如需添加请从 '../components/IPPAvatar' 引入
-import { MobileDatePicker } from '../components/MobileDatePicker';
-import { getCurrentCycle, setGoal, createCycle, updateCycle } from '../services/growthCycle';
+import { getCurrentCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
+import { GoalSettingModal } from '../components/GoalSettingModal';
 import { listStories, parseAbilitySummary } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
 import { useToastStore } from '../stores/toastStore';
@@ -25,6 +25,7 @@ import { masterChallengeApi } from '../services/masterChallenge';
 import { academicApi } from '../services/academic';
 import type { AcademicTrendEntry, AcademicMilestone } from '../services/academic';
 import { ABC_VALUE_MAP, ABC_LABEL_MAP, TREND_METRIC } from '../services/academic';
+import { AcademicTrendModal } from '../components/AcademicTrendModal';
 
 // 维度颜色映射
 const DIMENSION_COLORS = ['#10b981', '#6DBF7B', '#5B9BD5', '#F0B848', '#E87461'];
@@ -476,10 +477,29 @@ function TrendLineCard({ label, color, data }: { label: string; color: string; d
 }
 
 // 学习认知详情面板：4 条折线 + 里程碑历史（最近 5 条）
-function LearningDetailPanel({ childId }: { childId: number }) {
+function LearningDetailPanel({
+  childId,
+  isParent,
+  onOpenTrend,
+}: {
+  childId: number;
+  isParent: boolean;
+  onOpenTrend: () => void;
+}) {
   const [loading, setLoading] = useState(true);
   const [trendMap, setTrendMap] = useState<Record<string, AcademicTrendEntry[]>>({});
   const [milestones, setMilestones] = useState<AcademicMilestone[]>([]);
+  // 刷新计数器（家长录完一条学习档位后，GrowthPage 会 bump 这个 key，触发重新拉取）
+  const [loadSeq, setLoadSeq] = useState(0);
+
+  // 暴露给父组件的刷新方法：通过 window event（如果父组件 bump 了自定义事件）也能触发
+  useEffect(() => {
+    function onRefresh() {
+      setLoadSeq((n) => n + 1);
+    }
+    window.addEventListener('growth:refresh-learning-panel', onRefresh);
+    return () => window.removeEventListener('growth:refresh-learning-panel', onRefresh);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -511,7 +531,7 @@ function LearningDetailPanel({ childId }: { childId: number }) {
     return () => {
       mounted = false;
     };
-  }, [childId]);
+  }, [childId, loadSeq]);
 
   // 4 条折线是否全部无数据
   const allEmpty = Object.values(trendMap).every((arr) => !arr || arr.length === 0);
@@ -526,8 +546,19 @@ function LearningDetailPanel({ childId }: { childId: number }) {
       {loading ? (
         <div className="py-4 text-center text-xs text-text-tertiary">加载中...</div>
       ) : allEmpty ? (
-        <div className="py-4 text-center text-xs text-text-tertiary">
-          暂无学业趋势数据，点击「📚 录好事」记录吧
+        <div className="py-4 text-center text-xs text-text-tertiary space-y-2">
+          <div>暂无学业趋势数据</div>
+          {isParent ? (
+            <button
+              type="button"
+              onClick={onOpenTrend}
+              className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+            >
+              📝 录入学习档位
+            </button>
+          ) : (
+            <div className="text-[11px] text-text-tertiary">请让家长登录后录入作业/测验档位</div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
@@ -595,12 +626,8 @@ export function GrowthPage() {
   const [cycleStartDate, setCycleStartDate] = useState('');
   const [cycleEndDate, setCycleEndDate] = useState('');
   const [dimensions, setDimensions] = useState<AbilityDimension[]>([]);
-  // 阶段目标设置面板
-  const [showGoalSetup, setShowGoalSetup] = useState(false);
-  const [setupStartDate, setSetupStartDate] = useState('');
-  const [setupEndDate, setSetupEndDate] = useState('');
-  const [setupGoals, setSetupGoals] = useState<Record<number, number>>({});
-  const [goalSubmitting, setGoalSubmitting] = useState(false);
+  // V1.3: 阶段目标设置改为复用 GoalSettingModal 组件（移除原内嵌面板的 setup 相关 state）
+  const [showGoalModal, setShowGoalModal] = useState(false);
   // 专家模式开关（localStorage 持久化）：关闭显示等级名称，开启显示原始 0-100 分数
   const [expertMode, setExpertMode] = useState<boolean>(() => localStorage.getItem('growthExpertMode') === 'true');
   // 蓄势维小贴士弹窗（点击问号图标触发，值为 dimension_code）
@@ -611,6 +638,8 @@ export function GrowthPage() {
   const [showDimList, setShowDimList] = useState(false);
   // V3.1 模块 B：大师挑战横幅摘要（进行中数 / 可挑战数）
   const [masterSummary, setMasterSummary] = useState<{ inProgress: number; available: number } | null>(null);
+  // V3.1 模块 D：学习档位录入弹窗（Growth 页 LearningDetailPanel 空态点进去也能开）
+  const [showTrendModal, setShowTrendModal] = useState(false);
 
   const children = childStore.children;
   const [selectedChildId, setSelectedChildId] = useState<number | null>(() => {
@@ -696,57 +725,15 @@ export function GrowthPage() {
     childStore.setCurrentChildId(id);
   };
 
-  // 打开阶段目标设置面板
+  // V1.3: 打开阶段目标设置（复用 GoalSettingModal 组件，移除原内嵌面板）
   const openGoalSetup = () => {
-    if (cycleId) {
-      setSetupStartDate(cycleStartDate.slice(0, 10));
-      setSetupEndDate(cycleEndDate.slice(0, 10));
-      const goalsMap: Record<number, number> = {};
-      progressList.forEach((p) => {
-        if (p.target_score > 0) goalsMap[p.dimension_id] = p.target_score;
-      });
-      setSetupGoals(goalsMap);
-    } else {
-      const now = new Date();
-      const end = new Date(now);
-      end.setDate(end.getDate() + 30);
-      setSetupStartDate(now.toISOString().slice(0, 10));
-      setSetupEndDate(end.toISOString().slice(0, 10));
-      setSetupGoals({});
-    }
-    setShowGoalSetup(true);
+    setShowGoalModal(true);
   };
 
-  // 提交阶段目标设置
-  const handleSaveGoalSetup = async () => {
+  // V1.3: 目标设定成功后刷新成长周期数据
+  const handleGoalSuccess = async () => {
     if (!selectedChildId) return;
-    if (!setupStartDate || !setupEndDate) {
-      toast.error('请选择时间区间');
-      return;
-    }
-    const goalEntries = Object.entries(setupGoals).filter(([, v]) => v > 0);
-    if (goalEntries.length === 0) {
-      toast.error('请至少为一个维度设置目标');
-      return;
-    }
-    setGoalSubmitting(true);
     try {
-      const startISO = new Date(setupStartDate + 'T00:00:00').toISOString();
-      const endISO = new Date(setupEndDate + 'T23:59:59').toISOString();
-      const name = `${setupStartDate.slice(5)}-${setupEndDate.slice(5)} 成长阶段`;
-
-      let finalCycleId = cycleId;
-      if (!finalCycleId) {
-        const cycle = await createCycle(selectedChildId, name, startISO, endISO);
-        finalCycleId = cycle.id;
-      } else {
-        await updateCycle(finalCycleId, name, startISO, endISO);
-      }
-      for (const [dimId, target] of goalEntries) {
-        await setGoal(finalCycleId!, selectedChildId, Number(dimId), target);
-      }
-      toast.success('阶段目标已保存');
-      setShowGoalSetup(false);
       const cycleResult = await getCurrentCycle(selectedChildId);
       if (cycleResult.cycle) {
         setCycleId(cycleResult.cycle.id);
@@ -755,10 +742,8 @@ export function GrowthPage() {
         setCycleEndDate(cycleResult.cycle.end_date);
         setProgressList(cycleResult.progress || []);
       }
-    } catch (e: any) {
-      toast.error(e.message || '保存失败');
-    } finally {
-      setGoalSubmitting(false);
+    } catch (e) {
+      // 静默处理
     }
   };
 
@@ -1088,7 +1073,11 @@ export function GrowthPage() {
                         </div>
                         {isExpanded && isLearning && selectedChildId && (
                           <div className="mt-2">
-                            <LearningDetailPanel childId={selectedChildId} />
+                            <LearningDetailPanel
+                              childId={selectedChildId}
+                              isParent={isParent}
+                              onOpenTrend={() => setShowTrendModal(true)}
+                            />
                           </div>
                         )}
                       </div>
@@ -1196,118 +1185,13 @@ export function GrowthPage() {
         />
       )}
 
-      {/* 阶段目标设置面板 */}
-      {showGoalSetup && (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold text-text-primary">
-                {cycleId ? '调整阶段目标' : '设置阶段目标'}
-              </h3>
-              <button
-                onClick={() => setShowGoalSetup(false)}
-                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* 时间区间 */}
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-text-primary mb-2">阶段时间区间</label>
-              <div className="flex items-center gap-2">
-                <MobileDatePicker
-                  value={setupStartDate}
-                  onChange={setSetupStartDate}
-                  placeholder="开始"
-                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
-                />
-                <span className="text-text-tertiary">~</span>
-                <MobileDatePicker
-                  value={setupEndDate}
-                  onChange={setSetupEndDate}
-                  placeholder="结束"
-                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
-                />
-              </div>
-              <p className="text-xs text-text-tertiary mt-1.5">阶段结束时将触发成长回顾</p>
-            </div>
-
-            {/* 多维度目标 */}
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-text-primary mb-2">
-                维度目标（可多选）
-              </label>
-              <p className="text-xs text-text-tertiary mb-3">
-                AI 将基于目标和累计完成情况每日自动生成任务
-              </p>
-              <div className="space-y-2">
-                {dimensions.map((dim) => {
-                  const currentScore = scores.find((s) => s.dimension_id === dim.id)?.score || 0;
-                  const target = setupGoals[dim.id] || 0;
-                  return (
-                    <div key={dim.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                      <button
-                        onClick={() => {
-                          setSetupGoals((prev) => {
-                            const next = { ...prev };
-                            if (target > 0) {
-                              delete next[dim.id];
-                            } else {
-                              next[dim.id] = 20;
-                            }
-                            return next;
-                          });
-                        }}
-                        className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                          target > 0 ? 'border-primary bg-primary' : 'border-gray-300 bg-white'
-                        }`}
-                      >
-                        {target > 0 && <Check size={14} className="text-white" />}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-text-primary">{dim.name}</div>
-                        <div className="text-xs text-text-tertiary">当前 {currentScore} 分</div>
-                      </div>
-                      {target > 0 && (
-                        <select
-                          value={target}
-                          onChange={(e) =>
-                            setSetupGoals((prev) => ({ ...prev, [dim.id]: Number(e.target.value) }))
-                          }
-                          className="px-2 py-1 bg-white rounded-lg border border-gray-200 text-sm text-text-primary"
-                        >
-                          {[10, 20, 30, 40, 50, 60, 80, 100].map((v) => (
-                            <option key={v} value={v}>
-                              目标 {v}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowGoalSetup(false)}
-                className="flex-1 py-3 bg-gray-100 text-text-secondary rounded-xl font-medium"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveGoalSetup}
-                disabled={goalSubmitting}
-                className="flex-1 py-3 bg-gradient-to-r from-primary to-amber-500 text-white rounded-xl font-medium disabled:opacity-50"
-              >
-                {goalSubmitting ? '保存中...' : '保存'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* V1.3: 阶段目标设置弹层（复用 GoalSettingModal 组件，统一入口） */}
+      <GoalSettingModal
+        open={showGoalModal}
+        onClose={() => setShowGoalModal(false)}
+        childId={selectedChildId!}
+        onSuccess={handleGoalSuccess}
+      />
 
       {/* 蓄势维小贴士弹窗 */}
       {latentTipDim && (
@@ -1336,6 +1220,17 @@ export function GrowthPage() {
           </div>
         </div>
       )}
+
+      {/* 学习档位录入弹窗 */}
+      <AcademicTrendModal
+        open={showTrendModal}
+        childId={selectedChildId}
+        onClose={() => setShowTrendModal(false)}
+        onSubmitted={() => {
+          // 刷新成长页 LearningDetailPanel 的 4 条折线图
+          window.dispatchEvent(new CustomEvent('growth:refresh-learning-panel'));
+        }}
+      />
     </div>
   );
 }

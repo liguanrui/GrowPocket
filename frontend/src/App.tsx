@@ -4,6 +4,8 @@ import { BottomNav } from './components/BottomNav';
 import { ToastContainer } from './components/Toast';
 import { AssistantPage } from './pages/AssistantPage';
 import { HomePage } from './pages/HomePage';
+import { TaskListPage } from './pages/TaskListPage';
+import { CyclePlanPage } from './pages/CyclePlanPage';
 import { MallPage } from './pages/MallPage';
 import { GrowthPage } from './pages/GrowthPage';
 import { GrowthStoryPage } from './pages/GrowthStoryPage';
@@ -35,13 +37,17 @@ function MainLayout() {
   const navigate = useNavigate();
   const currentPath = window.location.pathname;
   let activeTab: PageKey = 'assistant';
-  if (currentPath.startsWith('/home')) activeTab = 'home';
+  if (currentPath.startsWith('/home') || currentPath.startsWith('/tasks')) activeTab = 'home';
     else if (currentPath === '/growth' || currentPath.startsWith('/growth')) activeTab = 'growth';
     else if (currentPath.startsWith('/community')) activeTab = 'community';
     else if (currentPath.startsWith('/settings') || currentPath === '/family') activeTab = 'settings';
 
   const handleTab = (tab: string) => {
-    navigate(`/${tab === 'assistant' ? 'assistant' : tab}`, { replace: true });
+    const dest =
+      tab === 'assistant' ? '/assistant'
+      : tab === 'home' ? '/tasks'  // V1.3: 底部「任务」tab 指向 TaskListPage(今日任务+周期课程表),而非旧版 HomePage
+      : `/${tab}`;
+    navigate(dest, { replace: true });
   };
 
   return (
@@ -70,6 +76,8 @@ export default function App() {
         <Route index element={<AssistantPage />} />
         <Route path="assistant" element={<AssistantPage />} />
         <Route path="home" element={<HomePage />} />
+        <Route path="tasks" element={<TaskListPage />} />
+        <Route path="cycle-plan" element={<CyclePlanPage />} />
         <Route path="task/:id" element={<TaskDetailPage />} />
         <Route path="tasks/new" element={<CreateTaskPage />} />
         <Route path="mall" element={<MallPage />} />

@@ -234,3 +234,153 @@ export type Reward = {
 export type Child = User;
 export type Member = User;
 export type PointsRecord = Transaction;
+
+// ============ V1.3 新增:任务中心 Cycle 课程表类型 ============
+
+/** Cycle 长度档位(1/2/3/4 周) */
+export type CycleLengthWeeks = 1 | 2 | 3 | 4;
+
+/** Cycle 状态 */
+export type CyclePlanStatus = 'draft' | 'locked' | 'applied' | 'expired';
+
+/** 主题周位置(2-4 周 Cycle 时调整主题周所在周) */
+export type ThemeWeekPosition = 'week1' | 'week2' | 'week3' | 'week4';
+
+/** Cycle 计划快照 */
+export interface CyclePlan {
+  id: number;
+  child_id: number;
+  start_date: string; // ISO 日期 yyyy-mm-dd 周一
+  end_date: string; // = start_date + cycle_length_weeks*7 - 1
+  cycle_length_weeks: CycleLengthWeeks; // V1.3 新增
+  goals_json: CycleGoalsSnapshot | null; // V1.3 新增:阶段目标设定快照
+  status: CyclePlanStatus;
+  theme_week_config: ThemeWeekConfig | null;
+  dimension_ratio_summary: DimensionRatioSummary;
+  daily_instances_json: Record<string, DailyTaskInstance[]>; // key=yyyy-mm-dd
+  lock_version: number;
+  locked_at: string | null;
+  locked_by_parent: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 阶段目标设定快照(存入 cycle_plan.goals_json) */
+export interface CycleGoalsSnapshot {
+  focus_dims: number[];
+  points_target: number;
+  points_target_grade: string; // G1-G6
+}
+
+/** 主题周配置 */
+export interface ThemeWeekConfig {
+  active: boolean;
+  dim: number; // theme_dim_id
+  theme_title: string;
+  start_date: string;
+  end_date: string;
+  position?: ThemeWeekPosition; // V1.3 新增:多周时调整主题周所在周
+}
+
+/** 整 Cycle 维度占比汇总 */
+export interface DimensionRatioSummary {
+  main_dim_pct: number; // 0-1,如 0.62
+  secondary_pct: number;
+  latent_pct: number;
+  theme_dim_contrib: number; // 主题周贡献占比
+}
+
+/** 每日任务实例(Cycle 切片落地后的任务) */
+export interface DailyTaskInstance {
+  id: number;
+  task_template_id: number;
+  title: string;
+  description: string;
+  points: number;
+  difficulty: string;
+  category: string;
+  ability_dimension_id: number;
+  task_kind: TaskKind; // V1.3 新增
+  parent_id?: number | null; // V1.3 新增
+  supervision?: SupervisionConfig | null; // V1.3 新增
+  prerequisite_code?: string; // V1.3 新增
+  locked: boolean; // 家长锁定标记
+  status: 'pending' | 'submitted' | 'completed' | 'rejected';
+  completed_at?: string | null;
+}
+
+/** 周期课程表预览响应 */
+export interface CyclePlanPreviewResponse {
+  cycle_plan: CyclePlan;
+  daily_instances: Record<string, DailyTaskInstance[]>;
+  dimension_ratio: DimensionRatioSummary;
+  theme_week_config: ThemeWeekConfig | null;
+  goals_badge: CycleGoalsSnapshot | null; // V1.3 新增:阶段目标徽标
+  lock_version: number;
+}
+
+/** 任务调整操作类型 */
+export type TaskAdjustOperation =
+  | 'lock'
+  | 'replace'
+  | 'add'
+  | 'remove'
+  | 'escalate_supervision';
+
+/** 任务调整请求 */
+export interface TaskAdjustRequest {
+  daily_task_instance_id: number;
+  operation: TaskAdjustOperation;
+  new_supervision?: SupervisionConfig;
+  replace_with_template_id?: number;
+  add_template_id?: number;
+}
+
+/** 替换候选任务 */
+export interface ReplaceCandidate {
+  id: number;
+  title: string;
+  description: string;
+  points: number;
+  difficulty: string;
+  dimension_id: number;
+}
+
+/** 任务类型枚举(对应 task_template.task_kind) */
+export type TaskKind =
+  | 'daily_fixed' // 每日固定锚任务
+  | 'weekly_recurring' // 每周重复任务
+  | 'guardian_reqd' // 需家长陪同的高风险任务
+  | 'collaborative' // 协作型亲子任务
+  | 'parent_child' // 跨周期父任务的子任务
+  | 'cycle_theme'; // 主题周任务
+
+/** TaskKind 显示信息 */
+export const TaskKindMeta: Record<TaskKind, { label: string; color: string; badge: string }> = {
+  daily_fixed: { label: '每日保底', color: 'bg-blue-100 text-blue-700', badge: '🛡️' },
+  weekly_recurring: { label: '每周重复', color: 'bg-purple-100 text-purple-700', badge: '🔄' },
+  guardian_reqd: { label: '家长陪同', color: 'bg-red-100 text-red-700', badge: '⚠️' },
+  collaborative: { label: '亲子协作', color: 'bg-pink-100 text-pink-700', badge: '👨‍👩‍👧' },
+  parent_child: { label: '跨周期', color: 'bg-amber-100 text-amber-700', badge: '🌱' },
+  cycle_theme: { label: '主题周', color: 'bg-yellow-100 text-yellow-700', badge: '🌟' },
+};
+
+/** 6 维度 ID 常量 */
+export const ABILITY_DIMENSIONS = {
+  SELF_CARE: 1, // 生活自理
+  RESPONSIBILITY: 2, // 责任担当
+  LEARNING: 3, // 学习探索
+  SOCIAL: 4, // 社交协作
+  CREATIVITY: 5, // 创意审美
+  SPORTS: 6, // 运动健康
+} as const;
+
+/** 家长陪同等级 */
+export type SupervisionLevel = 'confirm' | 'accompany' | 'doorstep';
+
+/** 监护配置(存入 task_template.supervision JSON) */
+export interface SupervisionConfig {
+  level: SupervisionLevel;
+  sign_off_required: boolean;
+  notes?: string; // 安全确认书附注
+}

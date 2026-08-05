@@ -26,6 +26,8 @@ export interface Task {
   ability_dimension_id?: number;
   secondary_dimensions?: string; // JSON 如 "[2,5]"
   ai_generated?: boolean;
+  // V1.3 新增:任务类型(对应 cycle_plan 的 task_kind,后端落库后回填)
+  task_kind?: string;
 }
 
 export interface CreateTaskInput {

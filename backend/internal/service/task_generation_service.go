@@ -55,6 +55,16 @@ type learningDimBoost struct {
 // GenerateTasksForChild 为儿童生成每日 AI 任务（三段式混合生成主流程）
 // 不改变函数签名：每日 08:00 scheduler 与 hasTodayAITask 幂等逻辑保持不变
 func (s *TaskGenerationService) GenerateTasksForChild(childID, familyID, createdBy uint, childName string) error {
+	// ===== V1.3 新增:优先读已锁版 Cycle 快照(1-4 周可配置),99% 场景走这个分支 =====
+	cyclePlanService := NewCyclePlanService()
+	today := time.Now()
+	cyclePlan, err := cyclePlanService.GetLockedCyclePlan(childID, today)
+	if err == nil && cyclePlan != nil {
+		// 命中 Cycle 锁版快照,直接切片落地
+		return s.applyCycleSnapshotAndCreateTasks(childID, familyID, createdBy, childName, cyclePlan, today, cyclePlanService)
+	}
+	// ===== Cycle 快照不存在(首次使用/家长未锁版)时 fallback 到 V1.0 的 10 步生成 =====
+
 	// Step 1: 收集上下文（保留现有逻辑）
 	scores, _ := s.ability.GetChildScores(childID, familyID)
 	dimensions, _ := s.ability.ListDimensions()
@@ -728,4 +738,134 @@ func (s *TaskGenerationService) StartDailyScheduler() {
 			s.GenerateForAllChildren()
 		}
 	}()
+}
+
+// ===================== V1.3 新增：Cycle 锁版快照切片落地 =====================
+
+// applyCycleSnapshotAndCreateTasks 从 Cycle 锁版快照切片并创建当日任务实例
+func (s *TaskGenerationService) applyCycleSnapshotAndCreateTasks(
+	childID, familyID, createdBy uint,
+	childName string,
+	cyclePlan *model.CyclePlan,
+	date time.Time,
+	cyclePlanService *CyclePlanService,
+) error {
+	// 1. 从 DailyInstancesJSON 切片当天的任务模板
+	dailyTemplates, err := cyclePlanService.GetDailySlice(cyclePlan, date)
+	if err != nil {
+		return fmt.Errorf("切片 Cycle 当日任务失败: %w", err)
+	}
+	if len(dailyTemplates) == 0 {
+		return nil // 当天没有任务,跳过
+	}
+
+	// 2. 应用家长临时调整覆盖(intraday overrides)
+	dailyTemplates = s.applyIntradayOverrides(dailyTemplates, childID, date)
+
+	// 3. 应用安全黑名单(技能解锁进度变更替换)
+	dailyTemplates = s.applySafeBlacklist(dailyTemplates, childID)
+
+	// 4. 幂等检查:检查今天是否已经为该 child 创建过任务
+	if s.hasTodayAITask(childID, date) {
+		return nil // 已创建,跳过
+	}
+
+	// 5. 为每个模板创建 Task 实例(复用现有 CreateTask 逻辑)
+	for _, tmpl := range dailyTemplates {
+		task := model.Task{
+			FamilyID:           familyID,
+			Title:              tmpl.Title,
+			Description:        tmpl.Description,
+			Points:             tmpl.Points,
+			Status:             model.TaskStatusInProgress,
+			ChildID:            childID,
+			ChildName:          childName,
+			CreatedBy:          createdBy,
+			TemplateID:         tmpl.ID,
+			Category:           tmpl.Category,
+			Difficulty:         tmpl.Difficulty,
+			Frequency:          tmpl.Frequency,
+			AbilityDimensionID: tmpl.AbilityDimensionID,
+			AIGenerated:        true,
+			RuleSanitized:      true, // Cycle 计划已经过 Sanitize,标记为已清洗
+		}
+		if err := database.DB.Create(&task).Error; err != nil {
+			log.Printf("[CycleSnapshot] 创建任务失败 childID=%d templateID=%d: %v", childID, tmpl.ID, err)
+			continue
+		}
+	}
+
+	log.Printf("[CycleSnapshot] childID=%d date=%s 从 Cycle 快照创建 %d 个任务",
+		childID, date.Format("2006-01-02"), len(dailyTemplates))
+	return nil
+}
+
+// applyIntradayOverrides 应用家长临时调整覆盖(简化版)
+// V1.3 完整实现需查询 task_override 表,这里简化为直接返回原模板
+// TODO: 后续接入家长临时调整数据源
+func (s *TaskGenerationService) applyIntradayOverrides(
+	templates []model.TaskTemplate,
+	childID uint,
+	date time.Time,
+) []model.TaskTemplate {
+	return templates
+}
+
+// applySafeBlacklist 应用安全黑名单(技能解锁进度变更替换)
+// 简化实现:检查 task_kind='guardian_reqd' 任务的技能锁状态,如果技能未解锁则替换为同维低风险任务
+func (s *TaskGenerationService) applySafeBlacklist(
+	templates []model.TaskTemplate,
+	childID uint,
+) []model.TaskTemplate {
+	// 查询孩子的技能解锁状态
+	var skillUnlocks []model.SkillUnlock
+	database.DB.Where("child_id = ? AND frozen = true", childID).Find(&skillUnlocks)
+
+	// 构建冻结的技能 code 集合
+	frozenSkills := make(map[string]bool)
+	for _, su := range skillUnlocks {
+		if su.SkillTreeCode != "" {
+			frozenSkills[su.SkillTreeCode] = true
+		}
+	}
+
+	if len(frozenSkills) == 0 {
+		return templates // 没有冻结的技能,直接返回
+	}
+
+	// 遍历任务,如果 guardian_reqd 任务的 prerequisite_code 引用了冻结的技能,则跳过(简化:不替换,只删除)
+	// TODO: 后续接入同维低风险替换池
+	var result []model.TaskTemplate
+	for _, tmpl := range templates {
+		if tmpl.TaskKind == "guardian_reqd" && tmpl.PrerequisiteCode != "" {
+			// 简化:检查 prerequisite_code 是否包含冻结的技能 code
+			shouldSkip := false
+			for skillCode := range frozenSkills {
+				if strings.Contains(tmpl.PrerequisiteCode, skillCode) {
+					shouldSkip = true
+					break
+				}
+			}
+			if shouldSkip {
+				log.Printf("[SafeBlacklist] childID=%d 跳过未解锁技能任务: %s", childID, tmpl.Title)
+				continue
+			}
+		}
+		result = append(result, tmpl)
+	}
+	return result
+}
+
+// hasTodayAITask 检查今天是否已为该 child 创建过 AI 任务(幂等)
+// 注意:此为 TaskGenerationService 方法版,接受任意 date 参数;
+// 原包级函数 hasTodayAITask(childID, familyID uint) 保留供 GenerateForAllChildren 使用
+func (s *TaskGenerationService) hasTodayAITask(childID uint, date time.Time) bool {
+	var count int64
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+	database.DB.Model(&model.Task{}).
+		Where("child_id = ? AND ai_generated = true AND created_at >= ? AND created_at < ?",
+			childID, startOfDay, endOfDay).
+		Count(&count)
+	return count > 0
 }
