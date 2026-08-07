@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "id": "image-001",
+      "title": "GrowPocket 品牌Logo",
+      "type": "image",
+      "version": 1,
+      "createdAt": 1786086539000,
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "naturalSize": {
+          "width": 1920,
+          "height": 1920
+        }
+      },
+      "devMetadata": {
+        "imageSrc": "assets/growpocket-logo.jpg"
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": true,
+    "deviceType": "freeSize",
+    "projectName": "GrowPocket Logo"
+  }
+}

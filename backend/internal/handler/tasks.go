@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
 	"growpocket/internal/config"
 	"growpocket/internal/middleware"
 	"growpocket/internal/model"
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,13 +27,14 @@ func NewTaskHandler(cfg *config.Config) *TaskHandler {
 }
 
 type createTaskReq struct {
-	Title       string     `json:"title" binding:"required"`
-	Description string     `json:"description"`
-	Points      int        `json:"points" binding:"required"`
-	ChildID     uint       `json:"child_id" binding:"required"`
-	Deadline    *string    `json:"deadline"`
-	Status      *int       `json:"status"` // 1=进行中,3=直接已完成（奖惩任务）
-	Photo       *string    `json:"photo"` // 可选：创建时直接上传照片URL（奖惩任务凭证）
+	Title            string     `json:"title" binding:"required"`
+	Description      string     `json:"description"`
+	Points           int        `json:"points" binding:"required"`
+	ChildID          uint       `json:"child_id" binding:"required"`
+	Deadline         *string    `json:"deadline"`
+	Status           *int       `json:"status"`            // 1=进行中,3=直接已完成（奖惩任务）
+	Photo            *string    `json:"photo"`             // 可选：创建时直接上传照片URL（奖惩任务凭证）
+	GuardianRequired *bool      `json:"guardian_required"` // 可选：家长陪伴标记（true 时强制开启）
 }
 
 func (h *TaskHandler) CreateTask(c *gin.Context) {
@@ -66,17 +69,23 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		photo = *req.Photo
 	}
 
+	guardianRequired := false
+	if req.GuardianRequired != nil {
+		guardianRequired = *req.GuardianRequired
+	}
+
 	task, err := h.service.CreateTask(service.CreateTaskInput{
-		FamilyID:    middleware.GetFamilyID(c),
-		Title:       req.Title,
-		Description: req.Description,
-		Points:      req.Points,
-		ChildID:     req.ChildID,
-		ChildName:   child.Nickname,
-		CreatedBy:   middleware.GetUserID(c),
-		Photo:       photo,
-		Deadline:    deadline,
-		Status:      status,
+		FamilyID:         middleware.GetFamilyID(c),
+		Title:            req.Title,
+		Description:      req.Description,
+		Points:           req.Points,
+		ChildID:          req.ChildID,
+		ChildName:        child.Nickname,
+		CreatedBy:        middleware.GetUserID(c),
+		Photo:            photo,
+		Deadline:         deadline,
+		Status:           status,
+		GuardianRequired: guardianRequired,
 	})
 	if err != nil {
 		util.FailBadRequest(c, err.Error())
@@ -100,6 +109,20 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		}
 	}
 
+	// task_kind 过滤：支持逗号分隔多选（如 daily,habit_daily,child）
+	// 不传时默认只返回 daily/habit_daily/child（不返回 habit_master 和 parent）
+	var kinds []string
+	if s := c.Query("task_kind"); s != "" {
+		for _, k := range strings.Split(s, ",") {
+			if k = strings.TrimSpace(k); k != "" {
+				kinds = append(kinds, k)
+			}
+		}
+	}
+	if len(kinds) == 0 {
+		kinds = []string{"daily", "habit_daily", "child"}
+	}
+
 	page := util.ParseInt(c.Query("page"), 1)
 	pageSize := util.ParseInt(c.Query("page_size"), 20)
 	if page < 1 {
@@ -109,7 +132,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		pageSize = 20
 	}
 
-	tasks, total, err := h.service.ListTasks(middleware.GetFamilyID(c), childID, status, page, pageSize)
+	tasks, total, err := h.service.ListTasks(middleware.GetFamilyID(c), childID, status, kinds, page, pageSize)
 	if err != nil {
 		util.FailInternal(c, err.Error())
 		return
@@ -193,7 +216,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	util.OK(c, nil)
 }
 
-// SubmitTask 提交验收：支持 multipart/form-data 文件上传或 JSON 传 photo URL
+// SubmitTask 提交验收：支持 multipart/form-data 文件上传或 JSON 传 photo URL / photo_urls 数组
 func (h *TaskHandler) SubmitTask(c *gin.Context) {
 	id, err := parseUintID(c.Param("id"))
 	if err != nil {
@@ -203,23 +226,70 @@ func (h *TaskHandler) SubmitTask(c *gin.Context) {
 
 	photo := ""
 
-	// 尝试 multipart 文件上传（图片或视频，可选）
-	file, header, err := c.Request.FormFile("photo")
-	if err == nil && file != nil && header != nil {
-		defer file.Close()
-		url, saveErr := util.SaveUploadedMedia(header, h.cfg.UploadDir)
-		if saveErr != nil {
-			util.FailBadRequest(c, saveErr.Error())
-			return
+	// 1) 优先尝试 multipart：处理多个 photo[] 文件上传
+	if mp, formErr := c.MultipartForm(); formErr == nil && mp != nil && len(mp.File["photo[]"]) > 0 {
+		fhs := mp.File["photo[]"]
+		urls := make([]string, 0, len(fhs))
+		for _, fh := range fhs {
+			f, openErr := fh.Open()
+			if openErr != nil {
+				util.FailBadRequest(c, "文件读取失败："+openErr.Error())
+				return
+			}
+			_ = f.Close()
+			url, saveErr := util.SaveUploadedMedia(fh, h.cfg.UploadDir)
+			if saveErr != nil {
+				util.FailBadRequest(c, saveErr.Error())
+				return
+			}
+			urls = append(urls, url)
 		}
-		photo = url
+		if len(urls) == 1 {
+			photo = urls[0]
+		} else if len(urls) > 1 {
+			if data, encErr := json.Marshal(urls); encErr == nil {
+				photo = string(data)
+			} else {
+				photo = strings.Join(urls, ",")
+			}
+		}
 	} else {
-		// 尝试 JSON body（photo 可选；空字符串表示无附件提交）
-		var body struct {
-			Photo string `json:"photo"`
-		}
-		if err := c.ShouldBindJSON(&body); err == nil {
-			photo = body.Photo
+		// 2) 退化为单文件 photo（兼容旧版本）
+		file, header, fErr := c.Request.FormFile("photo")
+		if fErr == nil && file != nil && header != nil {
+			defer file.Close()
+			url, saveErr := util.SaveUploadedMedia(header, h.cfg.UploadDir)
+			if saveErr != nil {
+				util.FailBadRequest(c, saveErr.Error())
+				return
+			}
+			photo = url
+		} else {
+			// 3) JSON body：兼容旧单图 photo + 新 photo_urls 数组
+			var body struct {
+				Photo     string   `json:"photo"`
+				PhotoURLs []string `json:"photo_urls"`
+			}
+			if bindErr := c.ShouldBindJSON(&body); bindErr == nil {
+				if len(body.PhotoURLs) > 0 {
+					// 过滤空值
+					urls := make([]string, 0, len(body.PhotoURLs))
+					for _, u := range body.PhotoURLs {
+						if u != "" {
+							urls = append(urls, u)
+						}
+					}
+					if len(urls) == 1 {
+						photo = urls[0]
+					} else if len(urls) > 1 {
+						if data, encErr := json.Marshal(urls); encErr == nil {
+							photo = string(data)
+						}
+					}
+				} else if body.Photo != "" {
+					photo = body.Photo
+				}
+			}
 		}
 	}
 

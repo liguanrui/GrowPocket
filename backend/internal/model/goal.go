@@ -12,4 +12,7 @@ type Goal struct {
 	TargetScore int       `gorm:"not null" json:"target_score"` // 目标提升分值
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	GoalType      string `json:"goal_type" gorm:"default:dimension"` // 目标类型：dimension/habit/parent_task
+	HabitID       *uint  `json:"habit_id"`                            // 关联习惯（GoalType=habit 时）
+	ParentTaskID  *uint  `json:"parent_task_id"`                      // 关联父任务（GoalType=parent_task 时）
 }

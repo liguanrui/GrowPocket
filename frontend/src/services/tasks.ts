@@ -26,6 +26,17 @@ export interface Task {
   ability_dimension_id?: number;
   secondary_dimensions?: string; // JSON 如 "[2,5]"
   ai_generated?: boolean;
+  task_kind?: string;
+  parent_id?: number;
+  habit_id?: number;
+  guardian_required?: boolean;
+  streak_count?: number;
+  total_count?: number;
+  habit_goal?: number;
+  last_checkin_date?: string | null;
+  sub_task_outline?: string;
+  sequence?: number;
+  is_key_milestone?: boolean;
 }
 
 export interface CreateTaskInput {
@@ -38,6 +49,7 @@ export interface CreateTaskInput {
   photo?: string;
   abilityDimensionId?: number;
   secondaryDimensions?: number[]; // 次维度ID数组
+  guardianRequired?: boolean; // 是否需要家长陪伴
 }
 
 export interface PaginatedResponse<T> {
@@ -61,6 +73,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       photo: input.photo,
       ability_dimension_id: input.abilityDimensionId,
       secondary_dimensions: input.secondaryDimensions ? JSON.stringify(input.secondaryDimensions) : undefined,
+      guardian_required: input.guardianRequired,
     },
   });
 }
@@ -68,6 +81,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
 export async function getTasks(params?: {
   childId?: number;
   status?: TaskStatus;
+  taskKind?: string; // 逗号分隔，如 "daily,habit_daily,child"
   page?: number;
   pageSize?: number;
 }): Promise<PaginatedResponse<Task>> {
@@ -75,6 +89,7 @@ export async function getTasks(params?: {
   const qs: Record<string, string | number> = {};
   if (p.childId) qs.child_id = p.childId;
   if (p.status) qs.status = p.status;
+  if (p.taskKind) qs.task_kind = p.taskKind;
   if (p.page) qs.page = p.page;
   if (p.pageSize) qs.page_size = p.pageSize;
   return request<PaginatedResponse<Task>>({
@@ -128,8 +143,16 @@ export async function uploadMedia(file: File): Promise<{ url: string; type: 'ima
   return data;
 }
 
-// 提交验收（photo 可选：图片/视频 URL，或空字符串表示无附件）
-export async function submitTask(id: number, photo?: string): Promise<Task> {
+// 提交验收（兼容：单 photo URL 或 新 photoURLs 数组）
+export async function submitTask(id: number, photo?: string, photoURLs?: string[]): Promise<Task> {
+  const urls = (photoURLs || []).filter(Boolean);
+  if (urls.length > 0) {
+    return request<Task>({
+      method: 'PUT',
+      url: `/tasks/${id}/submit`,
+      data: { photo_urls: urls },
+    });
+  }
   return request<Task>({
     method: 'PUT',
     url: `/tasks/${id}/submit`,
@@ -140,6 +163,48 @@ export async function submitTask(id: number, photo?: string): Promise<Task> {
 export function isVideoMediaUrl(url?: string): boolean {
   if (!url) return false;
   return /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
+}
+
+/**
+ * 解析任务的成果照片字段：兼容「单图字符串 / JSON 数组字符串 / 逗号分隔 / 被 JSON.stringify 再包装一层引号」多种格式
+ * 统一返回 string[]
+ */
+export function parseTaskPhotos(photo?: string | null): string[] {
+  if (!photo) return [];
+  let s = photo.trim();
+  if (!s) return [];
+
+  // 兜底 1：被多包了一层 JSON 字符串引号，例如 "\"[/uploads/a.png,/uploads/b.png]\"" / "\"/uploads/single.png\""
+  // 先尝试剥外层引号 + unescape 一次
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    try {
+      const unquoted = JSON.parse(s);
+      if (typeof unquoted === 'string') s = unquoted.trim();
+    } catch {
+      s = s.slice(1, -1).trim();
+    }
+    if (!s) return [];
+  }
+
+  // JSON 数组
+  if (s.startsWith('[') && s.endsWith(']')) {
+    try {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)) {
+        return arr
+          .map((x) => (typeof x === 'string' ? x : JSON.stringify(x)))
+          .filter(Boolean);
+      }
+    } catch {
+      /* fallthrough */
+    }
+  }
+  // 逗号分隔（多图退避格式）
+  if (s.includes(',')) {
+    return s.split(',').map((x) => x.trim()).filter(Boolean);
+  }
+  // 单图
+  return [s];
 }
 
 // 家长验收

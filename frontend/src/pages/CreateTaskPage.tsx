@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, User, CalendarDays, Sparkles } from 'lucide-react';
+import { ArrowLeft, Star, User, CalendarDays, Sparkles, AlertTriangle, Target, ChevronDown, Check } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
@@ -7,6 +7,52 @@ import { useUIStore } from '../stores/uiStore';
 import * as tasksService from '../services/tasks';
 import { listTaskTemplates } from '../services/taskTemplates';
 import type { TaskTemplate } from '../services/taskTemplates';
+import { getPresetTemplates, createParentTask, generateChildren } from '../services/parentTasks';
+import type { ParentTaskTemplate } from '../services/parentTasks';
+
+// 主题任务类别（与后端 parent_task_template seed 一致：nature/family_creation/creative/craft/financial/community）
+const THEME_CATEGORIES = [
+  { value: 'nature', label: '自然探索' },
+  { value: 'family_creation', label: '家庭共创' },
+  { value: 'creative', label: '创意表达' },
+  { value: 'craft', label: '手工制作' },
+  { value: 'financial', label: '财商培养' },
+  { value: 'community', label: '社区公益' },
+  { value: 'other', label: '其他' },
+];
+const THEME_CATEGORY_LABEL: Record<string, string> = THEME_CATEGORIES.reduce(
+  (acc, c) => ({ ...acc, [c.value]: c.label }),
+  {} as Record<string, string>,
+);
+
+// 根据孩子信息推算年龄：优先 derived_age → age → 从 birthday 计算；默认 6 岁
+function computeChildAge(child: { derived_age?: number; age?: number | null; birthday?: string | null } | null): number {
+  if (!child) return 6;
+  if (typeof child.derived_age === 'number' && child.derived_age > 0) return child.derived_age;
+  if (typeof child.age === 'number' && child.age > 0) return child.age;
+  if (child.birthday) {
+    const birth = new Date(child.birthday);
+    if (!isNaN(birth.getTime())) {
+      const now = new Date();
+      let age = now.getFullYear() - birth.getFullYear();
+      const m = now.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+      return Math.max(0, age);
+    }
+  }
+  return 6;
+}
+
+// 解析 sub_task_outline（JSON 字符串）为数组长度，用于提示生成子任务数
+function countSubTaskOutline(outline?: string): number {
+  if (!outline) return 0;
+  try {
+    const parsed = JSON.parse(outline);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
 
 function PointsInput({ points, onChange }: { points: number; onChange: (n: number) => void }) {
   const presets = [20, 50, 100, 200];
@@ -178,6 +224,82 @@ function TaskTemplates({
   );
 }
 
+// 主题任务预设模板列表（按年龄过滤，单选填充）
+function ParentTaskTemplates({
+  templates,
+  loading,
+  selectedId,
+  onPick,
+}: {
+  templates: ParentTaskTemplate[];
+  loading: boolean;
+  selectedId: number | null;
+  onPick: (tpl: ParentTaskTemplate) => void;
+}) {
+  return (
+    <div>
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="bg-bg rounded-xl p-3 animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-2/3 mb-1.5" />
+              <div className="h-3 bg-gray-100 rounded w-1/3" />
+            </div>
+          ))}
+        </div>
+      ) : templates.length === 0 ? (
+        <div className="text-center py-4 text-sm text-text-tertiary">
+          暂无适配当前年龄的预设主题，可直接填写下方表单
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {templates.map((tpl) => {
+            const checked = selectedId === tpl.id;
+            return (
+              <button
+                key={tpl.id}
+                type="button"
+                onClick={() => onPick(tpl)}
+                className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                  checked
+                    ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-300'
+                    : 'bg-bg border-transparent hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
+                      checked ? 'border-indigo-500 bg-indigo-500' : 'border-gray-300 bg-white'
+                    }`}
+                  >
+                    {checked && <Check size={12} className="text-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-text-primary flex items-center gap-1.5 flex-wrap">
+                      {tpl.title}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium">
+                        {THEME_CATEGORY_LABEL[tpl.category] || tpl.category}
+                      </span>
+                    </div>
+                    {tpl.description && (
+                      <div className="text-xs text-text-tertiary line-clamp-2 mt-0.5">
+                        {tpl.description}
+                      </div>
+                    )}
+                    <div className="text-[11px] text-text-tertiary mt-1">
+                      预计周期 {tpl.estimated_days} 天
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export function CreateTaskPage() {
   const navigate = useNavigate();
@@ -185,15 +307,24 @@ export function CreateTaskPage() {
   const childStore = useChildStore();
   const toast = useToastStore();
   const uiStore = useUIStore();
+  const [taskType, setTaskType] = useState<'daily' | 'parent'>('daily');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [points, setPoints] = useState(50);
   const [childId, setChildId] = useState<number | null>(null);
   const [deadline, setDeadline] = useState<string | undefined>(undefined);
+  const [guardianRequired, setGuardianRequired] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
+  // 主题任务相关状态
+  const [estimatedDays, setEstimatedDays] = useState(30);
+  const [category, setCategory] = useState<string>('nature');
+  const [presetThemeTemplates, setPresetThemeTemplates] = useState<ParentTaskTemplate[]>([]);
+  const [themeTemplatesLoading, setThemeTemplatesLoading] = useState(false);
+  const [showThemeTemplates, setShowThemeTemplates] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -234,6 +365,103 @@ export function CreateTaskPage() {
     };
   }, [searchParams]);
 
+  // 切换任务类型时清空不相关字段
+  const handleSwitchType = (type: 'daily' | 'parent') => {
+    if (type === taskType) return;
+    setTaskType(type);
+    // 共用字段（标题、描述、孩子、家长陪伴）保留，仅清空类型专属字段
+    if (type === 'daily') {
+      setEstimatedDays(30);
+      setCategory('nature');
+      setSelectedTemplateId(null);
+      setShowThemeTemplates(false);
+    } else {
+      setPoints(50);
+      setDeadline(undefined);
+      setSelectedTemplateId(null);
+      setShowThemeTemplates(false);
+    }
+  };
+
+  // 展开/收起主题模板列表，首次展开时按孩子年龄加载预设模板
+  const handleToggleThemeTemplates = () => {
+    if (!showThemeTemplates && presetThemeTemplates.length === 0 && !themeTemplatesLoading) {
+      const children = useChildStore.getState().children;
+      const child = children.find((c) => c.id === childId) || null;
+      const age = computeChildAge(child);
+      setThemeTemplatesLoading(true);
+      getPresetTemplates(age)
+        .then((list) => setPresetThemeTemplates(list || []))
+        .catch(() => setPresetThemeTemplates([]))
+        .finally(() => setThemeTemplatesLoading(false));
+    }
+    setShowThemeTemplates((v) => !v);
+  };
+
+  // 选中主题模板后自动填充表单字段（用户可在此基础上修改）
+  const handlePickThemeTemplate = (tpl: ParentTaskTemplate) => {
+    setSelectedTemplateId((prev) => (prev === tpl.id ? null : tpl.id));
+    if (selectedTemplateId !== tpl.id) {
+      setTitle(tpl.title);
+      setDescription(tpl.description);
+      setEstimatedDays(tpl.estimated_days);
+      setCategory(tpl.category);
+    }
+  };
+
+  // 主题任务提交逻辑
+  const handleParentSubmit = async () => {
+    if (!title.trim()) {
+      toast.error('请填写主题标题');
+      return;
+    }
+    if (!description.trim()) {
+      toast.error('请填写主题描述');
+      return;
+    }
+    if (!estimatedDays || estimatedDays < 7 || estimatedDays > 90) {
+      toast.error('预计周期天数需在 7-90 之间');
+      return;
+    }
+    if (!childId) {
+      toast.error('请选择一个孩子');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const parentTask = await createParentTask({
+        child_id: childId,
+        title: title.trim(),
+        description: description.trim(),
+        estimated_days: estimatedDays,
+        category,
+      });
+      childStore.setCurrentChildId(childId);
+      uiStore.setNeedRefreshTasks(true);
+      // 后端 CreateParentTask 已自动生成子任务大纲；若返回为空则兜底触发一次生成
+      if (!parentTask.sub_task_outline) {
+        try {
+          await generateChildren(parentTask.id);
+        } catch {
+          // 兜底生成失败不阻断流程，后端可能已在异步处理
+        }
+        toast.success('主题任务已创建，子任务大纲生成中');
+      } else {
+        const count = countSubTaskOutline(parentTask.sub_task_outline);
+        toast.success(
+          count > 0
+            ? `主题任务已创建，已生成 ${count} 个子任务大纲`
+            : '主题任务已创建，已生成子任务大纲',
+        );
+      }
+      navigate(`/task/${parentTask.id}`, { replace: true });
+    } catch (e: any) {
+      toast.error(e.message || '创建失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!title.trim()) {
       toast.error('请填写任务标题');
@@ -256,6 +484,7 @@ export function CreateTaskPage() {
         childId,
         deadline,
         status: 1,
+        guardianRequired,
       });
       childStore.setCurrentChildId(childId);
       uiStore.setNewTaskId(createdTask.id);
@@ -291,62 +520,269 @@ export function CreateTaskPage() {
             <h1 className="text-white font-semibold text-lg">发布新任务</h1>
             <div className="w-10 h-10" />
           </div>
-          <p className="text-white/80 text-sm">为孩子设定一个可完成的小目标，并约定好积分奖励。</p>
+          <p className="text-white/80 text-sm">
+            {taskType === 'daily'
+              ? '为孩子设定一个可完成的小目标，并约定好积分奖励。'
+              : '设定一个多日主题任务，AI 将自动拆解为分阶段子任务。'}
+          </p>
         </div>
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
-        <div className="bg-card rounded-2xl p-5 shadow-sm space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">任务标题 *</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="例如：整理房间"
-              className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-              maxLength={30}
-            />
+        {/* 任务类型选择器 */}
+        <div className="bg-card rounded-2xl p-2 shadow-sm">
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => handleSwitchType('daily')}
+              className={`flex items-center justify-center gap-1.5 py-3 rounded-xl text-sm font-medium transition-colors ${
+                taskType === 'daily'
+                  ? 'bg-primary text-white shadow-md shadow-primary/20'
+                  : 'bg-bg text-text-secondary hover:bg-gray-100'
+              }`}
+            >
+              <Sparkles size={15} />
+              日常任务
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchType('parent')}
+              className={`flex items-center justify-center gap-1.5 py-3 rounded-xl text-sm font-medium transition-colors ${
+                taskType === 'parent'
+                  ? 'bg-primary text-white shadow-md shadow-primary/20'
+                  : 'bg-bg text-text-secondary hover:bg-gray-100'
+              }`}
+            >
+              <Target size={15} />
+              主题任务
+            </button>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">任务描述（可选）</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              placeholder="更详细地描述希望孩子如何完成..."
-              className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary text-sm resize-none"
-            />
-          </div>
-
-          <PointsInput points={points} onChange={setPoints} />
-
-          <ChildPicker selectedChildId={childId} onSelect={setChildId} children={children} />
-
-          <DeadlinePicker deadline={deadline} onChange={setDeadline} />
         </div>
 
-        <div className="bg-card rounded-2xl p-5 shadow-sm">
-          <TaskTemplates
-            templates={templates}
-            loading={templatesLoading}
-            onPick={(t, d, p) => {
-              setTitle(t);
-              setDescription(d);
-              setPoints(p);
-            }}
-          />
-        </div>
+        {taskType === 'daily' ? (
+          <>
+            <div className="bg-card rounded-2xl p-5 shadow-sm space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">任务标题 *</label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="例如：整理房间"
+                  className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
+                  maxLength={30}
+                />
+              </div>
 
-        <div className="sticky bottom-4 pt-2">
-          <button
-            onClick={handleSubmit}
-            disabled={!title.trim() || points <= 0 || !childId || submitting}
-            className="w-full py-4 bg-primary text-white rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? '发布中...' : '发布任务'}
-          </button>
-        </div>
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">任务描述（可选）</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  placeholder="更详细地描述希望孩子如何完成..."
+                  className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary text-sm resize-none"
+                />
+              </div>
+
+              <PointsInput points={points} onChange={setPoints} />
+
+              <ChildPicker selectedChildId={childId} onSelect={setChildId} children={children} />
+
+              <DeadlinePicker deadline={deadline} onChange={setDeadline} />
+
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">
+                  <AlertTriangle size={14} className="inline mr-1 text-rose-500" /> 安全提示
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setGuardianRequired((v) => !v)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-colors ${
+                    guardianRequired
+                      ? 'bg-rose-50 border-rose-200'
+                      : 'bg-bg border-gray-100 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-sm text-text-primary">
+                    <span className="text-rose-500">⚠️</span>
+                    <span>需要家长陪伴</span>
+                  </span>
+                  <span
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      guardianRequired ? 'bg-rose-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        guardianRequired ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </span>
+                </button>
+                {guardianRequired && (
+                  <p className="mt-2 text-xs text-rose-600">
+                    勾选后，任务详情页和列表会显示「需家长陪伴」提示，提醒家长在旁指导并注意安全。
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-card rounded-2xl p-5 shadow-sm">
+              <TaskTemplates
+                templates={templates}
+                loading={templatesLoading}
+                onPick={(t, d, p) => {
+                  setTitle(t);
+                  setDescription(d);
+                  setPoints(p);
+                }}
+              />
+            </div>
+
+            <div className="sticky bottom-4 pt-2">
+              <button
+                onClick={handleSubmit}
+                disabled={!title.trim() || points <= 0 || !childId || submitting}
+                className="w-full py-4 bg-primary text-white rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? '发布中...' : '发布任务'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* 从模板选择（可折叠） */}
+            <div className="bg-card rounded-2xl p-5 shadow-sm">
+              <button
+                type="button"
+                onClick={handleToggleThemeTemplates}
+                className="w-full flex items-center justify-between text-sm font-medium text-text-primary"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Target size={14} className="text-indigo-500" />
+                  从模板选择
+                </span>
+                <ChevronDown
+                  size={16}
+                  className={`text-text-tertiary transition-transform ${showThemeTemplates ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {showThemeTemplates && (
+                <div className="mt-3">
+                  <ParentTaskTemplates
+                    templates={presetThemeTemplates}
+                    loading={themeTemplatesLoading}
+                    selectedId={selectedTemplateId}
+                    onPick={handlePickThemeTemplate}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 主题任务表单 */}
+            <div className="bg-card rounded-2xl p-5 shadow-sm space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">主题标题 *</label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="例如：小小科学家养成计划"
+                  className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
+                  maxLength={50}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">主题描述 *</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  placeholder="描述这个主题任务的目标、内容和孩子将获得的成长..."
+                  className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary text-sm resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">预计周期（天）*</label>
+                  <input
+                    type="number"
+                    min={7}
+                    max={90}
+                    value={estimatedDays}
+                    onChange={(e) => {
+                      const n = Number(e.target.value) || 0;
+                      setEstimatedDays(n);
+                    }}
+                    className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
+                  />
+                  <p className="mt-1 text-xs text-text-tertiary">范围 7-90 天</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">类别</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
+                  >
+                    {THEME_CATEGORIES.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <ChildPicker selectedChildId={childId} onSelect={setChildId} children={children} />
+
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">
+                  <AlertTriangle size={14} className="inline mr-1 text-rose-500" /> 安全提示
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setGuardianRequired((v) => !v)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-colors ${
+                    guardianRequired
+                      ? 'bg-rose-50 border-rose-200'
+                      : 'bg-bg border-gray-100 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-sm text-text-primary">
+                    <span className="text-rose-500">⚠️</span>
+                    <span>需要家长陪伴</span>
+                  </span>
+                  <span
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      guardianRequired ? 'bg-rose-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        guardianRequired ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </span>
+                </button>
+                {guardianRequired && (
+                  <p className="mt-2 text-xs text-rose-600">
+                    勾选后，任务详情页和列表会显示「需家长陪伴」提示，提醒家长在旁指导并注意安全。
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="sticky bottom-4 pt-2">
+              <button
+                onClick={handleParentSubmit}
+                disabled={!title.trim() || !description.trim() || !childId || submitting}
+                className="w-full py-4 bg-primary text-white rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? '创建中...' : '创建主题任务'}
+              </button>
+            </div>
+          </>
+        )}
 
         <div className="h-8" />
       </div>

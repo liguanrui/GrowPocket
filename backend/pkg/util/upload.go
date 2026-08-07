@@ -17,6 +17,11 @@ var allowedImageExts = map[string]bool{
 	".png":  true,
 	".gif":  true,
 	".webp": true,
+	".heic": true,
+	".heif": true,
+	".avif": true,
+	".bmp":  true,
+	".svg":  true,
 }
 
 var allowedVideoExts = map[string]bool{
@@ -24,6 +29,9 @@ var allowedVideoExts = map[string]bool{
 	".mov":  true,
 	".webm": true,
 	".m4v":  true,
+	".3gp":  true,
+	".mkv":  true,
+	".avi":  true,
 }
 
 const maxImageSize = 10 * 1024 * 1024  // 10MB

@@ -68,6 +68,26 @@ export async function setGoal(
   });
 }
 
+// 批量设置阶段目标（不传 target_score，仅勾选维度）
+export interface BatchGoalItem {
+  goal_type: string;
+  dimension_id?: number;
+  habit_id?: number;
+  parent_task_id?: number;
+}
+
+export async function setGoalsBatch(data: {
+  cycle_id: number;
+  child_id: number;
+  goals: BatchGoalItem[];
+}): Promise<void> {
+  return request<void>({
+    method: 'POST',
+    url: '/growth/goals/batch',
+    data,
+  });
+}
+
 // 创建成长周期
 export async function createCycle(
   childId: number,
@@ -102,5 +122,25 @@ export async function updateCycle(
       start_date: startDate,
       end_date: endDate,
     },
+  });
+}
+
+// 周期累计统计（本周期累计完成任务数、积分、关注维度、剩余天数等）
+export interface CycleStats {
+  completed_task_count: number;
+  total_points_earned: number;
+  focus_dim_names: string[];
+  days_remaining: number;
+  cycle_name: string;
+  cycle_start: string;
+  cycle_end: string;
+}
+
+// 查询指定儿童当前周期的累计统计
+export async function getCycleStats(childId: number): Promise<CycleStats> {
+  return request<CycleStats>({
+    method: 'GET',
+    url: '/growth-cycles/cycle-stats',
+    params: { child_id: childId },
   });
 }

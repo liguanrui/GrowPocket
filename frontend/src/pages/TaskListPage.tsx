@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Clock, CheckCircle2, Inbox, FileText, BookOpen, Home, Smile, Dumbbell, MoreHorizontal } from 'lucide-react';
+import { Plus, Clock, CheckCircle2, Inbox, FileText, BookOpen, Home, Smile, Dumbbell, MoreHorizontal, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import { useUIStore } from '../stores/uiStore';
@@ -7,6 +7,7 @@ import * as tasksService from '../services/tasks';
 import type { Task, TaskStatus } from '../services/tasks';
 import type { TaskCategory } from '../types';
 import { AcademicMilestoneModal } from '../components/AcademicMilestoneModal';
+import { getTaskTags } from '../utils/taskTags';
 
 const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any }[] = [
   { id: 'all', label: '全部', icon: FileText },
@@ -44,8 +45,9 @@ export function TaskListPage() {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const params: { childId: number; status?: TaskStatus; page: number; pageSize: number } = {
+      const params: { childId: number; status?: TaskStatus; taskKind: string; page: number; pageSize: number } = {
         childId: child.id,
+        taskKind: 'daily,habit_daily,child',
         page: 1,
         pageSize: 50,
       };
@@ -256,43 +258,78 @@ export function TaskListPage() {
       <div className="px-4 max-w-lg mx-auto">
         {filteredTasks.length > 0 ? (
           <div className="space-y-3">
-            {filteredTasks.map((task) => (
-              <div
-                key={task.id}
-                onClick={() => navigate(`/task/${task.id}`)}
-                className="cursor-pointer bg-card rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="font-medium text-text-primary">{task.title}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      {task.category && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${(() => {
-                          const catConfig = CATEGORY_TABS.find((c) => c.id === task.category);
-                          if (catConfig) {
-                            if (catConfig.id === '学习') return 'bg-blue-50 text-blue-500';
-                            if (catConfig.id === '家务') return 'bg-emerald-50 text-emerald-500';
-                            if (catConfig.id === '行为习惯') return 'bg-amber-50 text-amber-500';
-                            if (catConfig.id === '运动') return 'bg-rose-50 text-rose-500';
-                            return 'bg-purple-50 text-purple-500';
-                          }
-                          return 'bg-gray-100 text-text-tertiary';
-                        })()}`}>
-                          {task.category}
+            {filteredTasks.map((task) => {
+              const tags = getTaskTags(task);
+              const visibleTags = tags.slice(0, 3);
+              const hiddenTagCount = tags.length - visibleTags.length;
+              // streak 与 sequence：必须强制布尔，避免数字 0 被 JSX 直接渲染成可见文本
+              const showStreak = task.task_kind === 'habit_daily' && (task.streak_count || 0) > 0;
+              const showSequence = task.task_kind === 'child' && (task.sequence || 0) > 0;
+              return (
+                <div
+                  key={task.id}
+                  onClick={() => navigate(`/task/${task.id}`)}
+                  className="cursor-pointer bg-card rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium text-text-primary">{task.title}</div>
+                      {/* 统一标签区：分类 + getTaskTags + streak + sequence + 状态 */}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {task.category && (
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${(() => {
+                            if (task.category === '学习') return 'bg-blue-50 text-blue-600';
+                            if (task.category === '家务') return 'bg-emerald-50 text-emerald-600';
+                            if (task.category === '行为习惯') return 'bg-amber-50 text-amber-600';
+                            if (task.category === '运动') return 'bg-rose-50 text-rose-600';
+                            return 'bg-purple-50 text-purple-600';
+                          })()}`}>
+                            {task.category}
+                          </span>
+                        )}
+                        {visibleTags.map((tag) => (
+                          <span
+                            key={tag.label}
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${tag.color}`}
+                          >
+                            {tag.label === 'AI 生成' ? (
+                              <span className="inline-flex items-center gap-0.5">
+                                <Sparkles size={10} />
+                                {tag.label}
+                              </span>
+                            ) : (
+                              tag.label
+                            )}
+                          </span>
+                        ))}
+                        {hiddenTagCount > 0 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">
+                            +{hiddenTagCount}
+                          </span>
+                        )}
+                        {showStreak && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-600">
+                            🔥 连续 {task.streak_count} 天
+                          </span>
+                        )}
+                        {showSequence && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-600">
+                            阶段 #{task.sequence}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-text-tertiary">
+                          {task.status === 1 ? '进行中' : task.status === 2 ? '待验收' : task.status === 3 ? '已完成' : '已拒绝'}
                         </span>
-                      )}
-                      <span className="text-xs text-text-tertiary">
-                        {task.status === 1 ? '进行中' : task.status === 2 ? '待验收' : task.status === 3 ? '已完成' : '已拒绝'}
-                      </span>
+                      </div>
+                    </div>
+                    <div className="text-right ml-3">
+                      <span className="text-sm font-semibold text-primary">+{task.points}</span>
+                      <span className="text-xs text-text-tertiary">积分</span>
                     </div>
                   </div>
-                  <div className="text-right ml-3">
-                    <span className="text-sm font-semibold text-primary">+{task.points}</span>
-                    <span className="text-xs text-text-tertiary">积分</span>
-                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-16 bg-card rounded-2xl shadow-sm">

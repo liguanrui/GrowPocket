@@ -16,8 +16,18 @@ import { getChildScores, getAbilities } from '../services/ability';
 import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
 // 注意：IPPAvatar 不在此页使用（阶段名+成长值块已移除），如需添加请从 '../components/IPPAvatar' 引入
 import { MobileDatePicker } from '../components/MobileDatePicker';
-import { getCurrentCycle, setGoal, createCycle, updateCycle } from '../services/growthCycle';
+import { AcademicMilestoneModal } from '../components/AcademicMilestoneModal';
+import { getCurrentCycle, setGoalsBatch, createCycle, updateCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
+import { getPresetHabits, createCustomHabit } from '../services/habits';
+import type { Habit } from '../services/habits';
+import {
+  getPresetTemplates,
+  createCustomTemplate,
+  createParentTask,
+  generateChildren,
+} from '../services/parentTasks';
+import type { ParentTaskTemplate } from '../services/parentTasks';
 import { listStories, parseAbilitySummary } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
 import { useToastStore } from '../stores/toastStore';
@@ -31,6 +41,49 @@ const DIMENSION_COLORS = ['#10b981', '#6DBF7B', '#5B9BD5', '#F0B848', '#E87461']
 
 function getDimensionColor(index: number): string {
   return DIMENSION_COLORS[index % DIMENSION_COLORS.length];
+}
+
+// 主题任务类别选项（value 为后端 category code，label 为中文展示）
+const THEME_CATEGORIES = [
+  { value: 'learning', label: '学习' },
+  { value: 'life', label: '生活' },
+  { value: 'interest', label: '兴趣' },
+  { value: 'sports', label: '运动' },
+  { value: 'social', label: '社交' },
+  { value: 'other', label: '其他' },
+];
+const THEME_CATEGORY_LABEL: Record<string, string> = THEME_CATEGORIES.reduce(
+  (acc, c) => ({ ...acc, [c.value]: c.label }),
+  {} as Record<string, string>,
+);
+
+// 解析 sub_task_outline（JSON 字符串）为数组长度，用于提示生成子任务数
+function countSubTaskOutline(outline?: string): number {
+  if (!outline) return 0;
+  try {
+    const parsed = JSON.parse(outline);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// 根据孩子信息推算年龄：优先 derived_age → age → 从 birthday 计算；默认 6 岁
+function computeChildAge(child: { derived_age?: number; age?: number | null; birthday?: string | null } | null): number {
+  if (!child) return 6;
+  if (typeof child.derived_age === 'number' && child.derived_age > 0) return child.derived_age;
+  if (typeof child.age === 'number' && child.age > 0) return child.age;
+  if (child.birthday) {
+    const birth = new Date(child.birthday);
+    if (!isNaN(birth.getTime())) {
+      const now = new Date();
+      let age = now.getFullYear() - birth.getFullYear();
+      const m = now.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+      return Math.max(0, age);
+    }
+  }
+  return 6;
 }
 
 // V3.1 思路 C：旧的 5 阶段等级（种子期/萌芽期/小苗期/小树期/大树期）已移除，
@@ -475,59 +528,191 @@ function TrendLineCard({ label, color, data }: { label: string; color: string; d
   );
 }
 
-// 学习认知详情面板：4 条折线 + 里程碑历史（最近 5 条）
+// 学科/指标/档位选项（趋势录入用）
+const TREND_SUBJECTS = [
+  { value: 'chinese', label: '语文' },
+  { value: 'math', label: '数学' },
+  { value: 'english', label: '英语' },
+  { value: 'other', label: '其他' },
+];
+const TREND_METRIC_OPTIONS = [
+  { value: TREND_METRIC.HOMEWORK, label: '作业档' },
+  { value: TREND_METRIC.QUIZ, label: '测验档' },
+  { value: TREND_METRIC.MIDTERM_FINAL, label: '期中期末档' },
+  { value: TREND_METRIC.SELF_STUDY_DURATION, label: '自习时长档' },
+];
+const ABC_OPTIONS = ['A+', 'A', 'B', 'C'];
+
+// 计算当前周号（ISO 周，形如 "2026-W31"）
+function currentISOWeek(): string {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNum = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${weekNum}`;
+}
+
+// 学习认知详情面板：4 条折线 + 里程碑历史（最近 5 条）+ 录入入口
 function LearningDetailPanel({ childId }: { childId: number }) {
+  const toast = useToastStore();
   const [loading, setLoading] = useState(true);
   const [trendMap, setTrendMap] = useState<Record<string, AcademicTrendEntry[]>>({});
   const [milestones, setMilestones] = useState<AcademicMilestone[]>([]);
+  // 录入入口
+  const [showMilestone, setShowMilestone] = useState(false);
+  const [showTrendForm, setShowTrendForm] = useState(false);
+  const [trendSubmitting, setTrendSubmitting] = useState(false);
+  const [trendSubject, setTrendSubject] = useState<string>('chinese');
+  const [trendMetric, setTrendMetric] = useState<string>(TREND_METRIC.HOMEWORK);
+  const [trendABC, setTrendABC] = useState<string>('A');
+  const [trendNote, setTrendNote] = useState('');
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      const [hw, quiz, mid, self, ms] = await Promise.all([
+        academicApi.getTrends(childId, TREND_METRIC.HOMEWORK, 6).catch(() => [] as AcademicTrendEntry[]),
+        academicApi.getTrends(childId, TREND_METRIC.QUIZ, 6).catch(() => [] as AcademicTrendEntry[]),
+        academicApi.getTrends(childId, TREND_METRIC.MIDTERM_FINAL, 6).catch(() => [] as AcademicTrendEntry[]),
+        academicApi.getTrends(childId, TREND_METRIC.SELF_STUDY_DURATION, 6).catch(() => [] as AcademicTrendEntry[]),
+        academicApi.getMilestones(childId, 5).catch(() => [] as AcademicMilestone[]),
+      ]);
+      setTrendMap({
+        [TREND_METRIC.HOMEWORK]: hw,
+        [TREND_METRIC.QUIZ]: quiz,
+        [TREND_METRIC.MIDTERM_FINAL]: mid,
+        [TREND_METRIC.SELF_STUDY_DURATION]: self,
+      });
+      setMilestones(ms);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
-    async function load() {
-      setLoading(true);
-      try {
-        // 并行拉取 4 条趋势 + 里程碑历史；任一失败不阻塞其它
-        const [hw, quiz, mid, self, ms] = await Promise.all([
-          academicApi.getTrends(childId, TREND_METRIC.HOMEWORK, 6).catch(() => [] as AcademicTrendEntry[]),
-          academicApi.getTrends(childId, TREND_METRIC.QUIZ, 6).catch(() => [] as AcademicTrendEntry[]),
-          academicApi.getTrends(childId, TREND_METRIC.MIDTERM_FINAL, 6).catch(() => [] as AcademicTrendEntry[]),
-          academicApi.getTrends(childId, TREND_METRIC.SELF_STUDY_DURATION, 6).catch(() => [] as AcademicTrendEntry[]),
-          academicApi.getMilestones(childId, 5).catch(() => [] as AcademicMilestone[]),
-        ]);
-        if (mounted) {
-          setTrendMap({
-            [TREND_METRIC.HOMEWORK]: hw,
-            [TREND_METRIC.QUIZ]: quiz,
-            [TREND_METRIC.MIDTERM_FINAL]: mid,
-            [TREND_METRIC.SELF_STUDY_DURATION]: self,
-          });
-          setMilestones(ms);
-        }
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-    load();
+    (async () => {
+      await reload();
+      if (!mounted) return;
+    })();
     return () => {
       mounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [childId]);
 
   // 4 条折线是否全部无数据
   const allEmpty = Object.values(trendMap).every((arr) => !arr || arr.length === 0);
 
+  // 提交趋势录入
+  const handleSubmitTrend = async () => {
+    setTrendSubmitting(true);
+    try {
+      await academicApi.createTrend({
+        child_id: childId,
+        subject: trendSubject,
+        metric_type: trendMetric,
+        value_abc: trendABC,
+        occurred_week: currentISOWeek(),
+        note: trendNote.trim(),
+      });
+      toast.success('已记录本周趋势档位');
+      setShowTrendForm(false);
+      setTrendNote('');
+      await reload();
+    } catch (e: any) {
+      toast.error(e.message || '录入失败');
+    } finally {
+      setTrendSubmitting(false);
+    }
+  };
+
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-      <div className="flex items-center gap-1.5">
-        <BookOpen size={14} className="text-primary" />
-        <span className="text-xs font-semibold text-text-primary">学习认知详情</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <BookOpen size={14} className="text-primary" />
+          <span className="text-xs font-semibold text-text-primary">学习认知详情</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowTrendForm((v) => !v)}
+            className="text-[11px] px-2 py-1 rounded-lg bg-gray-100 text-text-secondary hover:bg-gray-200 transition-colors"
+          >
+            📝 录趋势
+          </button>
+          <button
+            onClick={() => setShowMilestone(true)}
+            className="text-[11px] px-2 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            📚 录好事
+          </button>
+        </div>
       </div>
+
+      {/* 趋势录入内联表单 */}
+      {showTrendForm && (
+        <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-100 space-y-2.5">
+          <p className="text-xs text-text-tertiary">记录本周学业档位（仅档位不发分，作 AI 阶段回顾参考）</p>
+          <div className="grid grid-cols-3 gap-2">
+            <select
+              value={trendSubject}
+              onChange={(e) => setTrendSubject(e.target.value)}
+              className="px-2 py-1.5 bg-white rounded-lg border border-gray-100 text-xs text-text-primary outline-none"
+            >
+              {TREND_SUBJECTS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <select
+              value={trendMetric}
+              onChange={(e) => setTrendMetric(e.target.value)}
+              className="px-2 py-1.5 bg-white rounded-lg border border-gray-100 text-xs text-text-primary outline-none"
+            >
+              {TREND_METRIC_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <div className="flex gap-1">
+              {ABC_OPTIONS.map((abc) => (
+                <button
+                  key={abc}
+                  onClick={() => setTrendABC(abc)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    trendABC === abc
+                      ? 'bg-primary text-white'
+                      : 'bg-white text-text-secondary border border-gray-100 hover:bg-gray-50'
+                  }`}
+                >
+                  {abc}
+                </button>
+              ))}
+            </div>
+          </div>
+          <input
+            type="text"
+            value={trendNote}
+            onChange={(e) => setTrendNote(e.target.value)}
+            placeholder="备注（可选）"
+            className="w-full px-3 py-1.5 bg-white rounded-lg border border-gray-100 text-xs text-text-primary outline-none"
+          />
+          <button
+            onClick={handleSubmitTrend}
+            disabled={trendSubmitting}
+            className="w-full py-2 bg-primary text-white rounded-lg text-xs font-medium disabled:opacity-50"
+          >
+            {trendSubmitting ? '提交中...' : '提交本周档位'}
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="py-4 text-center text-xs text-text-tertiary">加载中...</div>
       ) : allEmpty ? (
         <div className="py-4 text-center text-xs text-text-tertiary">
-          暂无学业趋势数据，点击「📚 录好事」记录吧
+          暂无学业趋势数据，点击「📝 录趋势」记录吧
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
@@ -571,6 +756,14 @@ function LearningDetailPanel({ childId }: { childId: number }) {
       ) : (
         <div className="py-2 text-center text-xs text-text-tertiary">暂无里程碑记录</div>
       )}
+
+      {/* 里程碑录入弹窗 */}
+      <AcademicMilestoneModal
+        open={showMilestone}
+        childId={childId}
+        onClose={() => setShowMilestone(false)}
+        onSubmitted={reload}
+      />
     </div>
   );
 }
@@ -598,9 +791,33 @@ export function GrowthPage() {
   // 阶段目标设置面板
   const [showGoalSetup, setShowGoalSetup] = useState(false);
   const [setupStartDate, setSetupStartDate] = useState('');
-  const [setupEndDate, setSetupEndDate] = useState('');
-  const [setupGoals, setSetupGoals] = useState<Record<number, number>>({});
+  const [setupWeeks, setSetupWeeks] = useState(2); // 1-4 周，默认 2 周
+  const [setupGoals, setSetupGoals] = useState<number[]>([]); // 选中的 dimension_id 列表
   const [goalSubmitting, setGoalSubmitting] = useState(false);
+  // 习惯目标（在能力维度区之后展示，可选，最多 2 个）
+  const [setupHabits, setSetupHabits] = useState<number[]>([]); // 选中的习惯 ID 列表，最多 2 个
+  const [presetHabits, setPresetHabits] = useState<Habit[]>([]); // 预设习惯列表
+  const [presetHabitsLoading, setPresetHabitsLoading] = useState(false);
+  const [showCustomHabitForm, setShowCustomHabitForm] = useState(false); // 自定义习惯表单显示开关
+  const [customHabitTitle, setCustomHabitTitle] = useState('');
+  const [customHabitDesc, setCustomHabitDesc] = useState('');
+  const [habitSubmitting, setHabitSubmitting] = useState(false);
+  // 主题任务（在习惯目标区之后展示，单选，最多 1 个）
+  const [setupThemeTemplateId, setSetupThemeTemplateId] = useState<number | null>(null); // 选中的主题模板 ID
+  const [setupThemeCustom, setSetupThemeCustom] = useState<{
+    title: string;
+    description: string;
+    estimated_days: number;
+    category: string;
+  } | null>(null); // 自定义主题数据（不走模板时的兜底路径）
+  const [presetThemeTemplates, setPresetThemeTemplates] = useState<ParentTaskTemplate[]>([]); // 预设主题模板列表
+  const [presetThemesLoading, setPresetThemesLoading] = useState(false);
+  const [showCustomThemeForm, setShowCustomThemeForm] = useState(false); // 自定义主题表单显示开关
+  const [customThemeTitle, setCustomThemeTitle] = useState('');
+  const [customThemeDesc, setCustomThemeDesc] = useState('');
+  const [customThemeDays, setCustomThemeDays] = useState<number>(14); // 预计周期天数，默认 14 天
+  const [customThemeCategory, setCustomThemeCategory] = useState<string>('learning');
+  const [themeSubmitting, setThemeSubmitting] = useState(false);
   // 专家模式开关（localStorage 持久化）：关闭显示等级名称，开启显示原始 0-100 分数
   const [expertMode, setExpertMode] = useState<boolean>(() => localStorage.getItem('growthExpertMode') === 'true');
   // 蓄势维小贴士弹窗（点击问号图标触发，值为 dimension_code）
@@ -696,44 +913,175 @@ export function GrowthPage() {
     childStore.setCurrentChildId(id);
   };
 
+  // 根据 startDate + 周数计算 endDate（YYYY-MM-DD）
+  const computeEndDate = (startDate: string, weeks: number): string => {
+    if (!startDate) return '';
+    const start = new Date(startDate + 'T00:00:00');
+    if (isNaN(start.getTime())) return '';
+    const end = new Date(start);
+    end.setDate(end.getDate() + weeks * 7);
+    return end.toISOString().slice(0, 10);
+  };
+
   // 打开阶段目标设置面板
   const openGoalSetup = () => {
     if (cycleId) {
       setSetupStartDate(cycleStartDate.slice(0, 10));
-      setSetupEndDate(cycleEndDate.slice(0, 10));
-      const goalsMap: Record<number, number> = {};
-      progressList.forEach((p) => {
-        if (p.target_score > 0) goalsMap[p.dimension_id] = p.target_score;
-      });
-      setSetupGoals(goalsMap);
+      // 从现有周期时间反推周数（限制在 1-4 周）
+      const start = new Date(cycleStartDate.slice(0, 10) + 'T00:00:00');
+      const end = new Date(cycleEndDate.slice(0, 10) + 'T00:00:00');
+      const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const weeks = Math.max(1, Math.min(4, Math.round(diffDays / 7)));
+      setSetupWeeks(weeks);
+      // 提取已设置目标的维度
+      const selectedDims = progressList
+        .filter((p) => p.target_score > 0)
+        .map((p) => p.dimension_id);
+      setSetupGoals(selectedDims);
     } else {
       const now = new Date();
-      const end = new Date(now);
-      end.setDate(end.getDate() + 30);
       setSetupStartDate(now.toISOString().slice(0, 10));
-      setSetupEndDate(end.toISOString().slice(0, 10));
-      setSetupGoals({});
+      setSetupWeeks(2); // 默认 2 周
+      setSetupGoals([]);
     }
+    // 重置习惯目标相关状态，并根据孩子年龄加载预设习惯
+    setSetupHabits([]);
+    setShowCustomHabitForm(false);
+    setCustomHabitTitle('');
+    setCustomHabitDesc('');
+    setPresetHabits([]);
+    // 重置主题任务相关状态，并根据孩子年龄加载预设主题模板
+    setSetupThemeTemplateId(null);
+    setSetupThemeCustom(null);
+    setShowCustomThemeForm(false);
+    setCustomThemeTitle('');
+    setCustomThemeDesc('');
+    setCustomThemeDays(14);
+    setCustomThemeCategory('learning');
+    setPresetThemeTemplates([]);
+    const age = computeChildAge(selectedChild);
+    setPresetHabitsLoading(true);
+    getPresetHabits(age)
+      .then((list) => setPresetHabits(list || []))
+      .catch(() => setPresetHabits([]))
+      .finally(() => setPresetHabitsLoading(false));
+    setPresetThemesLoading(true);
+    getPresetTemplates(age)
+      .then((list) => setPresetThemeTemplates(list || []))
+      .catch(() => setPresetThemeTemplates([]))
+      .finally(() => setPresetThemesLoading(false));
     setShowGoalSetup(true);
+  };
+
+  // 习惯目标多选 toggle：最多 2 个，超出阻止并提示
+  const toggleSetupHabit = (habitId: number) => {
+    setSetupHabits((prev) => {
+      if (prev.includes(habitId)) {
+        return prev.filter((id) => id !== habitId);
+      }
+      if (prev.length >= 2) {
+        toast.error('最多只能选择 2 个习惯目标');
+        return prev;
+      }
+      return [...prev, habitId];
+    });
+  };
+
+  // 创建自定义习惯：成功后自动加入预设列表并选中（受 2 个上限约束）
+  const handleCreateCustomHabit = async () => {
+    if (!selectedChildId) return;
+    if (!customHabitTitle.trim()) {
+      toast.error('请输入习惯标题');
+      return;
+    }
+    setHabitSubmitting(true);
+    try {
+      const habit = await createCustomHabit({
+        child_id: selectedChildId,
+        title: customHabitTitle.trim(),
+        description: customHabitDesc.trim(),
+        category: 'other',
+      });
+      setPresetHabits((prev) => [...prev, habit]);
+      setSetupHabits((prev) => {
+        if (prev.includes(habit.id)) return prev;
+        if (prev.length >= 2) {
+          toast.error('已选满 2 个习惯目标，请先取消一个再选');
+          return prev;
+        }
+        return [...prev, habit.id];
+      });
+      setCustomHabitTitle('');
+      setCustomHabitDesc('');
+      setShowCustomHabitForm(false);
+      toast.success('习惯已创建并自动选中');
+    } catch (e: any) {
+      toast.error(e.message || '创建失败');
+    } finally {
+      setHabitSubmitting(false);
+    }
+  };
+
+  // 主题任务单选 toggle：再次点击同一个取消选中，点击其他切换选中
+  const toggleSetupTheme = (templateId: number) => {
+    setSetupThemeTemplateId((prev) => (prev === templateId ? null : templateId));
+    // 切换到模板时清空自定义兜底数据（自定义主题通过 createCustomTemplate 转为模板后走 template_id 路径）
+    setSetupThemeCustom(null);
+  };
+
+  // 创建自定义主题模板：成功后加入预设列表并自动选中
+  const handleCreateCustomTheme = async () => {
+    if (!selectedChildId) return;
+    if (!customThemeTitle.trim()) {
+      toast.error('请输入主题标题');
+      return;
+    }
+    if (!customThemeDays || customThemeDays <= 0) {
+      toast.error('请输入有效的预计周期天数');
+      return;
+    }
+    setThemeSubmitting(true);
+    try {
+      const template = await createCustomTemplate({
+        child_id: selectedChildId,
+        title: customThemeTitle.trim(),
+        description: customThemeDesc.trim(),
+        category: customThemeCategory,
+        estimated_days: customThemeDays,
+      });
+      setPresetThemeTemplates((prev) => [...prev, template]);
+      setSetupThemeTemplateId(template.id);
+      setSetupThemeCustom(null);
+      setCustomThemeTitle('');
+      setCustomThemeDesc('');
+      setCustomThemeDays(14);
+      setCustomThemeCategory('learning');
+      setShowCustomThemeForm(false);
+      toast.success('主题已创建并自动选中');
+    } catch (e: any) {
+      toast.error(e.message || '创建失败');
+    } finally {
+      setThemeSubmitting(false);
+    }
   };
 
   // 提交阶段目标设置
   const handleSaveGoalSetup = async () => {
     if (!selectedChildId) return;
-    if (!setupStartDate || !setupEndDate) {
-      toast.error('请选择时间区间');
+    if (!setupStartDate) {
+      toast.error('请选择开始日期');
       return;
     }
-    const goalEntries = Object.entries(setupGoals).filter(([, v]) => v > 0);
-    if (goalEntries.length === 0) {
-      toast.error('请至少为一个维度设置目标');
+    if (setupGoals.length === 0) {
+      toast.error('请至少选择一个维度');
       return;
     }
     setGoalSubmitting(true);
     try {
+      const endDate = computeEndDate(setupStartDate, setupWeeks);
       const startISO = new Date(setupStartDate + 'T00:00:00').toISOString();
-      const endISO = new Date(setupEndDate + 'T23:59:59').toISOString();
-      const name = `${setupStartDate.slice(5)}-${setupEndDate.slice(5)} 成长阶段`;
+      const endISO = new Date(endDate + 'T23:59:59').toISOString();
+      const name = `${setupStartDate.slice(5)}-${endDate.slice(5)} 成长阶段`;
 
       let finalCycleId = cycleId;
       if (!finalCycleId) {
@@ -742,9 +1090,22 @@ export function GrowthPage() {
       } else {
         await updateCycle(finalCycleId, name, startISO, endISO);
       }
-      for (const [dimId, target] of goalEntries) {
-        await setGoal(finalCycleId!, selectedChildId, Number(dimId), target);
-      }
+      // 批量设置阶段目标（合并 dimension 和 habit 目标，不传 target_score）
+      const goals = [
+        ...setupGoals.map((dimId) => ({
+          goal_type: 'dimension',
+          dimension_id: dimId,
+        })),
+        ...setupHabits.map((habitId) => ({
+          goal_type: 'habit',
+          habit_id: habitId,
+        })),
+      ];
+      await setGoalsBatch({
+        cycle_id: finalCycleId,
+        child_id: selectedChildId,
+        goals,
+      });
       toast.success('阶段目标已保存');
       setShowGoalSetup(false);
       const cycleResult = await getCurrentCycle(selectedChildId);
@@ -757,8 +1118,58 @@ export function GrowthPage() {
       }
     } catch (e: any) {
       toast.error(e.message || '保存失败');
+      return;
     } finally {
       setGoalSubmitting(false);
+    }
+
+    // 主题任务创建：独立 try/catch，失败不阻断维度/习惯目标的保存
+    // 路径 1：选中了主题模板（预设或自定义创建）→ 走 template_id
+    // 路径 2：仅有自定义主题数据（兜底）→ 走 title/description/estimated_days/category
+    if (setupThemeTemplateId !== null) {
+      try {
+        const parentTask = await createParentTask({
+          child_id: selectedChildId,
+          template_id: setupThemeTemplateId,
+        });
+        // 后端 CreateParentTask 已自动生成子任务大纲；若返回为空则兜底触发一次生成
+        if (!parentTask.sub_task_outline) {
+          await generateChildren(parentTask.id);
+          toast.success('主题任务已创建，子任务大纲生成中');
+        } else {
+          const count = countSubTaskOutline(parentTask.sub_task_outline);
+          toast.success(
+            count > 0
+              ? `主题任务已创建，已生成 ${count} 个子任务大纲`
+              : '主题任务已创建，已生成子任务大纲',
+          );
+        }
+      } catch (e: any) {
+        toast.error(e.message || '主题任务创建失败');
+      }
+    } else if (setupThemeCustom) {
+      try {
+        const parentTask = await createParentTask({
+          child_id: selectedChildId,
+          title: setupThemeCustom.title,
+          description: setupThemeCustom.description,
+          estimated_days: setupThemeCustom.estimated_days,
+          category: setupThemeCustom.category,
+        });
+        if (!parentTask.sub_task_outline) {
+          await generateChildren(parentTask.id);
+          toast.success('主题任务已创建，子任务大纲生成中');
+        } else {
+          const count = countSubTaskOutline(parentTask.sub_task_outline);
+          toast.success(
+            count > 0
+              ? `主题任务已创建，已生成 ${count} 个子任务大纲`
+              : '主题任务已创建，已生成子任务大纲',
+          );
+        }
+      } catch (e: any) {
+        toast.error(e.message || '主题任务创建失败');
+      }
     }
   };
 
@@ -891,8 +1302,8 @@ export function GrowthPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
-        {/* V3.1 模块 B：大师挑战横幅（≥1 项精通时显示） */}
-        {masteryCount >= 1 && masterSummary && (masterSummary.inProgress > 0 || masterSummary.available > 0) && (
+        {/* V3.1 模块 B：大师挑战入口（有精通星时显示进度横幅，否则显示轻量入口） */}
+        {masteryCount >= 1 && masterSummary && (masterSummary.inProgress > 0 || masterSummary.available > 0) ? (
           <button
             onClick={() => navigate(`/master-challenges?child_id=${selectedChild.id}`)}
             className="w-full mb-3 flex items-center gap-2 p-3 rounded-2xl text-white text-sm font-medium shadow-md transition-transform active:scale-[0.99] bg-gradient-to-r from-amber-400 to-yellow-500"
@@ -901,6 +1312,15 @@ export function GrowthPage() {
             <span className="flex-1 text-left">
               大师挑战 {masterSummary.inProgress} 个进行中 / {masterSummary.available} 个可挑战
             </span>
+            <ChevronRight size={16} />
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate(`/master-challenges?child_id=${selectedChild.id}`)}
+            className="w-full mb-3 flex items-center gap-2 p-3 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700 text-sm font-medium transition-transform active:scale-[0.99]"
+          >
+            <span className="text-base">🎯</span>
+            <span className="flex-1 text-left">大师挑战 · PBL 项目式挑战池</span>
             <ChevronRight size={16} />
           </button>
         )}
@@ -1212,28 +1632,40 @@ export function GrowthPage() {
               </button>
             </div>
 
-            {/* 时间区间 */}
+            {/* 时间区间：开始日期 + 1-4 周按钮组 */}
             <div className="mb-5">
-              <label className="block text-sm font-medium text-text-primary mb-2">阶段时间区间</label>
-              <div className="flex items-center gap-2">
-                <MobileDatePicker
-                  value={setupStartDate}
-                  onChange={setSetupStartDate}
-                  placeholder="开始"
-                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
-                />
-                <span className="text-text-tertiary">~</span>
-                <MobileDatePicker
-                  value={setupEndDate}
-                  onChange={setSetupEndDate}
-                  placeholder="结束"
-                  className="flex-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
-                />
+              <label className="block text-sm font-medium text-text-primary mb-2">开始日期</label>
+              <MobileDatePicker
+                value={setupStartDate}
+                onChange={setSetupStartDate}
+                placeholder="请选择开始日期"
+                className="w-full px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm text-left flex items-center justify-between"
+              />
+              <label className="block text-sm font-medium text-text-primary mb-2 mt-3">阶段时长</label>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 2, 3, 4].map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setSetupWeeks(w)}
+                    className={`py-2 rounded-xl text-sm font-medium transition-colors ${
+                      setupWeeks === w
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-100 text-text-secondary hover:bg-gray-200'
+                    }`}
+                  >
+                    {w} 周
+                  </button>
+                ))}
               </div>
-              <p className="text-xs text-text-tertiary mt-1.5">阶段结束时将触发成长回顾</p>
+              <p className="text-xs text-text-tertiary mt-1.5">
+                {setupStartDate
+                  ? `阶段结束：${computeEndDate(setupStartDate, setupWeeks)}，阶段结束时将触发成长回顾`
+                  : '阶段结束时将触发成长回顾'}
+              </p>
             </div>
 
-            {/* 多维度目标 */}
+            {/* 多维度目标（仅勾选，不设目标分值） */}
             <div className="mb-5">
               <label className="block text-sm font-medium text-text-primary mb-2">
                 维度目标（可多选）
@@ -1244,50 +1676,297 @@ export function GrowthPage() {
               <div className="space-y-2">
                 {dimensions.map((dim) => {
                   const currentScore = scores.find((s) => s.dimension_id === dim.id)?.score || 0;
-                  const target = setupGoals[dim.id] || 0;
+                  const checked = setupGoals.includes(dim.id);
                   return (
                     <div key={dim.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                       <button
+                        type="button"
                         onClick={() => {
-                          setSetupGoals((prev) => {
-                            const next = { ...prev };
-                            if (target > 0) {
-                              delete next[dim.id];
-                            } else {
-                              next[dim.id] = 20;
-                            }
-                            return next;
-                          });
+                          setSetupGoals((prev) =>
+                            prev.includes(dim.id)
+                              ? prev.filter((id) => id !== dim.id)
+                              : [...prev, dim.id],
+                          );
                         }}
                         className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                          target > 0 ? 'border-primary bg-primary' : 'border-gray-300 bg-white'
+                          checked ? 'border-primary bg-primary' : 'border-gray-300 bg-white'
                         }`}
                       >
-                        {target > 0 && <Check size={14} className="text-white" />}
+                        {checked && <Check size={14} className="text-white" />}
                       </button>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-text-primary">{dim.name}</div>
                         <div className="text-xs text-text-tertiary">当前 {currentScore} 分</div>
                       </div>
-                      {target > 0 && (
-                        <select
-                          value={target}
-                          onChange={(e) =>
-                            setSetupGoals((prev) => ({ ...prev, [dim.id]: Number(e.target.value) }))
-                          }
-                          className="px-2 py-1 bg-white rounded-lg border border-gray-200 text-sm text-text-primary"
-                        >
-                          {[10, 20, 30, 40, 50, 60, 80, 100].map((v) => (
-                            <option key={v} value={v}>
-                              目标 {v}
-                            </option>
-                          ))}
-                        </select>
-                      )}
                     </div>
                   );
                 })}
               </div>
+            </div>
+
+            {/* 习惯目标（可选，最多 2 个） */}
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-text-primary">
+                  🌱 习惯目标（可选，最多 2 个）
+                </label>
+                {setupHabits.length > 0 && (
+                  <span className="text-xs font-medium text-emerald-600">
+                    已选 {setupHabits.length}/2
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-text-tertiary mb-3">
+                培养良好习惯，每日打卡巩固成长
+              </p>
+              {presetHabitsLoading ? (
+                <div className="py-3 text-center text-xs text-text-tertiary">加载预设习惯中...</div>
+              ) : presetHabits.length > 0 ? (
+                <div className="space-y-2">
+                  {presetHabits.map((habit) => {
+                    const checked = setupHabits.includes(habit.id);
+                    return (
+                      <div
+                        key={habit.id}
+                        className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+                          checked
+                            ? 'bg-emerald-50 border-emerald-300'
+                            : 'bg-gray-50 border-transparent'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleSetupHabit(habit.id)}
+                          className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                            checked
+                              ? 'border-emerald-500 bg-emerald-500'
+                              : 'border-gray-300 bg-white'
+                          }`}
+                        >
+                          {checked && <Check size={14} className="text-white" />}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-text-primary flex items-center gap-1.5">
+                            {habit.title}
+                            {habit.is_custom && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-medium">
+                                自定义
+                              </span>
+                            )}
+                          </div>
+                          {habit.description && (
+                            <div className="text-xs text-text-tertiary line-clamp-1">
+                              {habit.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-3 text-center text-xs text-text-tertiary">
+                  暂无适配当前年龄的预设习惯
+                </div>
+              )}
+
+              {/* 自定义习惯入口/表单 */}
+              {!showCustomHabitForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCustomHabitForm(true)}
+                  className="mt-2 w-full py-2 rounded-xl border border-dashed border-emerald-300 text-emerald-600 text-sm font-medium hover:bg-emerald-50 transition-colors"
+                >
+                  + 自定义习惯
+                </button>
+              ) : (
+                <div className="mt-2 p-3 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-2.5">
+                  <input
+                    type="text"
+                    value={customHabitTitle}
+                    onChange={(e) => setCustomHabitTitle(e.target.value)}
+                    placeholder="习惯标题（如：每天阅读 20 分钟）"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-emerald-400"
+                  />
+                  <input
+                    type="text"
+                    value={customHabitDesc}
+                    onChange={(e) => setCustomHabitDesc(e.target.value)}
+                    placeholder="描述（可选）"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-emerald-400"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCustomHabitForm(false);
+                        setCustomHabitTitle('');
+                        setCustomHabitDesc('');
+                      }}
+                      className="flex-1 py-2 bg-white border border-gray-200 text-text-secondary text-xs rounded-lg"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateCustomHabit}
+                      disabled={habitSubmitting || !customHabitTitle.trim()}
+                      className="flex-1 py-2 bg-emerald-500 text-white text-xs rounded-lg font-medium disabled:opacity-50 hover:bg-emerald-600 transition-colors"
+                    >
+                      {habitSubmitting ? '创建中...' : '创建并选中'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 主题任务（可选，单选，最多 1 个；蓝紫色调与习惯区绿色区分） */}
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-text-primary">
+                  🎯 主题任务（可选）
+                </label>
+                {setupThemeTemplateId !== null && (
+                  <span className="text-xs font-medium text-indigo-600">
+                    已选 1/1
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-text-tertiary mb-3">
+                本周期最多开展 1 个主题任务，AI 将自动拆解为分阶段子任务
+              </p>
+              {presetThemesLoading ? (
+                <div className="py-3 text-center text-xs text-text-tertiary">加载预设主题中...</div>
+              ) : presetThemeTemplates.length > 0 ? (
+                <div className="space-y-2">
+                  {presetThemeTemplates.map((tpl) => {
+                    const checked = setupThemeTemplateId === tpl.id;
+                    return (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        onClick={() => toggleSetupTheme(tpl.id)}
+                        className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                          checked
+                            ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-300'
+                            : 'bg-gray-50 border-transparent hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* 单选用圆形指示，与习惯多选方形区分 */}
+                          <div
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
+                              checked ? 'border-indigo-500 bg-indigo-500' : 'border-gray-300 bg-white'
+                            }`}
+                          >
+                            {checked && <Check size={12} className="text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-text-primary flex items-center gap-1.5 flex-wrap">
+                              {tpl.title}
+                              {tpl.is_custom && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700 font-medium">
+                                  自定义
+                                </span>
+                              )}
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium">
+                                {THEME_CATEGORY_LABEL[tpl.category] || tpl.category}
+                              </span>
+                            </div>
+                            {tpl.description && (
+                              <div className="text-xs text-text-tertiary line-clamp-2 mt-0.5">
+                                {tpl.description}
+                              </div>
+                            )}
+                            <div className="text-[11px] text-text-tertiary mt-1">
+                              预计周期 {tpl.estimated_days} 天
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-3 text-center text-xs text-text-tertiary">
+                  暂无适配当前年龄的预设主题
+                </div>
+              )}
+
+              {/* 自定义主题入口/表单 */}
+              {!showCustomThemeForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCustomThemeForm(true)}
+                  className="mt-2 w-full py-2 rounded-xl border border-dashed border-indigo-300 text-indigo-600 text-sm font-medium hover:bg-indigo-50 transition-colors"
+                >
+                  + 自定义主题
+                </button>
+              ) : (
+                <div className="mt-2 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100 space-y-2.5">
+                  <input
+                    type="text"
+                    value={customThemeTitle}
+                    onChange={(e) => setCustomThemeTitle(e.target.value)}
+                    placeholder="主题标题（如：小小科学家养成计划）"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-indigo-400"
+                  />
+                  <textarea
+                    value={customThemeDesc}
+                    onChange={(e) => setCustomThemeDesc(e.target.value)}
+                    placeholder="主题描述（可选）"
+                    rows={2}
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-indigo-400 resize-none"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-text-tertiary mb-1">预计周期（天）</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={customThemeDays}
+                        onChange={(e) => setCustomThemeDays(Number(e.target.value) || 0)}
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-indigo-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-text-tertiary mb-1">类别</label>
+                      <select
+                        value={customThemeCategory}
+                        onChange={(e) => setCustomThemeCategory(e.target.value)}
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-indigo-400"
+                      >
+                        {THEME_CATEGORIES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCustomThemeForm(false);
+                        setCustomThemeTitle('');
+                        setCustomThemeDesc('');
+                        setCustomThemeDays(14);
+                        setCustomThemeCategory('learning');
+                      }}
+                      className="flex-1 py-2 bg-white border border-gray-200 text-text-secondary text-xs rounded-lg"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateCustomTheme}
+                      disabled={themeSubmitting || !customThemeTitle.trim()}
+                      className="flex-1 py-2 bg-indigo-500 text-white text-xs rounded-lg font-medium disabled:opacity-50 hover:bg-indigo-600 transition-colors"
+                    >
+                      {themeSubmitting ? '创建中...' : '创建并选中'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">

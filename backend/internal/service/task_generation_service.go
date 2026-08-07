@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"growpocket/internal/database"
 	"growpocket/internal/model"
+	"growpocket/internal/util/timeutil"
 	"log"
 	"math/rand"
 	"sort"
@@ -18,6 +19,7 @@ type TaskGenerationService struct {
 	ability      *AbilityService
 	cycleService *GrowthCycleService
 	taskService  *TaskService
+	habitService *HabitService
 }
 
 // NewTaskGenerationService 创建任务生成服务
@@ -27,6 +29,7 @@ func NewTaskGenerationService(aiService *AIService) *TaskGenerationService {
 		ability:      NewAbilityService(),
 		cycleService: NewGrowthCycleService(),
 		taskService:  NewTaskService(),
+		habitService: NewHabitService(aiService),
 	}
 }
 
@@ -55,6 +58,13 @@ type learningDimBoost struct {
 // GenerateTasksForChild 为儿童生成每日 AI 任务（三段式混合生成主流程）
 // 不改变函数签名：每日 08:00 scheduler 与 hasTodayAITask 幂等逻辑保持不变
 func (s *TaskGenerationService) GenerateTasksForChild(childID, familyID, createdBy uint, childName string) error {
+	// 先确保习惯每日子任务就绪（habit_daily），与 AI 任务生成相互独立
+	if s.habitService != nil {
+		if err := s.habitService.EnsureHabitDailyReady(childID); err != nil {
+			log.Printf("[TaskGen] 习惯每日任务就绪检查失败 child=%d: %v", childID, err)
+		}
+	}
+
 	// Step 1: 收集上下文（保留现有逻辑）
 	scores, _ := s.ability.GetChildScores(childID, familyID)
 	dimensions, _ := s.ability.ListDimensions()
@@ -196,7 +206,90 @@ func (s *TaskGenerationService) GenerateTasksForChild(childID, familyID, created
 	// 结构化日志（模块 C3）
 	log.Printf("[TaskGen] child=%d recalled=%d prompt_sent=true llm_returned=%d sanitized=%d rejected=%d",
 		childID, len(candidates), llmReturned, sanitizedCount, rejectedCount)
+
+	// 补齐 GoalType=parent_task 目标关联的父任务子任务推进（Task 27.2）
+	// 单个 parent_task 补齐失败不阻断整体流程，仅记录日志
+	s.processParentTaskGoals(goals)
+
+	// 兜底：检查该孩子是否有 3 天未完成的 parent 任务，推进下一批实例化
+	// 失败不阻断 GenerateTasksForChild 主流程，仅记录日志
+	if err := s.CheckStaleParentTasks(childID); err != nil {
+		log.Printf("[TaskGen] CheckStaleParentTasks 失败 child=%d: %v", childID, err)
+	}
+
 	return nil
+}
+
+// processParentTaskGoals 处理 GoalType=parent_task 的目标，补齐父任务子任务推进（Task 27.2）
+// 对每个 parent_task 目标：
+//  1. 加载关联父任务（通过 ParentTaskID）
+//  2. 若父任务 SubTaskOutline 为空，调用 GenerateSubTaskOutline 生成大纲
+//  3. 检查父任务当前是否有正在进行的 child 任务（status != 3）
+//  4. 若无正在进行的 child（即所有已实例化的 child 都完成了），调用 AdvanceBatch 实例化下一个
+//
+// 这部分是"补齐"逻辑，不直接生成 task 记录，而是通过调用 ParentTaskService 的方法确保父任务子任务推进正常
+// 单个 parent_task 补齐失败不阻断整体生成流程，仅记录日志
+func (s *TaskGenerationService) processParentTaskGoals(goals []model.Goal) {
+	var parentTaskGoals []model.Goal
+	for _, g := range goals {
+		if g.GoalType == "parent_task" {
+			parentTaskGoals = append(parentTaskGoals, g)
+		}
+	}
+	if len(parentTaskGoals) == 0 {
+		return
+	}
+	log.Printf("[TaskGen] 读取到 %d 个 parent_task 目标，开始补齐子任务", len(parentTaskGoals))
+
+	// 按需创建 ParentTaskService，避免循环依赖（参考 Task 20 写法）
+	// 注入 aiService 以便 GenerateSubTaskOutline 走 AI 路径（失败时内部有 fallback）
+	parentTaskService := &ParentTaskService{aiService: s.aiService}
+
+	for _, g := range parentTaskGoals {
+		if g.ParentTaskID == nil || *g.ParentTaskID == 0 {
+			log.Printf("[TaskGen] parent_task 目标 %d 缺少 ParentTaskID，跳过", g.ID)
+			continue
+		}
+		parentTaskID := *g.ParentTaskID
+
+		var parent model.Task
+		if err := database.DB.First(&parent, parentTaskID).Error; err != nil {
+			log.Printf("[TaskGen] 加载父任务失败 goal=%d parent=%d: %v", g.ID, parentTaskID, err)
+			continue
+		}
+		if parent.TaskKind != "parent" {
+			log.Printf("[TaskGen] 目标关联任务 %d 不是 parent 类型，跳过", parentTaskID)
+			continue
+		}
+
+		// 若 SubTaskOutline 为空，先生成大纲
+		if strings.TrimSpace(parent.SubTaskOutline) == "" {
+			log.Printf("[TaskGen] parent=%d SubTaskOutline 为空，调用 GenerateSubTaskOutline", parentTaskID)
+			if err := parentTaskService.GenerateSubTaskOutline(parentTaskID, ""); err != nil {
+				log.Printf("[TaskGen] GenerateSubTaskOutline 失败 parent=%d: %v", parentTaskID, err)
+				// 大纲生成失败仍继续检查是否需要推进（可能 fallback 已生成大纲）
+			}
+		}
+
+		// 检查 parent 当前是否有正在进行的 child 任务（status != 3，即未完成）
+		var inProgressCount int64
+		database.DB.Model(&model.Task{}).
+			Where("parent_id = ? AND task_kind = ? AND status != ?",
+				parentTaskID, "child", model.TaskStatusCompleted).
+			Count(&inProgressCount)
+		if inProgressCount > 0 {
+			log.Printf("[TaskGen] parent=%d 当前有 %d 个进行中的 child，无需补齐", parentTaskID, inProgressCount)
+			continue
+		}
+
+		// 没有正在进行的 child（所有已实例化的 child 都完成了），调用 AdvanceBatch 实例化下一个
+		log.Printf("[TaskGen] parent=%d 无进行中 child，调用 AdvanceBatch 推进下一批", parentTaskID)
+		if _, err := parentTaskService.AdvanceBatch(parentTaskID); err != nil {
+			log.Printf("[TaskGen] AdvanceBatch 推进失败 parent=%d: %v", parentTaskID, err)
+			continue
+		}
+		log.Printf("[TaskGen] AdvanceBatch 推进成功 parent=%d", parentTaskID)
+	}
 }
 
 // recallCandidateTemplates 召回候选任务模板（RAG 阶段）
@@ -309,7 +402,7 @@ func (s *TaskGenerationService) buildAcademicBoost(childID, familyID uint) learn
 	}
 	boost.learningDimID = learningDim.ID
 	// 查询近 2 周作业档趋势（按 created_at 倒序，取最近 10 条）
-	cutoff := time.Now().AddDate(0, 0, -14)
+	cutoff := timeutil.Now().AddDate(0, 0, -14)
 	var trends []model.AcademicTrendEntry
 	database.DB.Where("child_id = ? AND family_id = ? AND metric_type = ? AND created_at >= ?",
 		childID, familyID, model.TrendMetricHomework, cutoff).
@@ -467,20 +560,27 @@ func (s *TaskGenerationService) buildHybridPrompt(childName string, child model.
 		parts = append(parts, fmt.Sprintf("重点提升维度：%s（当前最弱）。", weakestDimName))
 	}
 
-	// 家长目标
-	if len(goals) > 0 {
-		var goalStrs []string
-		for _, g := range goals {
-			for _, d := range dims {
-				if d.ID == g.DimensionID {
-					goalStrs = append(goalStrs, fmt.Sprintf("%s目标%d分", d.Name, g.TargetScore))
-					break
-				}
+	// 本周期重点关注维度（来自 GoalType=dimension 的目标，不再传目标分数）
+	// GoalType='dimension'：仅维度 ID，TargetScore=0 不再用作目标分数
+	// GoalType='habit' / 'parent_task'：不在此处生成 Prompt（由各自服务独立处理）
+	var focusDimNames []string
+	for _, g := range goals {
+		goalType := g.GoalType
+		if goalType == "" {
+			goalType = "dimension"
+		}
+		if goalType != "dimension" {
+			continue
+		}
+		for _, d := range dims {
+			if d.ID == g.DimensionID {
+				focusDimNames = append(focusDimNames, d.Name)
+				break
 			}
 		}
-		if len(goalStrs) > 0 {
-			parts = append(parts, fmt.Sprintf("家长目标：%s。", strings.Join(goalStrs, "，")))
-		}
+	}
+	if len(focusDimNames) > 0 {
+		parts = append(parts, fmt.Sprintf("本周期重点关注维度：%s。请基于关注维度生成适合的日常任务。", strings.Join(focusDimNames, "、")))
 	}
 
 	// 三段式生成指令
@@ -591,7 +691,7 @@ func (s *TaskGenerationService) suggestionsFromCandidates(candidates []model.Tas
 
 // getRecentCompletedTitles 取近 N 天已完成任务标题（按创建时间倒序，最多 50 条）
 func (s *TaskGenerationService) getRecentCompletedTitles(childID, familyID uint, days int) []string {
-	cutoff := time.Now().AddDate(0, 0, -days)
+	cutoff := timeutil.Now().AddDate(0, 0, -days)
 	var tasks []model.Task
 	database.DB.Where("child_id = ? AND family_id = ? AND status = ? AND created_at >= ?",
 		childID, familyID, model.TaskStatusCompleted, cutoff).
@@ -642,7 +742,7 @@ func (s *TaskGenerationService) countRecentLatentTasks(childID, familyID uint, l
 	for id := range latentDims {
 		ids = append(ids, id)
 	}
-	cutoff := time.Now().AddDate(0, 0, -days)
+	cutoff := timeutil.Now().AddDate(0, 0, -days)
 	var count int64
 	database.DB.Model(&model.Task{}).
 		Where("child_id = ? AND family_id = ? AND status = ? AND created_at >= ? AND ability_dimension_id IN ?",
@@ -653,7 +753,7 @@ func (s *TaskGenerationService) countRecentLatentTasks(childID, familyID uint, l
 
 // computeAge 根据生日计算周岁
 func computeAge(birthday time.Time) int {
-	now := time.Now()
+	now := timeutil.Now()
 	age := now.Year() - birthday.Year()
 	if now.Month() < birthday.Month() || (now.Month() == birthday.Month() && now.Day() < birthday.Day()) {
 		age--
@@ -699,14 +799,64 @@ func (s *TaskGenerationService) GenerateForAllChildren() {
 
 // hasTodayAITask 判断儿童今日是否已有 AI 生成的任务
 func hasTodayAITask(childID, familyID uint) bool {
-	today := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Now().Location())
-	tomorrow := today.Add(24 * time.Hour)
+	today := timeutil.Today()
+	tomorrow := timeutil.Tomorrow()
 	var count int64
 	database.DB.Model(&model.Task{}).
 		Where("child_id = ? AND family_id = ? AND ai_generated = ? AND created_at >= ? AND created_at < ?",
 			childID, familyID, true, today, tomorrow).
 		Count(&count)
 	return count > 0
+}
+
+// CheckStaleParentTasks 检查指定孩子的 parent 任务下是否有超过 3 天（72 小时）未完成的 child 任务
+// 若有，则调用 AdvanceBatch 推进下一批实例化（兜底机制）
+//
+// 幂等性：推进后最新 child 的 CreatedAt 重置为当前时间，下次检查不会重复推进
+// 失败不阻断调用方主流程：单个 parent 推进失败仅记录日志，继续处理下一个
+func (s *TaskGenerationService) CheckStaleParentTasks(childID uint) error {
+	// 查询该孩子所有未完成的 parent 任务（status != 3）
+	var parents []model.Task
+	if err := database.DB.Where("child_id = ? AND task_kind = ? AND status != ?",
+		childID, "parent", model.TaskStatusCompleted).Find(&parents).Error; err != nil {
+		return fmt.Errorf("查询父任务失败: %w", err)
+	}
+	if len(parents) == 0 {
+		return nil
+	}
+
+	staleThreshold := 72 * time.Hour
+	now := timeutil.Now()
+	parentTaskService := &ParentTaskService{}
+
+	for _, parent := range parents {
+		// 查询该 parent 下未完成的 child（pending 或 in_progress），按 sequence 降序取最大者
+		var children []model.Task
+		if err := database.DB.Where("parent_id = ? AND task_kind = ? AND status != ?",
+			parent.ID, "child", model.TaskStatusCompleted).
+			Order("sequence DESC").
+			Find(&children).Error; err != nil {
+			log.Printf("[StaleCheck] 查询子任务失败 parent=%d: %v", parent.ID, err)
+			continue
+		}
+		if len(children) == 0 {
+			continue
+		}
+
+		// children 已按 sequence DESC 排序，取第一个即 sequence 最大者
+		latest := children[0]
+		if now.Sub(latest.CreatedAt) > staleThreshold {
+			log.Printf("[StaleCheck] child=%d parent=%d 最新 child=%d seq=%d 已超 72 小时未完成，推进下一批",
+				childID, parent.ID, latest.ID, latest.Sequence)
+			if _, err := parentTaskService.AdvanceBatch(parent.ID); err != nil {
+				// "所有子任务已生成完毕"或其他错误均不阻断，仅记录日志
+				log.Printf("[StaleCheck] AdvanceBatch 推进失败 parent=%d: %v", parent.ID, err)
+				continue
+			}
+			log.Printf("[StaleCheck] AdvanceBatch 推进成功 parent=%d", parent.ID)
+		}
+	}
+	return nil
 }
 
 // StartDailyScheduler 启动每日定时生成（每天 08:00），非阻塞

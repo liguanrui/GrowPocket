@@ -92,6 +92,10 @@ func Init(dbPath string) {
 		&model.MasterChallengeInstance{},
 		&model.MasterChallengeStage{},
 		&model.MasterChallengeSubmission{},
+		&model.Habit{},
+		&model.ParentTaskTemplate{},
+		&model.AdminUser{},
+		&model.AdminOperationLog{},
 	)
 	if err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
@@ -120,6 +124,14 @@ func Init(dbPath string) {
 
 	if err := seedMasterChallengeTemplates(db); err != nil {
 		log.Printf("大师挑战模板 Seed 数据失败: %v", err)
+	}
+
+	if err := seedHabit(db); err != nil {
+		log.Printf("习惯库 Seed 数据失败: %v", err)
+	}
+
+	if err := seedParentTaskTemplate(db); err != nil {
+		log.Printf("主题任务模板 Seed 数据失败: %v", err)
 	}
 
 	log.Printf("数据库初始化完成: %s", dbPath)

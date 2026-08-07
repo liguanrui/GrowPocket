@@ -10,6 +10,7 @@ import { AnimatedNumberComponent as AnimatedNumber } from '../components/Animate
 import * as tasksService from '../services/tasks';
 import * as scoreService from '../services/score';
 import type { Task, TaskStatus } from '../services/tasks';
+import { getTaskTags } from '../utils/taskTags';
 
 const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any; color: string }[] = [
   { id: 'all', label: '全部', icon: FileText, color: 'text-text-primary' },
@@ -127,6 +128,12 @@ function TaskItem({ task, onClick, showStatus, highlight, onAdjust, onReject }: 
   const Icon = statusInfo.icon;
   const isAITask = !!task.ai_generated;
   const canReviewAI = isAITask && task.status === 1;
+  const tags = getTaskTags(task);
+  const visibleTags = tags.slice(0, 3);
+  const hiddenTagCount = tags.length - visibleTags.length;
+  // streak 与 sequence：必须强制布尔，避免数字 0 被 JSX 直接渲染成可见文本
+  const showStreak = task.task_kind === 'habit_daily' && (task.streak_count || 0) > 0;
+  const showSequence = task.task_kind === 'child' && (task.sequence || 0) > 0;
 
   return (
     <div
@@ -138,14 +145,39 @@ function TaskItem({ task, onClick, showStatus, highlight, onAdjust, onReject }: 
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            {isAITask && (
-              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-gradient-to-r from-purple-500 to-pink-500 text-white">
-                <Sparkles size={10} />
-                AI 生成
+          <div className="font-medium text-text-primary mb-1.5">{task.title}</div>
+          {/* 统一标签区：最多展示 3 个标签 + 超量折叠 */}
+          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+            {visibleTags.map((tag) => (
+              <span
+                key={tag.label}
+                className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${tag.color}`}
+              >
+                {tag.label === 'AI 生成' ? (
+                  <span className="inline-flex items-center gap-0.5">
+                    <Sparkles size={10} />
+                    {tag.label}
+                  </span>
+                ) : (
+                  tag.label
+                )}
+              </span>
+            ))}
+            {hiddenTagCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600">
+                +{hiddenTagCount}
               </span>
             )}
-            <div className="font-medium text-text-primary">{task.title}</div>
+            {showStreak && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-50 text-green-600">
+                🔥 连续 {task.streak_count} 天
+              </span>
+            )}
+            {showSequence && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-600">
+                阶段 #{task.sequence}
+              </span>
+            )}
           </div>
           {task.description && (
             <div className="text-sm text-text-tertiary mt-1 line-clamp-2">{task.description}</div>

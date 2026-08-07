@@ -5,9 +5,11 @@ import (
 	"growpocket/internal/database"
 	"growpocket/internal/handler"
 	"growpocket/internal/middleware"
+	"growpocket/internal/model"
 	"growpocket/internal/service"
 	"growpocket/pkg/envloader"
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -93,6 +95,14 @@ func main() {
 		authorized.PUT("/tasks/:id/ai-review", taskGenHandler.ReviewAITask)
 		authorized.POST("/tasks/ai-generate", taskGenHandler.GenerateToday)
 
+		// 主题任务（父任务）+ 子任务大纲生成 + 分批实例化（Task 19）
+		parentTaskHandler := handler.NewParentTaskHandler(service.NewParentTaskService(aiService))
+		authorized.POST("/tasks/parent", parentTaskHandler.CreateParentTask)
+		authorized.POST("/tasks/parent/:id/generate-children", parentTaskHandler.GenerateChildren)
+		authorized.POST("/tasks/parent/:id/advance-batch", parentTaskHandler.AdvanceBatch)
+		authorized.GET("/tasks/:id/children", parentTaskHandler.GetChildren)
+		authorized.GET("/tasks/:id/parent", parentTaskHandler.GetParentByChildTask)
+
 		// 积分
 		scoreHandler := handler.NewScoreHandler(cfg)
 		authorized.GET("/score/balance", scoreHandler.GetBalance)
@@ -128,7 +138,9 @@ func main() {
 		authorized.POST("/growth-cycles", growthCycleHandler.CreateCycle)
 		authorized.PUT("/growth-cycles/:id", growthCycleHandler.UpdateCycle)
 		authorized.POST("/growth-cycles/:id/goals", growthCycleHandler.SetGoal)
+		authorized.POST("/growth/goals/batch", growthCycleHandler.SetGoalsBatch)
 		authorized.GET("/growth-cycles/current/:child_id", growthCycleHandler.GetCurrentCycle)
+		authorized.GET("/growth-cycles/cycle-stats", growthCycleHandler.GetCycleStats)
 
 		// 任务模板
 		taskTemplateHandler := handler.NewTaskTemplateHandler()
@@ -215,6 +227,81 @@ func main() {
 		authorized.POST("/academic/trends", academicHandler.RecordTrend)
 		authorized.GET("/academic/trends/:child_id", academicHandler.GetTrends)
 		authorized.GET("/academic/allowed-types/:child_id", academicHandler.GetAllowedTypes)
+
+		// 习惯库
+		habitsGroup := authorized.Group("/habits")
+		habitsGroup.GET("/preset", handler.GetPresetHabits)
+		habitsGroup.POST("/custom", handler.CreateCustomHabit)
+		habitsGroup.GET("/active", handler.GetActiveHabits)
+		habitsGroup.GET("/:id/stats", handler.GetHabitStats)
+
+		// 主题任务模板
+		parentTaskTemplatesGroup := authorized.Group("/parent-task-templates")
+		parentTaskTemplatesGroup.GET("/preset", handler.GetPresetParentTaskTemplates)
+		parentTaskTemplatesGroup.POST("/custom", handler.CreateCustomParentTaskTemplate)
+
+		// 调试接口（仅开发环境，用于时间穿越测试）
+		if os.Getenv("APP_ENV") == "development" {
+			debugHandler := handler.NewDebugHandler(taskGenService)
+			authorized.POST("/debug/advance-time", debugHandler.AdvanceTime)
+			authorized.POST("/debug/reset-time", debugHandler.ResetTime)
+			authorized.GET("/debug/time", debugHandler.GetTime)
+		}
+	}
+
+	// === 管理后台 Admin 路由 ===
+	adminService := service.NewAdminAuthService(cfg)
+	adminHandler := handler.NewAdminHandler(cfg).WithService(adminService)
+
+	// admin 公开路由（无需登录）
+	adminPublic := r.Group("/api/admin")
+	{
+		adminPublic.POST("/auth/login", adminHandler.Login)
+	}
+
+	// Dashboard Handler
+	dashHandler := handler.NewAdminDashboardHandler(service.NewAdminDashboardService(), adminService)
+
+	// admin 需登录路由
+	adminAuthorized := r.Group("/api/admin")
+	adminAuthorized.Use(middleware.AdminJWTAuth(cfg.AdminJWTSecret))
+	{
+		// Dashboard 统计
+		adminAuthorized.GET("/dashboard/stats", dashHandler.GetOverview)
+		adminAuthorized.GET("/dashboard/trends", dashHandler.GetTrends)
+		adminAuthorized.GET("/dashboard/ability-radar", dashHandler.GetAbilityRadar)
+
+		// 认证相关
+		adminAuthorized.POST("/auth/refresh", adminHandler.Refresh)
+		adminAuthorized.GET("/auth/me", adminHandler.Me)
+		adminAuthorized.PUT("/auth/password", adminHandler.ChangePassword)
+
+		// 管理员管理（super_admin 专属）
+		adminUsers := adminAuthorized.Group("/users")
+		adminUsers.Use(middleware.RequireAdminRole(model.AdminRoleSuperAdmin))
+		{
+			adminUsers.GET("", adminHandler.ListAdmins)
+			adminUsers.POST("", adminHandler.CreateAdmin)
+			adminUsers.PUT("/:id", adminHandler.UpdateAdmin)
+			adminUsers.DELETE("/:id", adminHandler.DeleteAdmin)
+		}
+
+		// 系统日志
+		adminAuthorized.GET("/system/logs", adminHandler.ListOperationLogs)
+
+		// 模块 C：用户与家庭管理
+		familyAdminHandler := handler.NewAdminFamilyHandler(service.NewAdminFamilyService(database.DB, adminService))
+		adminAuthorized.GET("/families", familyAdminHandler.ListFamilies)
+		adminAuthorized.GET("/families/:id", familyAdminHandler.GetFamilyDetail)
+		adminAuthorized.PUT("/families/:id/status", familyAdminHandler.ToggleFamilyStatus)
+		adminAuthorized.GET("/children", familyAdminHandler.ListChildren)
+		adminAuthorized.GET("/children/:id", familyAdminHandler.GetChildDetail)
+		adminAuthorized.GET("/parents", familyAdminHandler.ListParents)
+	}
+
+	// 初始化超级管理员（空库时自动创建）
+	if err := adminService.SeedInitialSuperAdmin(cfg.AdminInitPassword); err != nil {
+		log.Fatalf("初始化超级管理员失败: %v", err)
 	}
 
 	log.Printf("服务启动于端口 %s", cfg.Port)

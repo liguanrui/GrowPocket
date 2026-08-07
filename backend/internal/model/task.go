@@ -27,6 +27,17 @@ type Task struct {
 	SecondaryDimensions string `gorm:"size:100" json:"secondary_dimensions,omitempty"`        // 次维度ID JSON数组，如 "[2,5]"
 	AIGenerated         bool   `gorm:"default:false" json:"ai_generated"`                     // 是否AI生成
 	RuleSanitized       bool   `gorm:"default:false" json:"rule_sanitized"`                   // 模块 C：是否经过三段式混合生成的规则守门员清洗
+	TaskKind            string     `json:"task_kind" gorm:"default:daily"`                        // 任务类型：daily/habit_master/habit_daily/parent/child
+	ParentID            uint       `json:"parent_id" gorm:"default:0"`                            // 父任务 ID（habit_daily→habit_master，child→parent）
+	HabitID             uint       `json:"habit_id" gorm:"default:0"`                             // 习惯配置 ID（仅 habit_daily/habit_master）
+	GuardianRequired    bool       `json:"guardian_required" gorm:"default:false"`                // 家长陪伴标记
+	StreakCount         int        `json:"streak_count" gorm:"default:0"`                         // 连续坚持天数（仅 habit_master）
+	TotalCount          int        `json:"total_count" gorm:"default:0"`                          // 累计坚持天数（仅 habit_master）
+	HabitGoal           int        `json:"habit_goal" gorm:"default:21"`                          // 习惯目标天数（仅 habit_master）
+	LastCheckinDate     *time.Time `json:"last_checkin_date"`                                     // 上次打卡日期（仅 habit_master）
+	SubTaskOutline      string     `json:"sub_task_outline" gorm:"type:text"`                     // 子任务大纲 JSON（仅 parent）
+	Sequence            int        `json:"sequence" gorm:"default:0"`                             // 子任务顺序（仅 child，从 1 开始）
+	IsKeyMilestone      bool       `json:"is_key_milestone" gorm:"default:false"`                 // 关键里程碑（仅 child）
 }
 
 const (

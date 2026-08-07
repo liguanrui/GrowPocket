@@ -56,6 +56,18 @@ cd "$PROJECT_ROOT/frontend"
 npm ci
 npm run build
 
+# 1.5 构建管理后台（如目录存在）
+if [ -d "$PROJECT_ROOT/adminfront" ]; then
+    echo "[1.5/6] 构建管理后台..."
+    cd "$PROJECT_ROOT/adminfront"
+    if [ -f "package-lock.json" ]; then
+        npm ci
+    else
+        npm i
+    fi
+    npm run build
+fi
+
 # 2. 编译后端
 echo "[2/6] 编译后端（Linux/AMD64）..."
 cd "$PROJECT_ROOT/backend"
@@ -66,12 +78,16 @@ echo "[3/6] 打包部署文件..."
 cd "$PROJECT_ROOT"
 DEPLOY_DIR=$(mktemp -d)
 mkdir -p "$DEPLOY_DIR/frontend"
+mkdir -p "$DEPLOY_DIR/adminfront"
 mkdir -p "$DEPLOY_DIR/backend/data"
 mkdir -p "$DEPLOY_DIR/backend/uploads"
 mkdir -p "$DEPLOY_DIR/nginx"
 mkdir -p "$DEPLOY_DIR/systemd"
 
 cp -r frontend/dist/* "$DEPLOY_DIR/frontend/"
+if [ -d "$PROJECT_ROOT/adminfront/dist" ]; then
+    cp -r "$PROJECT_ROOT/adminfront/dist/"* "$DEPLOY_DIR/adminfront/"
+fi
 cp backend/growpocket "$DEPLOY_DIR/backend/"
 cp deploy/nginx/growpocket.conf "$DEPLOY_DIR/nginx/"
 cp deploy/systemd/growpocket.service "$DEPLOY_DIR/systemd/"
@@ -85,11 +101,15 @@ echo "===== 远端部署 ====="
 
 # 创建目录
 mkdir -p /opt/growpocket/frontend
+mkdir -p /opt/growpocket/adminfront
 mkdir -p /opt/growpocket/backend/data
 mkdir -p /opt/growpocket/backend/uploads
 
 # 复制文件
 cp -r frontend/* /opt/growpocket/frontend/
+if [ -d adminfront ]; then
+    cp -r adminfront/* /opt/growpocket/adminfront/
+fi
 cp backend/growpocket /opt/growpocket/backend/
 chmod +x /opt/growpocket/backend/growpocket
 

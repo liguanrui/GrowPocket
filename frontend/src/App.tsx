@@ -1,4 +1,5 @@
-import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { ToastContainer } from './components/Toast';
@@ -33,7 +34,14 @@ type PageKey = 'assistant' | 'home' | 'growth' | 'community' | 'settings';
 
 function MainLayout() {
   const navigate = useNavigate();
-  const currentPath = window.location.pathname;
+  const location = useLocation();
+  const currentPath = location.pathname;
+
+  // 路由跳转时统一滚动到顶部（避免「点进任务详情页只看到半截内容」）
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname, location.search]);
+
   let activeTab: PageKey = 'assistant';
   if (currentPath.startsWith('/home')) activeTab = 'home';
     else if (currentPath === '/growth' || currentPath.startsWith('/growth')) activeTab = 'growth';

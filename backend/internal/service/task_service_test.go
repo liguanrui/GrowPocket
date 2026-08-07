@@ -245,7 +245,7 @@ func TestListTasks(t *testing.T) {
 	}
 
 	// 按 status=InProgress 过滤，应该只有 2 个
-	tasks, total, err := service.ListTasks(family.ID, child.ID, model.TaskStatusInProgress, 1, 10)
+	tasks, total, err := service.ListTasks(family.ID, child.ID, model.TaskStatusInProgress, nil, 1, 10)
 	if err != nil {
 		t.Fatalf("ListTasks 失败: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestListTasks(t *testing.T) {
 	}
 
 	// 按 status=Completed 过滤，应该只有 1 个
-	tasks, total, err = service.ListTasks(family.ID, child.ID, model.TaskStatusCompleted, 1, 10)
+	tasks, total, err = service.ListTasks(family.ID, child.ID, model.TaskStatusCompleted, nil, 1, 10)
 	if err != nil {
 		t.Fatalf("ListTasks 失败: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestListTasks(t *testing.T) {
 	}
 
 	// 不过滤 status（status=0 返回全部）
-	tasks, total, err = service.ListTasks(family.ID, child.ID, 0, 1, 10)
+	tasks, total, err = service.ListTasks(family.ID, child.ID, 0, nil, 1, 10)
 	if err != nil {
 		t.Fatalf("ListTasks 失败: %v", err)
 	}
