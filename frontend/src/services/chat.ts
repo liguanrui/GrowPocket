@@ -1,4 +1,5 @@
 import { request } from './api';
+import type { ActionSuggestion } from '../components/ActionConfirmCard';
 
 export interface ChatMessage {
   id: number;
@@ -7,6 +8,8 @@ export interface ChatMessage {
   content: string;
   intent?: string;
   created_at: string;
+  // AI 回复携带的可执行动作建议（Function Calling 产出，空数组或缺省表示无）
+  suggested_actions?: ActionSuggestion[];
 }
 
 export interface ChatSession {
@@ -27,6 +30,8 @@ export interface SendMessageResponse {
   reply: string;
   intent: string;
   session_id: number;
+  // 后端 Function Calling 产出的动作建议（空时为 []）
+  suggested_actions?: ActionSuggestion[];
 }
 
 export interface GetHistoryResponse {
@@ -81,5 +86,27 @@ export async function getSessionMessages(sessionId: number): Promise<ChatMessage
   return request<ChatMessage[]>({
     method: 'GET',
     url: `/chat/sessions/${sessionId}/messages`,
+  });
+}
+
+// 上报动作确认结果（用户确认 / 取消 / 失败时调用，供后端记录审计）
+// result 取值：success / cancelled / failed
+export async function confirmAction(
+  messageId: number,
+  action: string,
+  params: Record<string, unknown>,
+  result: string,
+  apiResponse?: unknown,
+): Promise<void> {
+  return request<void>({
+    method: 'POST',
+    url: '/chat/message/confirm',
+    data: {
+      message_id: messageId,
+      action,
+      params,
+      result,
+      api_response: apiResponse,
+    },
   });
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"growpocket/internal/database"
 	"growpocket/internal/middleware"
 	"growpocket/internal/model"
@@ -56,17 +57,88 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		sessionID = session.ID
 	}
 
-	reply, intent, err := h.chatService.SendMessage(sessionID, role, req.ChildID, familyID, req.Message)
+	reply, intent, suggestedActions, err := h.chatService.SendMessage(sessionID, role, req.ChildID, familyID, req.Message)
 	if err != nil {
 		util.FailInternal(c, "AI 回复失败: "+err.Error())
 		return
 	}
 
 	util.OK(c, gin.H{
-		"reply":      reply,
-		"intent":     intent,
-		"session_id": sessionID,
+		"reply":             reply,
+		"intent":            intent,
+		"session_id":        sessionID,
+		"suggested_actions": suggestedActions,
 	})
+}
+
+// ConfirmMessage POST /api/chat/message/confirm
+// 前端在用户对 suggested_action 确认卡片做出操作（确认/取消）后回调，
+// 仅记录审计日志，不执行写操作（写操作已由前端直接调 REST API 完成）。
+func (h *ChatHandler) ConfirmMessage(c *gin.Context) {
+	var req struct {
+		MessageID   uint           `json:"message_id"`
+		Action      string         `json:"action" binding:"required"`
+		Params      map[string]any `json:"params"`
+		Result      string         `json:"result"`       // success/failed/cancelled/expired
+		APIResponse map[string]any `json:"api_response"` // 前端调 REST API 的响应
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		util.FailBadRequest(c, "请提供 action")
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	familyID := middleware.GetFamilyID(c)
+
+	// 通过 message_id 反查 session_id 与 child_id（校验该消息属于当前家庭）
+	var msg model.ChatMessage
+	var sessionID uint
+	var childID uint
+	if req.MessageID > 0 {
+		if err := database.DB.First(&msg, req.MessageID).Error; err == nil {
+			var session model.ChatSession
+			if database.DB.Where("id = ? AND family_id = ?", msg.SessionID, familyID).First(&session).Error == nil {
+				sessionID = session.ID
+				childID = session.ChildID
+			}
+		}
+	}
+
+	// 从 api_response 中提取错误信息
+	var errMsg string
+	if req.APIResponse != nil {
+		if e, ok := req.APIResponse["error"].(string); ok && e != "" {
+			errMsg = e
+		}
+		if e, ok := req.APIResponse["message"].(string); ok && e != "" && errMsg == "" {
+			errMsg = e
+		}
+	}
+
+	paramsJSON := ""
+	if req.Params != nil {
+		if bs, err := json.Marshal(req.Params); err == nil {
+			paramsJSON = string(bs)
+		}
+	}
+
+	auditLog := &model.AIAuditLog{
+		FamilyID:     familyID,
+		ChildID:      childID,
+		UserID:       userID,
+		SessionID:    sessionID,
+		MessageID:    req.MessageID,
+		ToolName:     req.Action,
+		Params:       paramsJSON,
+		Result:       req.Result,
+		ErrorMessage: errMsg,
+	}
+	if err := database.DB.Create(auditLog).Error; err != nil {
+		util.FailInternal(c, "记录审计日志失败")
+		return
+	}
+
+	util.OK(c, gin.H{"id": auditLog.ID})
 }
 
 // GetHistory GET /api/chat/history/:child_id

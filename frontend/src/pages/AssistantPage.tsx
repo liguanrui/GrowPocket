@@ -11,6 +11,9 @@ import * as chatService from '../services/chat';
 import type { ChatMessage, ChatSession } from '../services/chat';
 // V3.1 思路 C：IP 不再按成长指数切形态，无需 getGrowthIndex import
 import { IPPAvatar } from '../components/IPPAvatar';
+import { ActionConfirmCard } from '../components/ActionConfirmCard';
+import type { ActionSuggestion } from '../components/ActionConfirmCard';
+import { request } from '../services/api';
 import { useToastStore } from '../stores/toastStore';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
@@ -256,6 +259,13 @@ function ChildSwitchPopover({
 }
 
 // ============ 主页面 ============
+// 动作确认卡片状态：pending 待确认 / executing 执行中 / success 成功 / failed 失败 / cancelled 已取消
+type ActionCardStatus = 'pending' | 'executing' | 'success' | 'failed' | 'cancelled';
+interface ActionCardState {
+  status: ActionCardStatus;
+  errorMessage?: string;
+}
+
 export function AssistantPage() {
   const navigate = useNavigate();
   const toast = useToastStore();
@@ -269,6 +279,12 @@ export function AssistantPage() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ===== 动作确认卡片状态 =====
+  // key = `${msgId}-${actionIdx}`，value = 该卡片的状态机
+  const [actionStates, setActionStates] = useState<Record<string, ActionCardState>>({});
+  // 本地追加的 AI 消息用负 id，避免与后端返回的正 id 及 Date.now() 临时 id 冲突
+  const localMsgIdRef = useRef<number>(0);
 
   // ===== 语音相关状态 =====
   const [voiceMode, setVoiceMode] = useState(false);          // 底部面板：文字 or 语音
@@ -353,6 +369,7 @@ export function AssistantPage() {
         content: res.reply,
         intent: res.intent,
         created_at: new Date().toISOString(),
+        suggested_actions: res.suggested_actions,
       };
       setMessages((prev) => [...prev, aiMsg]);
       // 刷新会话列表（更新 last_message）
@@ -506,6 +523,7 @@ export function AssistantPage() {
       await chatService.createSession(selectedChildId);
       setMessages([]);
       setSessionId(0);
+      setActionStates({});
       setShowDrawer(false);
       loadSessions(selectedChildId);
       toast.success('已开启新对话');
@@ -542,6 +560,73 @@ export function AssistantPage() {
     setShowSwitch(false);
     setMessages([]);
     setSessionId(0);
+    setActionStates({});
+  };
+
+  // ===== 动作确认卡片：本地追加一条 AI 文本消息（不消耗 LLM） =====
+  const appendLocalAiMessage = (content: string) => {
+    localMsgIdRef.current -= 1;
+    const aiMsg: ChatMessage = {
+      id: localMsgIdRef.current,
+      session_id: sessionId,
+      role: 'assistant',
+      content,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, aiMsg]);
+  };
+
+  // 设置某张卡片的状态（按 msgId + actionIdx 定位）
+  const setActionState = (key: string, patch: Partial<ActionCardState>) => {
+    setActionStates((prev) => ({
+      ...prev,
+      [key]: { status: 'pending', ...prev[key], ...patch },
+    }));
+  };
+
+  // 确认按钮：执行 suggestion 携带的 API → 成功后刷新数据 / 上报 / 追加 AI 消息
+  const handleConfirmAction = async (
+    msg: ChatMessage,
+    suggestion: ActionSuggestion,
+    idx: number,
+  ) => {
+    const key = `${msg.id}-${idx}`;
+    setActionState(key, { status: 'executing', errorMessage: undefined });
+    try {
+      // 复用通用 request 封装（JWT 自动注入），按 suggestion 携带的方法/路径/体发起请求
+      const apiResponse = await request<unknown>({
+        method: suggestion.api_method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+        url: suggestion.api_endpoint,
+        data: suggestion.api_body,
+      });
+      setActionState(key, { status: 'success', errorMessage: undefined });
+      // 刷新余额等 zustand 数据（fetchChildren 会拉取最新 balance）
+      childStore.fetchChildren().catch(() => {});
+      // 上报确认结果（审计用，失败不影响用户流程）
+      chatService
+        .confirmAction(msg.id, suggestion.action, suggestion.params, 'success', apiResponse)
+        .catch(() => {});
+      toast.success('已成功提交');
+      appendLocalAiMessage('好的，已经帮你提交啦，等家长审核哦~');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '操作失败，请稍后再试';
+      setActionState(key, { status: 'failed', errorMessage: message });
+      toast.error(message);
+    }
+  };
+
+  // 取消按钮：标记已取消并上报
+  const handleCancelAction = (
+    msg: ChatMessage,
+    suggestion: ActionSuggestion,
+    idx: number,
+  ) => {
+    const key = `${msg.id}-${idx}`;
+    setActionState(key, { status: 'cancelled', errorMessage: undefined });
+    chatService
+      .confirmAction(msg.id, suggestion.action, suggestion.params, 'cancelled')
+      .catch(() => {});
+    appendLocalAiMessage('好的，已取消，有需要再告诉我~');
   };
 
   if (!selectedChildId) {
@@ -663,35 +748,55 @@ export function AssistantPage() {
                     </div>
                   )}
                   {msg.role === 'assistant' ? (
-                    /* AI 气泡：正在朗读时加个橙色边框+波浪动画；点击可停/重播 */
-                    <button
-                      type="button"
-                      onClick={() => handleAssistantBubbleClick(msg)}
-                      className={`group relative max-w-[75%] px-4 py-2.5 text-left text-sm whitespace-pre-wrap break-words transition-all bg-white text-[#2D2A26] border rounded-lg rounded-tl-sm shadow-sm active:scale-[0.995] ${
-                        speakingMsgId === msg.id
-                          ? 'border-[#F59E6B] ring-2 ring-[#F59E6B]/20'
-                          : 'border-[#F5E6D3] hover:border-[#F59E6B]/25'
-                      }`}
-                      aria-label={speakingMsgId === msg.id ? '点击停止朗读' : '点击再听一遍'}
-                    >
-                      <span>{msg.content}</span>
-                      {/* 朗读状态指示：三条竖线 + Volume 图标（右下角） */}
-                      {speakingMsgId === msg.id && (
-                        <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#F59E6B] text-white shadow-md">
-                          <span className="flex items-end gap-[2px] h-3">
-                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '50%', animationDelay: '0s' }} />
-                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '100%', animationDelay: '0.15s' }} />
-                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '70%', animationDelay: '0.3s' }} />
+                    <div className="flex flex-col gap-2 max-w-[75%]">
+                      {/* AI 气泡：正在朗读时加个橙色边框+波浪动画；点击可停/重播 */}
+                      <button
+                        type="button"
+                        onClick={() => handleAssistantBubbleClick(msg)}
+                        className={`group relative self-start max-w-full px-4 py-2.5 text-left text-sm whitespace-pre-wrap break-words transition-all bg-white text-[#2D2A26] border rounded-lg rounded-tl-sm shadow-sm active:scale-[0.995] ${
+                          speakingMsgId === msg.id
+                            ? 'border-[#F59E6B] ring-2 ring-[#F59E6B]/20'
+                            : 'border-[#F5E6D3] hover:border-[#F59E6B]/25'
+                        }`}
+                        aria-label={speakingMsgId === msg.id ? '点击停止朗读' : '点击再听一遍'}
+                      >
+                        <span>{msg.content}</span>
+                        {/* 朗读状态指示：三条竖线 + Volume 图标（右下角） */}
+                        {speakingMsgId === msg.id && (
+                          <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#F59E6B] text-white shadow-md">
+                            <span className="flex items-end gap-[2px] h-3">
+                              <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '50%', animationDelay: '0s' }} />
+                              <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '100%', animationDelay: '0.15s' }} />
+                              <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '70%', animationDelay: '0.3s' }} />
+                            </span>
                           </span>
-                        </span>
+                        )}
+                        {/* 未朗读时 hover 提示：右下角淡 Volume1 */}
+                        {speakingMsgId !== msg.id && (
+                          <span className="pointer-events-none absolute -right-2 -top-1 hidden items-center justify-center h-6 w-6 rounded-full bg-white border border-[#F5E6D3] text-[#F59E6B] group-hover:flex shadow-sm">
+                            <Volume1 size={13} />
+                          </span>
+                        )}
+                      </button>
+                      {/* 动作确认卡片：AI 回复携带 suggested_actions 时渲染（每条一张） */}
+                      {msg.suggested_actions && msg.suggested_actions.length > 0 && (
+                        msg.suggested_actions.map((suggestion, idx) => {
+                          const key = `${msg.id}-${idx}`;
+                          const cardState = actionStates[key];
+                          return (
+                            <ActionConfirmCard
+                              key={key}
+                              suggestion={suggestion}
+                              status={cardState?.status ?? 'pending'}
+                              errorMessage={cardState?.errorMessage}
+                              onConfirm={() => handleConfirmAction(msg, suggestion, idx)}
+                              onCancel={() => handleCancelAction(msg, suggestion, idx)}
+                              onRetry={() => handleConfirmAction(msg, suggestion, idx)}
+                            />
+                          );
+                        })
                       )}
-                      {/* 未朗读时 hover 提示：右下角淡 Volume1 */}
-                      {speakingMsgId !== msg.id && (
-                        <span className="pointer-events-none absolute -right-2 -top-1 hidden items-center justify-center h-6 w-6 rounded-full bg-white border border-[#F5E6D3] text-[#F59E6B] group-hover:flex shadow-sm">
-                          <Volume1 size={13} />
-                        </span>
-                      )}
-                    </button>
+                    </div>
                   ) : (
                     <div className={`max-w-[75%] px-4 py-2.5 text-sm whitespace-pre-wrap break-words bg-[#F59E6B] text-white rounded-lg rounded-tr-sm`}>
                       {msg.content}

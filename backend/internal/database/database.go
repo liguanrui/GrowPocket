@@ -84,6 +84,8 @@ func Init(dbPath string) {
 		&model.ChatSession{},
 		&model.ChatMessage{},
 		&model.GrowthStory{},
+		// V3.2 AI 助理 Function Calling：写操作审计日志
+		&model.AIAuditLog{},
 		// V3.1 模块 D：学业双层结构（学业趋势档位 + 学业奖励池）
 		&model.AcademicMilestone{},
 		&model.AcademicTrendEntry{},
