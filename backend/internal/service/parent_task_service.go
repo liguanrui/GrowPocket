@@ -28,6 +28,7 @@ type subTaskOutlineItem struct {
 	EstimatedDays  int    `json:"estimated_days"`
 	Sequence       int    `json:"sequence"`
 	IsKeyMilestone bool   `json:"is_key_milestone"`
+	Points         int    `json:"points"`
 }
 
 // CreateParentTaskInput 创建父任务入参
@@ -208,13 +209,14 @@ func (s *ParentTaskService) callAIGenerateOutline(parent model.Task, age int, ke
 			"%s\n\n"+
 			"要求：\n"+
 			"- 子任务数量 3-8 个，按推进顺序排列\n"+
-			"- 每个子任务含 title（≤20字）、description（≤80字）、estimated_days（该阶段预计天数）、is_key_milestone（是否关键里程碑）\n"+
+			"- 每个子任务含 title（≤20字）、description（≤80字）、estimated_days（该阶段预计天数）、is_key_milestone（是否关键里程碑）、points（该阶段积分，10-100）\n"+
+			"- 关键里程碑阶段建议给予更高积分\n"+
 			"- 建议包含 1-2 个关键里程碑（is_key_milestone=true）\n"+
 			"- 如已给定总天数，各阶段 estimated_days 之和应大致等于总天数\n"+
 			"- 顺序应体现「准备→执行→总结」的递进逻辑\n"+
 			"- 适龄、可执行、有趣\n"+
 			"返回纯 JSON 数组（不要 markdown 代码块），格式：\n"+
-			`[{"title":"阶段1","description":"描述","estimated_days":2,"is_key_milestone":true}]`,
+			`[{"title":"阶段1","description":"描述","estimated_days":2,"is_key_milestone":true,"points":30}]`,
 		parent.Title, parent.Description, parent.Category, ageText, seedHint,
 	)
 
@@ -236,7 +238,7 @@ func (s *ParentTaskService) callAIGenerateOutline(parent model.Task, age int, ke
 		return nil, fmt.Errorf("AI 返回大纲数量 %d 不在 3-8 范围", len(items))
 	}
 
-	// 规范化：补全 sequence、过滤异常项
+	// 规范化：补全 sequence、积分默认值、过滤异常项
 	out := make([]subTaskOutlineItem, 0, len(items))
 	for i := range items {
 		t := strings.TrimSpace(items[i].Title)
@@ -245,6 +247,9 @@ func (s *ParentTaskService) callAIGenerateOutline(parent model.Task, age int, ke
 		}
 		if items[i].EstimatedDays <= 0 {
 			items[i].EstimatedDays = 1
+		}
+		if items[i].Points <= 0 {
+			items[i].Points = 20
 		}
 		items[i].Sequence = len(out) + 1
 		out = append(out, items[i])
@@ -279,6 +284,7 @@ func (s *ParentTaskService) fallbackOutline(title, description string, totalDays
 		fmt.Sprintf("回顾并总结「%s」", title),
 	}
 	keyFlags := []bool{true, false, false, true, false}
+	stagePoints := []int{10, 20, 20, 30, 20}
 
 	out := make([]subTaskOutlineItem, 0, 5)
 	for i := 0; i < 5; i++ {
@@ -288,6 +294,7 @@ func (s *ParentTaskService) fallbackOutline(title, description string, totalDays
 			EstimatedDays:  stageDays[i],
 			Sequence:       i + 1,
 			IsKeyMilestone: keyFlags[i],
+			Points:         stagePoints[i],
 		})
 	}
 	_ = description
@@ -296,11 +303,15 @@ func (s *ParentTaskService) fallbackOutline(title, description string, totalDays
 
 // instantiateChild 根据大纲项实例化一个 child 任务
 func (s *ParentTaskService) instantiateChild(parent model.Task, item subTaskOutlineItem) (*model.Task, error) {
+	points := item.Points
+	if points <= 0 {
+		points = 20
+	}
 	child := &model.Task{
 		FamilyID:       parent.FamilyID,
 		Title:          item.Title,
 		Description:    item.Description,
-		Points:         0,
+		Points:         points,
 		Status:         model.TaskStatusInProgress,
 		ChildID:        parent.ChildID,
 		ChildName:      parent.ChildName,
@@ -381,8 +392,28 @@ func (s *ParentTaskService) GetChildren(parentTaskID uint) ([]model.Task, error)
 		return nil, errors.New("查询子任务失败")
 	}
 	instantiatedSeq := make(map[int]bool, len(existing))
-	for _, t := range existing {
-		instantiatedSeq[t.Sequence] = true
+
+	// 从大纲补全积分为 0 的已实例化子任务
+	outlineMap := make(map[int]subTaskOutlineItem)
+	if strings.TrimSpace(parent.SubTaskOutline) != "" {
+		var outline []subTaskOutlineItem
+		if err := json.Unmarshal([]byte(parent.SubTaskOutline), &outline); err == nil {
+			for _, item := range outline {
+				outlineMap[item.Sequence] = item
+			}
+		}
+	}
+	for i := range existing {
+		instantiatedSeq[existing[i].Sequence] = true
+		if existing[i].Points == 0 {
+			if item, ok := outlineMap[existing[i].Sequence]; ok && item.Points > 0 {
+				existing[i].Points = item.Points
+				database.DB.Model(&model.Task{}).Where("id = ?", existing[i].ID).Update("points", item.Points)
+			} else {
+				existing[i].Points = 20
+				database.DB.Model(&model.Task{}).Where("id = ?", existing[i].ID).Update("points", 20)
+			}
+		}
 	}
 
 	out := make([]model.Task, 0, 8)
@@ -399,12 +430,16 @@ func (s *ParentTaskService) GetChildren(parentTaskID uint) ([]model.Task, error)
 				if instantiatedSeq[item.Sequence] {
 					continue
 				}
+				points := item.Points
+				if points <= 0 {
+					points = 20
+				}
 				out = append(out, model.Task{
 					ID:              0,
 					FamilyID:        parent.FamilyID,
 					Title:           item.Title,
 					Description:     item.Description,
-					Points:          0,
+					Points:          points,
 					Status:          0, // 0 表示未实例化
 					ChildID:         parent.ChildID,
 					ChildName:       parent.ChildName,

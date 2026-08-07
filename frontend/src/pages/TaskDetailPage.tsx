@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Calendar, CheckCircle2, XCircle, Trash2, Sparkles, Flame, TrendingUp, Target, AlertTriangle, ChevronRight, ListTree, ChevronDown, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
@@ -266,6 +266,8 @@ export function TaskDetailPage() {
   // 方式：在 onChange 回调里 setPhotos 之后额外判断一个「是否有任何 pending」
   // 为了让提交按钮能感知上传中，MediaUploader 提供 onUploadingChange 回调
   const [mediaUploading, setMediaUploading] = useState(false);
+  // 主题任务（parent/child）当前选中的子任务阶段 id
+  const [selectedStageId, setSelectedStageId] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -315,42 +317,11 @@ export function TaskDetailPage() {
     }
   }, [task?.task_kind, task?.habit_id]);
 
-  // 前端兜底生成最近 21 天完整打卡日历（3×7），避免后端只返回几天就出现大灰块
-  const checkinGrid = useMemo<{ date: string; completed: boolean; isToday: boolean }[]>(() => {
-    if (!habitStats) return [];
-    // 用后端返回的日期建 Map（只匹配 yyyy-mm-dd）
-    const map = new Map<string, boolean>();
-    for (const d of habitStats.checkin_calendar || []) {
-      try {
-        const key = d.date.replace(/T.*$/, '').slice(0, 10);
-        if (key) map.set(key, !!d.completed);
-      } catch {}
-    }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayKey = today.toISOString().slice(0, 10);
-    const out: { date: string; completed: boolean; isToday: boolean }[] = [];
-    for (let i = 20; i >= 0; i--) {
-      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
-      const key = d.toISOString().slice(0, 10);
-      out.push({
-        date: key,
-        completed: map.get(key) ?? false,
-        isToday: key === todayKey,
-      });
-    }
-    return out;
-  }, [habitStats]);
-
-  const hasAnyCheckin = useMemo(
-    () => (habitStats?.total_count || 0) > 0 || checkinGrid.some((d) => d.completed),
-    [habitStats, checkinGrid]
-  );
-
   // 父任务信息与子任务列表
   useEffect(() => {
     if (task?.task_kind === 'child' && task.parent_id) {
-      getParent(task.parent_id)
+      // getParent 传 child 自己的 id，后端通过 child.parent_id 反查父任务
+      getParent(task.id)
         .then(setParentTask)
         .catch(() => setParentTask(null));
       getChildren(task.parent_id)
@@ -384,6 +355,36 @@ export function TaskDetailPage() {
       setChildScores([]);
     }
   }, [task?.task_kind, task?.child_id]);
+
+  // 主题任务：默认选中阶段（child→选中自身；parent→选中进行中/第一个实例化子任务）
+  // 必须在早期 return 之前调用，遵守 React Hooks 规则
+  useEffect(() => {
+    if (!task) return;
+    const isTheme = task.task_kind === 'parent' || task.task_kind === 'child';
+    if (!isTheme) {
+      if (selectedStageId !== null) setSelectedStageId(null);
+      return;
+    }
+    if (selectedStageId != null) return;
+    if (task.task_kind === 'child') {
+      setSelectedStageId(task.id);
+      return;
+    }
+    // parent：从 childTasks + outline 构建时间线，选中进行中或第一个实例化子任务
+    const timeline = buildTimeline(childTasks, task.sub_task_outline);
+    if (timeline.length === 0) return;
+    const stage = timeline.find((i) => i.id > 0 && i.status !== 3) || timeline.find((i) => i.id > 0);
+    if (stage?.id) setSelectedStageId(stage.id);
+  }, [task, childTasks, selectedStageId]);
+
+  // 选中阶段变化时，同步成果照片 state 为当前阶段任务的照片
+  useEffect(() => {
+    if (!task || !selectedStageId) return;
+    const stageTask = childTasks.find((c) => c.id === selectedStageId);
+    if (!stageTask || stageTask.id === task.id) return;
+    setPhotos(parseTaskPhotos(stageTask.photo));
+    setPhoto(stageTask.photo);
+  }, [task, selectedStageId, childTasks]);
 
   if (loading) {
     return (
@@ -424,7 +425,10 @@ export function TaskDetailPage() {
   const childName = task.child_name || child?.nickname || '未设置';
   const status = STATUS_MAP[task.status] || STATUS_MAP[1];
   const primaryDim = abilities.find(a => a.id === task.ability_dimension_id);
-  const secondaryIds: number[] = task.secondary_dimensions ? JSON.parse(task.secondary_dimensions) : [];
+  const secondaryIds: number[] = (() => {
+    if (!task.secondary_dimensions) return [];
+    try { return JSON.parse(task.secondary_dimensions) as number[]; } catch { return []; }
+  })();
   const secondaryDims = secondaryIds
     .map(id => abilities.find(a => a.id === id))
     .filter((d): d is AbilityDimension => !!d);
@@ -432,14 +436,35 @@ export function TaskDetailPage() {
   // 统一标签
   const tags = getTaskTags(task);
 
-  // parent 任务阶段流水
+  // ========== 主题任务（parent/child）统一派生状态 ==========
+  const isThemeTask = task.task_kind === 'parent' || task.task_kind === 'child';
+  const isChildTask = task.task_kind === 'child';
   const isParentTask = task.task_kind === 'parent';
-  const parentTimeline = isParentTask ? buildTimeline(childTasks, task.sub_task_outline) : [];
-  const completedStageCount = parentTimeline.filter((i) => i.status === 3).length;
-  const totalStageCount = parentTimeline.length;
-  const stageProgressPercent = totalStageCount > 0 ? Math.round((completedStageCount / totalStageCount) * 100) : 0;
-  const keyMilestoneStages = parentTimeline.filter((i) => i.is_key_milestone);
-  const totalEstimatedDays = parentTimeline.reduce((s, i) => s + (i.estimated_days || 0), 0);
+  const themeParentTask: Task | null = isParentTask ? task : isChildTask ? parentTask : null;
+  const themeTimeline: TimelineItem[] = themeParentTask
+    ? buildTimeline(childTasks, themeParentTask.sub_task_outline)
+    : [];
+  const tCompletedCount = themeTimeline.filter((i) => i.status === 3).length;
+  const tTotalCount = themeTimeline.length;
+  const themeProgressPercent = tTotalCount > 0 ? Math.round((tCompletedCount / tTotalCount) * 100) : 0;
+  const keyMilestoneStages = themeTimeline.filter((i) => i.is_key_milestone);
+  const totalEstimatedDays = themeTimeline.reduce((s, i) => s + (i.estimated_days || 0), 0);
+
+  // 当前进行中节点：第一个 status !== 3 且 id > 0（已实例化）的阶段；若没有则回退第一个 id > 0 的
+  const currentStage =
+    themeTimeline.find((i) => i.id > 0 && i.status !== 3) || themeTimeline.find((i) => i.id > 0) || null;
+
+  const selectedStageTask: Task | null = selectedStageId
+    ? childTasks.find((c) => c.id === selectedStageId) ?? null
+    : null;
+
+  // 对主题任务：当 selectedStageTask 切换时，更新成果照片/提交按钮绑定的数据（与详情页输入源一致）
+  const activeTask: Task = isThemeTask && selectedStageTask ? selectedStageTask : task;
+  const activePhotos = activeTask !== task ? parseTaskPhotos(activeTask.photo) : photos;
+
+  // 兼容：让页面整体继续使用 photos/photo，而内部上传/提交走 activeTask
+  const activeStatus = STATUS_MAP[activeTask.status] || STATUS_MAP[1];
+  const activeTags = isThemeTask && selectedStageTask ? getTaskTags(selectedStageTask) : tags;
 
   // daily 任务本周期累计：仅 daily 或无 task_kind 时展示
   const isDailyTask = task.task_kind === 'daily' || !task.task_kind;
@@ -454,9 +479,15 @@ export function TaskDetailPage() {
       // 有多个图 → 走 photo_urls 数组通道；仅 0/1 张图走旧单图通道
       const updated =
         photos.length > 1
-          ? await tasksService.submitTask(task.id, undefined, photos)
-          : await tasksService.submitTask(task.id, photos[0] || '');
-      setTask(updated);
+          ? await tasksService.submitTask(activeTask.id, undefined, photos)
+          : await tasksService.submitTask(activeTask.id, photos[0] || '');
+      if (activeTask.id === task.id) {
+        // 非主题任务或详情页就是子任务本身
+        setTask(updated);
+      } else {
+        // 主题任务选中阶段：更新 childTasks 中对应项
+        setChildTasks((arr) => arr.map((c) => (c.id === activeTask.id ? updated : c)));
+      }
       setPhotos(parseTaskPhotos(updated.photo));
       setPhoto(updated.photo);
       toast.success('任务已提交验收');
@@ -469,8 +500,12 @@ export function TaskDetailPage() {
 
   const handleApprove = async (points: number) => {
     try {
-      const updated = await tasksService.reviewTask(task.id, true, points);
-      setTask(updated);
+      const updated = await tasksService.reviewTask(activeTask.id, true, points);
+      if (activeTask.id === task.id) {
+        setTask(updated);
+      } else {
+        setChildTasks((arr) => arr.map((c) => (c.id === activeTask.id ? updated : c)));
+      }
       setShowReview(false);
       uiStore.setPreviousBalance(currentBalance);
       uiStore.setNeedRefreshScore(true);
@@ -487,8 +522,12 @@ export function TaskDetailPage() {
 
   const handleReject = async () => {
     try {
-      const updated = await tasksService.reviewTask(task.id, false);
-      setTask(updated);
+      const updated = await tasksService.reviewTask(activeTask.id, false);
+      if (activeTask.id === task.id) {
+        setTask(updated);
+      } else {
+        setChildTasks((arr) => arr.map((c) => (c.id === activeTask.id ? updated : c)));
+      }
       setShowReview(false);
       uiStore.setNeedRefreshTasks(true);
       toast.success('已拒绝任务');
@@ -520,8 +559,14 @@ export function TaskDetailPage() {
             >
               <ArrowLeft size={20} className="text-white" />
             </button>
-            <div className={`px-3 py-1 rounded-full text-xs font-medium ${status.color} ${status.bg}`}>
-              {status.label}
+            <div className={`px-3 py-1 rounded-full text-xs font-medium ${activeStatus.color} ${activeStatus.bg}`}>
+              {isThemeTask
+                ? selectedStageTask
+                  ? activeStatus.label
+                  : tCompletedCount > 0 && tCompletedCount === tTotalCount
+                    ? '已完成'
+                    : '进行中'
+                : status.label}
             </div>
             <button
               onClick={handleDelete}
@@ -530,40 +575,106 @@ export function TaskDetailPage() {
               <Trash2 size={18} className="text-white" />
             </button>
           </div>
-          <h1 className="text-white font-semibold text-xl leading-snug">{task.title}</h1>
-          {task.description && <p className="text-white/80 text-sm mt-1.5 leading-relaxed line-clamp-3">{task.description}</p>}
 
-          {tags.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
-              {tags.map((tag) => (
-                <span
-                  key={tag.label}
-                  className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${tag.color}`}
-                >
-                  {tag.label}
+          {isThemeTask && themeParentTask ? (
+            <>
+              {/* 主题任务：顶部展示父级主题内容（无积分） */}
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/20 text-white">
+                  <ListTree size={10} /> 主题任务
                 </span>
-              ))}
-            </div>
-          )}
+                {selectedStageTask && isChildTask ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/10 text-white/90">
+                    当前阶段
+                  </span>
+                ) : null}
+              </div>
+              <h1 className="text-white font-semibold text-xl leading-snug">{themeParentTask.title}</h1>
+              {themeParentTask.description && (
+                <p className="text-white/80 text-sm mt-1.5 leading-relaxed line-clamp-3">
+                  {themeParentTask.description}
+                </p>
+              )}
 
-          {/* 紧凑元信息条：积分 · 指派 · 截止 （一行呈现，弱化视觉） */}
-          <div className="mt-3 flex items-center gap-3 text-xs text-white/85 flex-wrap">
-            <span className="inline-flex items-center gap-1">
-              <Star size={12} className="text-yellow-200 fill-yellow-200" />
-              {task.points} 积分
-            </span>
-            <span className="text-white/50">·</span>
-            <span>指派 {childName}</span>
-            {task.deadline && (
-              <>
-                <span className="text-white/50">·</span>
+              {tags.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag.label}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${tag.color}`}
+                    >
+                      {tag.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* 元信息：阶段进度 · 当前阶段 · 指派 */}
+              <div className="mt-3 flex items-center gap-3 text-xs text-white/85 flex-wrap">
                 <span className="inline-flex items-center gap-1">
-                  <Calendar size={12} />
-                  {task.deadline}
+                  <Target size={12} />
+                  阶段进度 {tCompletedCount}/{tTotalCount}
                 </span>
-              </>
-            )}
-          </div>
+                {currentStage ? (
+                  <>
+                    <span className="text-white/50">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <TrendingUp size={12} /> 当前：{currentStage.title}
+                    </span>
+                  </>
+                ) : null}
+                <span className="text-white/50">·</span>
+                <span>指派 {childName}</span>
+                {themeParentTask.deadline && (
+                  <>
+                    <span className="text-white/50">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar size={12} />
+                      {themeParentTask.deadline}
+                    </span>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* 普通任务：默认样式 */}
+              <h1 className="text-white font-semibold text-xl leading-snug">{task.title}</h1>
+              {task.description && <p className="text-white/80 text-sm mt-1.5 leading-relaxed line-clamp-3">{task.description}</p>}
+
+              {tags.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag.label}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${tag.color}`}
+                    >
+                      {tag.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* 紧凑元信息条：积分 · 指派 · 截止 （一行呈现，弱化视觉） */}
+              <div className="mt-3 flex items-center gap-3 text-xs text-white/85 flex-wrap">
+                <span className="inline-flex items-center gap-1">
+                  <Star size={12} className="text-yellow-200 fill-yellow-200" />
+                  {task.points} 积分
+                </span>
+                <span className="text-white/50">·</span>
+                <span>指派 {childName}</span>
+                {task.deadline && (
+                  <>
+                    <span className="text-white/50">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar size={12} />
+                      {task.deadline}
+                    </span>
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -615,6 +726,31 @@ export function TaskDetailPage() {
                   </div>
                 </div>
 
+                {/* 核心指标卡：连续 / 累计 / 目标（优先展示关键数字，不渲染 21 个空格子） */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl bg-primary/5 p-3 text-center border border-primary/10">
+                    <Flame size={16} className="text-primary mx-auto mb-1" />
+                    <div className="text-xl font-bold text-primary leading-none">
+                      {habitStats.streak_count}
+                    </div>
+                    <div className="text-[10px] text-text-tertiary mt-1">连续 (天)</div>
+                  </div>
+                  <div className="rounded-xl bg-emerald-50 p-3 text-center border border-emerald-100">
+                    <Calendar size={16} className="text-emerald-600 mx-auto mb-1" />
+                    <div className="text-xl font-bold text-emerald-600 leading-none">
+                      {habitStats.total_count}
+                    </div>
+                    <div className="text-[10px] text-text-tertiary mt-1">累计 (天)</div>
+                  </div>
+                  <div className="rounded-xl bg-amber-50 p-3 text-center border border-amber-100">
+                    <Target size={16} className="text-amber-600 mx-auto mb-1" />
+                    <div className="text-xl font-bold text-amber-600 leading-none">
+                      {habitStats.habit_goal}
+                    </div>
+                    <div className="text-[10px] text-text-tertiary mt-1">目标 (天)</div>
+                  </div>
+                </div>
+
                 {/* 上次打卡 */}
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-text-tertiary">上次打卡</span>
@@ -622,58 +758,6 @@ export function TaskDetailPage() {
                     {habitStats.last_checkin_date || '暂无'}
                   </span>
                 </div>
-
-                {/* 最近 21 天打卡：3×7 满格；无历史打卡时显示友好空态 + 迷你格子 */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="text-[11px] text-text-tertiary">最近 21 天</div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-text-tertiary">
-                      <span className="inline-block w-2 h-2 rounded-sm bg-primary" /> 已打卡
-                      <span className="inline-block w-2 h-2 rounded-sm border border-gray-300" /> 未打卡
-                    </div>
-                  </div>
-                  {!hasAnyCheckin ? (
-                    <div className="rounded-xl bg-bg p-3 text-xs text-text-secondary flex items-start gap-2">
-                      <Flame size={14} className="text-primary mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="font-medium text-text-primary mb-0.5">还没有打卡记录</div>
-                        <div className="text-[11px] text-text-tertiary leading-relaxed">
-                          完成今日任务即可点亮第一个格子，坚持 21 天养成好习惯~
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className={`grid grid-cols-7 gap-1 ${!hasAnyCheckin ? 'mt-2' : ''}`}>
-                    {checkinGrid.map((day, idx) => (
-                      <div
-                        key={`${day.date}-${idx}`}
-                        title={day.date + (day.isToday ? '（今天）' : '') + (day.completed ? ' 已打卡' : day.isToday ? ' 今日待完成' : ' 未打卡')}
-                        className={`aspect-square rounded ${
-                          day.completed
-                            ? 'bg-primary shadow-sm'
-                            : day.isToday
-                            ? 'border-2 border-primary/60 bg-primary/5'
-                            : hasAnyCheckin
-                            ? 'bg-gray-100'
-                            : 'border border-gray-200 bg-white'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {task.parent_id && (
-                  <button
-                    onClick={() => navigate(`/task/${task.parent_id}`)}
-                    className="w-full flex items-center justify-between py-2 px-3 bg-bg rounded-lg text-xs text-text-secondary hover:bg-gray-100 transition-colors"
-                  >
-                    <span className="flex items-center gap-1">
-                      <ListTree size={12} />
-                      查看父任务
-                    </span>
-                    <ChevronRight size={14} />
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -746,100 +830,260 @@ export function TaskDetailPage() {
           </div>
         )}
 
-        {isParentTask && (
+        {/* ==================== 主题任务：阶段时间线卡 + 选中阶段详情卡 ==================== */}
+        {isThemeTask && themeParentTask && (
           <div className="bg-card rounded-2xl p-4 shadow-sm space-y-4">
-            {/* 主题头部 */}
+            {/* 头部 */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <ListTree size={16} className="text-primary" />
-                <h3 className="font-semibold text-text-primary">阶段流水</h3>
+                <h3 className="font-semibold text-text-primary">阶段进度</h3>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {task.category && (
+                {themeParentTask.category && (
                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                    {task.category}
+                    {themeParentTask.category}
                   </span>
                 )}
                 <span className="text-sm text-text-secondary">
-                  共 {totalStageCount} 个阶段{totalEstimatedDays > 0 ? ` · 预计 ${totalEstimatedDays} 天` : ''}
+                  共 {tTotalCount} 个阶段
                 </span>
               </div>
             </div>
 
             {/* 整体进度条 */}
-            {totalStageCount > 0 && (
+            {tTotalCount > 0 && (
               <div>
                 <div className="flex items-center justify-between text-sm mb-2">
                   <span className="text-text-secondary">整体进度</span>
                   <span className="font-medium text-text-primary">
-                    已完成 {completedStageCount}/{totalStageCount} · {stageProgressPercent}%
+                    已完成 {tCompletedCount}/{tTotalCount} · {tTotalCount > 0 ? Math.round((tCompletedCount / tTotalCount) * 100) : 0}%
                   </span>
                 </div>
                 <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-amber-300 to-amber-500 rounded-full transition-all"
-                    style={{ width: `${stageProgressPercent}%` }}
+                    style={{ width: `${tTotalCount > 0 ? (tCompletedCount / tTotalCount) * 100 : 0}%` }}
                   />
                 </div>
               </div>
             )}
 
-            {/* 时间线 */}
-            {parentTimeline.length > 0 && (
-              <div>
-                {parentTimeline.map((item, idx) => {
-                  const isLast = idx === parentTimeline.length - 1;
+            {/* 可点击切换的时间线 */}
+            {themeTimeline.length > 0 && (
+              <div className="space-y-1">
+                {themeTimeline.map((item, idx) => {
+                  const isLast = idx === themeTimeline.length - 1;
                   const completed = item.status === 3;
                   const inProgress = item.id !== 0 && item.status !== 3;
                   const notStarted = item.id === 0;
+                  const isSelected = selectedStageId === item.id;
                   return (
-                    <div key={`stage-${idx}`} className="flex gap-3">
-                      {/* 左侧圆点 + 连线 */}
-                      <div className="flex flex-col items-center">
-                        <div
-                          className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            completed
-                              ? 'bg-green-500'
-                              : inProgress
-                                ? 'bg-orange-400 animate-pulse'
-                                : 'border-2 border-gray-300 bg-white'
-                          }`}
-                        >
-                          {completed && <CheckCircle2 size={12} className="text-white" />}
+                    <div key={`timeline-${idx}`}>
+                      <div className="flex gap-3">
+                        {/* 左侧圆点 + 连线 */}
+                        <div className="flex flex-col items-center">
+                          <div
+                            className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              completed
+                                ? 'bg-green-500'
+                                : inProgress
+                                  ? 'bg-orange-400 animate-pulse'
+                                  : 'border-2 border-gray-300 bg-white'
+                            } ${isSelected && item.id > 0 ? 'ring-2 ring-offset-1 ring-primary' : ''}`}
+                          >
+                            {completed && <CheckCircle2 size={12} className="text-white" />}
+                          </div>
+                          {!isLast && <div className={`w-0.5 flex-1 min-h-[24px] ${isSelected && !isLast ? 'bg-primary/30' : 'bg-gray-200'}`} />}
                         </div>
-                        {!isLast && <div className="w-0.5 flex-1 bg-gray-200 min-h-[24px]" />}
-                      </div>
-                      {/* 右侧内容 */}
-                      <div className={`flex-1 ${isLast ? 'pb-0' : 'pb-4'}`}>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className={`text-sm font-medium ${
-                              completed ? 'text-text-primary' : 'text-text-secondary'
+                        {/* 右侧：可点击节点标题 */}
+                        <div className={`flex-1 ${isLast ? 'pb-0' : 'pb-4'}`}>
+                          <button
+                            type="button"
+                            disabled={item.id === 0}
+                            onClick={() => item.id > 0 && setSelectedStageId(item.id)}
+                            className={`w-full text-left rounded-xl -ml-2 -mt-1 p-2 transition-colors ${
+                              item.id > 0
+                                ? isSelected
+                                  ? 'bg-primary/8 border border-primary/20'
+                                  : 'hover:bg-warm-light'
+                                : 'cursor-default'
                             }`}
                           >
-                            {item.title}
-                          </span>
-                          {item.is_key_milestone && <span className="text-xs">🌟</span>}
-                          {completed && item.updated_at && (
-                            <span className="text-xs text-text-tertiary">
-                              {formatMonthDay(item.updated_at)}
-                            </span>
-                          )}
-                          {inProgress && (
-                            <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
-                              进行中
-                            </span>
-                          )}
-                          {notStarted && (
-                            <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                              未开始
-                            </span>
-                          )}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span
+                                className={`text-sm font-medium ${
+                                  completed ? 'text-text-primary' : isSelected ? 'text-primary' : 'text-text-secondary'
+                                }`}
+                              >
+                                {item.title}
+                              </span>
+                              {item.is_key_milestone && <span className="text-xs">🌟</span>}
+                              {completed && item.updated_at && (
+                                <span className="text-xs text-text-tertiary">
+                                  {formatMonthDay(item.updated_at)}
+                                </span>
+                              )}
+                              {inProgress && (
+                                <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                                  进行中
+                                </span>
+                              )}
+                              {notStarted && (
+                                <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                  未开始
+                                </span>
+                              )}
+                              {isSelected && item.id > 0 && !completed && (
+                                <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                                  当前查看
+                                </span>
+                              )}
+                            </div>
+                            {item.description && (
+                              <p className={`text-xs mt-1 ${completed ? 'text-text-tertiary' : isSelected ? 'text-text-secondary' : 'text-text-tertiary/70 line-clamp-1'}`}>
+                                {item.description}
+                              </p>
+                            )}
+                          </button>
                         </div>
-                        {item.description && (
-                          <p className="text-xs text-text-tertiary mt-1">{item.description}</p>
-                        )}
                       </div>
+
+                      {/* 选中节点：展开详情（积分 / 成果 / 提交 / 验收 / 任务信息） */}
+                      {isSelected && selectedStageTask && item.id > 0 && item.id === selectedStageTask.id && (
+                        <div className="ml-8 -mt-1 mb-3">
+                          <div className="bg-warm-light rounded-xl p-3.5 space-y-3">
+                            {/* 阶段积分 */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-text-secondary">阶段积分</span>
+                              <span className="inline-flex items-center gap-1 text-primary font-bold">
+                                <Star size={12} className="fill-primary" />
+                                {selectedStageTask.points} 积分
+                              </span>
+                            </div>
+                            {/* 阶段描述 */}
+                            {selectedStageTask.description && (
+                              <p className="text-xs text-text-secondary leading-relaxed bg-white rounded-lg p-2.5 border border-warm-light">
+                                {selectedStageTask.description}
+                              </p>
+                            )}
+                            {/* 成果照片 */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-medium text-text-secondary">成果照片 / 视频</span>
+                                  <span className="text-[11px] text-text-tertiary">可选</span>
+                                </div>
+                              </div>
+                              <MediaUploader
+                                mediaUrls={photos}
+                                onChange={(urls) => {
+                                  setPhotos(urls);
+                                  if (urls.length === 0) setPhoto(undefined);
+                                  else if (urls.length === 1) setPhoto(urls[0]);
+                                  else setPhoto(JSON.stringify(urls));
+                                }}
+                                onUploadingChange={setMediaUploading}
+                                disabled={selectedStageTask.status === 2 || selectedStageTask.status === 3}
+                                size="compact"
+                                maxCount={9}
+                                label="上传成果（可选）"
+                              />
+                              <p className="text-[11px] text-text-tertiary leading-relaxed">
+                                {selectedStageTask.status === 1 || selectedStageTask.status === 4
+                                  ? `可多选（最多 9 张）。支持图片与 60 秒内视频，不上传也可提交验收`
+                                  : selectedStageTask.status === 3
+                                    ? photos.length > 0
+                                      ? `阶段已完成，共 ${photos.length} 件成果已存档 · 点击查看大图`
+                                      : '阶段已完成（未附带成果媒体）'
+                                    : photos.length > 0
+                                      ? `已提交 ${photos.length} 件成果，等待家长验收 · 点击查看大图`
+                                      : '已提交验收（未附带成果媒体）'}
+                              </p>
+                            </div>
+
+                            {/* 提交 / 验收按钮 & 完成状态 */}
+                            {(selectedStageTask.status === 1 || selectedStageTask.status === 4 || selectedStageTask.status === 2 || selectedStageTask.status === 3) && (
+                              <div className="space-y-2 pt-1">
+                                {(selectedStageTask.status === 1) && (
+                                  <button
+                                    onClick={handleSubmit}
+                                    disabled={submitting || mediaUploading}
+                                    className="w-full py-3.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors shadow-md shadow-primary/15 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                  >
+                                    {submitting ? (
+                                      <><Loader2 size={16} className="animate-spin" />提交中...</>
+                                    ) : mediaUploading ? (
+                                      <><Loader2 size={16} className="animate-spin" />上传中，请稍候</>
+                                    ) : photos.length === 0 ? (
+                                      '提交验收（可不传图）'
+                                    ) : (
+                                      `提交验收（${photos.length} 张成果）`
+                                    )}
+                                  </button>
+                                )}
+                                {selectedStageTask.status === 4 && (
+                                  <button
+                                    onClick={handleSubmit}
+                                    disabled={submitting || mediaUploading}
+                                    className="w-full py-3.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors shadow-md shadow-primary/15 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                  >
+                                    {submitting ? (
+                                      <><Loader2 size={16} className="animate-spin" />提交中...</>
+                                    ) : mediaUploading ? (
+                                      <><Loader2 size={16} className="animate-spin" />上传中，请稍候</>
+                                    ) : photos.length === 0 ? (
+                                      '重新提交验收（可不传图）'
+                                    ) : (
+                                      `重新提交验收（${photos.length} 张成果）`
+                                    )}
+                                  </button>
+                                )}
+                                {selectedStageTask.status === 2 && (
+                                  <button
+                                    onClick={() => setShowReview(true)}
+                                    className="w-full py-3.5 bg-success text-white rounded-xl font-medium hover:bg-green-700 transition-colors shadow-md shadow-success/15"
+                                  >
+                                    验收 · 发放积分
+                                  </button>
+                                )}
+                                {selectedStageTask.status === 3 && (
+                                  <div className="bg-success/5 border border-success/20 rounded-xl p-4 text-center">
+                                    <CheckCircle2 size={24} className="text-success mx-auto" />
+                                    <div className="mt-1.5 text-success font-medium text-sm">阶段已完成</div>
+                                    <div className="text-xs text-text-secondary mt-0.5">
+                                      {selectedStageTask.points} 积分已发放给 {childName}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* 阶段任务信息 */}
+                            <div className="space-y-1.5 pt-2 border-t border-warm-light/70">
+                              <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wider">阶段信息</div>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-text-tertiary">状态</span>
+                                <span className={`font-medium ${activeStatus.color}`}>{activeStatus.label}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-text-tertiary">指派给</span>
+                                <span className="text-text-primary font-medium">{childName}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-text-tertiary">阶段积分</span>
+                                <span className="text-primary font-bold">{selectedStageTask.points} 积分</span>
+                              </div>
+                              {selectedStageTask.created_at && (
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-text-tertiary">创建时间</span>
+                                  <span className="text-text-secondary">{formatDateTime(selectedStageTask.created_at)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -848,7 +1092,7 @@ export function TaskDetailPage() {
 
             {/* 关键里程碑专区 */}
             {keyMilestoneStages.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-2 pt-1">
                 <div className="text-xs text-text-tertiary flex items-center gap-1">
                   <Star size={12} className="text-amber-500 fill-amber-500" />
                   关键里程碑
@@ -878,216 +1122,168 @@ export function TaskDetailPage() {
           </div>
         )}
 
-        {/* 成果照片 / 视频：弱化权重，不再做突出标题卡片 */}
-        <div className="bg-card rounded-2xl px-3.5 py-3 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-text-secondary">成果照片 / 视频</span>
-              <span className="text-[11px] text-text-tertiary">可选</span>
+        {/* ==================== 非主题任务：成果照片 / 提交 / 验收 / 完成状态 ==================== */}
+        {!isThemeTask && (
+          <>
+            {/* 成果照片 / 视频：弱化权重，不再做突出标题卡片 */}
+            <div className="bg-card rounded-2xl px-3.5 py-3 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-medium text-text-secondary">成果照片 / 视频</span>
+                  <span className="text-[11px] text-text-tertiary">可选</span>
+                </div>
+              </div>
+              <MediaUploader
+                mediaUrls={photos}
+                onChange={(urls) => {
+                  setPhotos(urls);
+                  if (urls.length === 0) setPhoto(undefined);
+                  else if (urls.length === 1) setPhoto(urls[0]);
+                  else setPhoto(JSON.stringify(urls));
+                }}
+                onUploadingChange={setMediaUploading}
+                disabled={task.status === 2 || task.status === 3}
+                size="compact"
+                maxCount={9}
+                label="上传成果（可选）"
+              />
+              <p className="mt-2 text-[11px] text-text-tertiary leading-relaxed">
+                {task.status === 1 || task.status === 4
+                  ? `可多选（最多 9 张）。支持图片与 60 秒内视频，不上传也可提交验收`
+                  : task.status === 3
+                    ? photos.length > 0
+                      ? `任务已完成，共 ${photos.length} 件成果已存档 · 点击查看大图`
+                      : '任务已完成（未附带成果媒体）'
+                    : photos.length > 0
+                      ? `已提交 ${photos.length} 件成果，等待家长验收 · 点击查看大图`
+                      : '已提交验收（未附带成果媒体）'}
+              </p>
             </div>
-          </div>
-          <MediaUploader
-            mediaUrls={photos}
-            onChange={(urls) => {
-              setPhotos(urls);
-              // 兼容单图字段同步：0 张=undefined，1 张=原字符串，>1 张=JSON 数组字符串
-              if (urls.length === 0) setPhoto(undefined);
-              else if (urls.length === 1) setPhoto(urls[0]);
-              else setPhoto(JSON.stringify(urls));
-            }}
-            onUploadingChange={setMediaUploading}
-            disabled={task.status === 2 || task.status === 3}
-            size="compact"
-            maxCount={9}
-            label="上传成果（可选）"
-          />
-          <p className="mt-2 text-[11px] text-text-tertiary leading-relaxed">
-            {task.status === 1 || task.status === 4
-              ? `可多选（最多 9 张）。支持图片与 60 秒内视频，不上传也可提交验收`
-              : task.status === 3
-                ? photos.length > 0
-                  ? `任务已完成，共 ${photos.length} 件成果已存档 · 点击查看大图`
-                  : '任务已完成（未附带成果媒体）'
-                : photos.length > 0
-                  ? `已提交 ${photos.length} 件成果，等待家长验收 · 点击查看大图`
-                  : '已提交验收（未附带成果媒体）'}
-          </p>
-        </div>
 
-        {task.status === 1 && (
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || mediaUploading}
-            className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {submitting ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                提交中...
-              </>
-            ) : mediaUploading ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                上传中，请稍候
-              </>
-            ) : photos.length === 0 ? (
-              '提交验收（可不传图）'
-            ) : (
-              `提交验收（${photos.length} 张成果）`
+            {task.status === 1 && (
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || mediaUploading}
+                className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    提交中...
+                  </>
+                ) : mediaUploading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    上传中，请稍候
+                  </>
+                ) : photos.length === 0 ? (
+                  '提交验收（可不传图）'
+                ) : (
+                  `提交验收（${photos.length} 张成果）`
+                )}
+              </button>
             )}
-          </button>
-        )}
-        {task.status === 4 && (
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || mediaUploading}
-            className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {submitting ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                提交中...
-              </>
-            ) : mediaUploading ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                上传中，请稍候
-              </>
-            ) : photos.length === 0 ? (
-              '重新提交验收（可不传图）'
-            ) : (
-              `重新提交验收（${photos.length} 张成果）`
+            {task.status === 4 && (
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || mediaUploading}
+                className="w-full py-4 bg-primary text-white rounded-2xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    提交中...
+                  </>
+                ) : mediaUploading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    上传中，请稍候
+                  </>
+                ) : photos.length === 0 ? (
+                  '重新提交验收（可不传图）'
+                ) : (
+                  `重新提交验收（${photos.length} 张成果）`
+                )}
+              </button>
             )}
-          </button>
-        )}
-        {task.status === 2 && (
-          <button
-            onClick={() => setShowReview(true)}
-            className="w-full py-4 bg-success text-white rounded-2xl font-medium hover:bg-green-700 transition-colors shadow-lg shadow-success/20"
-          >
-            验收 · 发放积分
-          </button>
-        )}
-        {task.status === 3 && (
-          <div className="bg-success/5 border border-success/20 rounded-2xl p-5 text-center">
-            <CheckCircle2 size={28} className="text-success mx-auto" />
-            <div className="mt-2 text-success font-medium">任务已完成</div>
-            <div className="text-sm text-text-secondary mt-1">
-              {task.points} 积分已发放给 {childName}
-            </div>
-          </div>
-        )}
-
-        {/* 任务信息：紧凑底栏，无厚重分隔线 */}
-        <div className="bg-card rounded-2xl px-4 py-3.5 shadow-sm space-y-2.5">
-          <div className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider mb-1">任务信息</div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-tertiary">状态</span>
-            <span className={`text-sm font-medium ${status.color}`}>{status.label}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-tertiary">指派给</span>
-            <span className="text-text-primary font-medium">{childName}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-tertiary">原任务积分</span>
-            <span className="text-primary font-bold">{task.points} 积分</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-tertiary">创建时间</span>
-            <span className="text-text-secondary text-xs">{formatDateTime(task.created_at)}</span>
-          </div>
-        </div>
-
-        {task.task_kind === 'child' && parentTask && (
-          <div className="bg-card rounded-2xl p-4 shadow-sm space-y-4">
-            <div className="flex items-center gap-2">
-              <ListTree size={16} className="text-primary" />
-              <h3 className="font-semibold text-text-primary">父任务信息</h3>
-            </div>
-
-            <div className="bg-bg rounded-xl p-3 space-y-1.5">
-              <div className="font-medium text-text-primary">{parentTask.title}</div>
-              {parentTask.description && (
-                <p className="text-sm text-text-secondary leading-relaxed">{parentTask.description}</p>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between py-1">
-              <span className="text-sm text-text-tertiary">整体进度</span>
-              <span className="text-sm font-medium text-text-primary">
-                已完成 {childTasks.filter((t) => t.status === 3).length}/{childTasks.length} 个子任务
-              </span>
-            </div>
-
-            {childTasks.filter((t) => t.is_key_milestone).length > 0 && (
-              <div>
-                <div className="text-xs text-text-tertiary mb-2">关键子任务</div>
-                <div className="space-y-1.5">
-                  {childTasks
-                    .filter((t) => t.is_key_milestone)
-                    .map((t) => (
-                      <div
-                        key={t.id}
-                        className="flex items-center justify-between py-2 px-3 bg-amber-50 rounded-xl"
-                      >
-                        <span className="text-sm text-text-primary flex items-center gap-1.5">
-                          <Star size={14} className="text-amber-500 fill-amber-500" />
-                          {t.title}
-                        </span>
-                        <span
-                          className={`text-xs font-medium ${
-                            t.status === 3 ? 'text-success' : 'text-text-tertiary'
-                          }`}
-                        >
-                          {t.status === 3 ? '已完成' : '未完成'}
-                        </span>
-                      </div>
-                    ))}
+            {task.status === 2 && (
+              <button
+                onClick={() => setShowReview(true)}
+                className="w-full py-4 bg-success text-white rounded-2xl font-medium hover:bg-green-700 transition-colors shadow-lg shadow-success/20"
+              >
+                验收 · 发放积分
+              </button>
+            )}
+            {task.status === 3 && (
+              <div className="bg-success/5 border border-success/20 rounded-2xl p-5 text-center">
+                <CheckCircle2 size={28} className="text-success mx-auto" />
+                <div className="mt-2 text-success font-medium">任务已完成</div>
+                <div className="text-sm text-text-secondary mt-1">
+                  {task.points} 积分已发放给 {childName}
                 </div>
               </div>
             )}
-
-            <button
-              onClick={() => navigate(`/task/${parentTask.id}`)}
-              className="w-full flex items-center justify-between py-2.5 px-3 bg-bg rounded-xl text-sm text-text-secondary hover:bg-gray-100"
-            >
-              <span className="flex items-center gap-1.5">
-                <ListTree size={14} />
-                查看父任务详情
-              </span>
-              <ChevronRight size={16} />
-            </button>
-          </div>
+          </>
         )}
 
-        {task.ability_dimension_id && (
-          <div className="bg-card rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles size={16} className="text-primary" />
-              <h3 className="font-semibold text-text-primary">能力提升</h3>
+        {/* 非主题任务：任务信息底栏（主题任务信息已在选中阶段详情内显示） */}
+        {!isThemeTask && (
+          <div className="bg-card rounded-2xl px-4 py-3.5 shadow-sm space-y-2.5">
+            <div className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider mb-1">任务信息</div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-tertiary">状态</span>
+              <span className={`text-sm font-medium ${status.color}`}>{status.label}</span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {primaryDim && (
-                <span className="px-3 py-1.5 rounded-full text-sm font-medium" style={{ backgroundColor: primaryDim.color + '20', color: primaryDim.color }}>
-                  {primaryDim.name} · 主维度
-                </span>
-              )}
-              {secondaryDims.map(dim => (
-                <span key={dim.id} className="px-3 py-1.5 rounded-full text-sm" style={{ backgroundColor: dim.color + '15', color: dim.color }}>
-                  {dim.name}
-                </span>
-              ))}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-tertiary">指派给</span>
+              <span className="text-text-primary font-medium">{childName}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-tertiary">原任务积分</span>
+              <span className="text-primary font-bold">{task.points} 积分</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-tertiary">创建时间</span>
+              <span className="text-text-secondary text-xs">{formatDateTime(task.created_at)}</span>
             </div>
           </div>
         )}
+
+        {/* 能力提升（主题任务时跟随主题父任务，否则跟随 task） */}
+        {(() => {
+          const abilityTask =
+            isThemeTask && themeParentTask ? themeParentTask : task;
+          if (!abilityTask.ability_dimension_id) return null;
+          // 维度数组仍沿用当前 task 的 primaryDim / secondaryDims（避免重请求）
+          if (!primaryDim && secondaryDims.length === 0) return null;
+          return (
+            <div className="bg-card rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles size={16} className="text-primary" />
+                <h3 className="font-semibold text-text-primary">能力提升</h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {primaryDim && (
+                  <span className="px-3 py-1.5 rounded-full text-sm font-medium" style={{ backgroundColor: primaryDim.color + '20', color: primaryDim.color }}>
+                    {primaryDim.name} · 主维度
+                  </span>
+                )}
+                {secondaryDims.map(dim => (
+                  <span key={dim.id} className="px-3 py-1.5 rounded-full text-sm" style={{ backgroundColor: dim.color + '15', color: dim.color }}>
+                    {dim.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="h-8" />
       </div>
 
       {showReview && (
         <ReviewModal
-          task={task}
+          task={activeTask}
           onClose={() => setShowReview(false)}
           onApprove={handleApprove}
           onReject={handleReject}
