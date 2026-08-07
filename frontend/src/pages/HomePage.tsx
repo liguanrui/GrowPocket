@@ -10,6 +10,7 @@ import { AnimatedNumberComponent as AnimatedNumber } from '../components/Animate
 import * as tasksService from '../services/tasks';
 import * as scoreService from '../services/score';
 import type { Task, TaskStatus } from '../services/tasks';
+import { getTaskTags } from '../utils/taskTags';
 
 const STATUS_TABS: { id: 'all' | TaskStatus; label: string; icon: any; color: string }[] = [
   { id: 'all', label: '全部', icon: FileText, color: 'text-text-primary' },
@@ -122,11 +123,40 @@ function StatusTabs({
   );
 }
 
-function TaskItem({ task, onClick, showStatus, highlight, onAdjust, onReject }: { task: Task; onClick: () => void; showStatus?: boolean; highlight?: boolean; onAdjust?: (task: Task) => void; onReject?: (task: Task) => void }) {
+function TaskItem({
+  task,
+  onClick,
+  showStatus,
+  highlight,
+  onAdjust,
+  onReject,
+  isParentTheme,
+  currentStageTitle,
+  currentStageSequence,
+  childCompletedCount,
+  childTotalCount,
+}: {
+  task: Task;
+  onClick: () => void;
+  showStatus?: boolean;
+  highlight?: boolean;
+  onAdjust?: (task: Task) => void;
+  onReject?: (task: Task) => void;
+  isParentTheme?: boolean;
+  currentStageTitle?: string;
+  currentStageSequence?: number;
+  childCompletedCount?: number;
+  childTotalCount?: number;
+}) {
   const statusInfo = STATUS_TABS.find((t) => t.id === task.status) || STATUS_TABS[0];
   const Icon = statusInfo.icon;
   const isAITask = !!task.ai_generated;
   const canReviewAI = isAITask && task.status === 1;
+  const tags = getTaskTags(task);
+  const visibleTags = tags.slice(0, 3);
+  const hiddenTagCount = tags.length - visibleTags.length;
+  const showStreak = task.task_kind === 'habit_daily' && (task.streak_count || 0) > 0;
+  const showSequence = task.task_kind === 'child' && (task.sequence || 0) > 0;
 
   return (
     <div
@@ -138,17 +168,59 @@ function TaskItem({ task, onClick, showStatus, highlight, onAdjust, onReject }: 
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            {isAITask && (
-              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-gradient-to-r from-purple-500 to-pink-500 text-white">
-                <Sparkles size={10} />
-                AI 生成
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <div className="font-medium text-text-primary truncate">{task.title}</div>
+            {isParentTheme && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary flex-shrink-0">
+                主题任务
               </span>
             )}
-            <div className="font-medium text-text-primary">{task.title}</div>
           </div>
-          {task.description && (
+          {/* 统一标签区：最多展示 3 个标签 + 超量折叠 */}
+          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+            {visibleTags.map((tag) => (
+              <span
+                key={tag.label}
+                className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${tag.color}`}
+              >
+                {tag.label === 'AI 生成' ? (
+                  <span className="inline-flex items-center gap-0.5">
+                    <Sparkles size={10} />
+                    {tag.label}
+                  </span>
+                ) : (
+                  tag.label
+                )}
+              </span>
+            ))}
+            {hiddenTagCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600">
+                +{hiddenTagCount}
+              </span>
+            )}
+            {showStreak && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-50 text-green-600">
+                🔥 连续 {task.streak_count} 天
+              </span>
+            )}
+            {showSequence && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-600">
+                阶段 #{task.sequence}
+              </span>
+            )}
+            {isParentTheme && currentStageTitle && (currentStageSequence || 0) > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-100 text-orange-700">
+                阶段 #{currentStageSequence} · {currentStageTitle}
+              </span>
+            )}
+          </div>
+          {task.description && !isParentTheme && (
             <div className="text-sm text-text-tertiary mt-1 line-clamp-2">{task.description}</div>
+          )}
+          {isParentTheme && currentStageTitle && (
+            <div className="text-sm text-text-tertiary mt-1 line-clamp-2">
+              当前进行中：{currentStageTitle}
+            </div>
           )}
           {task.deadline && (
             <div className="text-xs text-text-tertiary mt-2 flex items-center gap-1">
@@ -158,7 +230,16 @@ function TaskItem({ task, onClick, showStatus, highlight, onAdjust, onReject }: 
           )}
         </div>
         <div className="flex flex-col items-end gap-2 flex-shrink-0">
-          <div className="text-primary font-bold text-lg">{task.points}</div>
+          {isParentTheme ? (
+            <div className="text-right">
+              <div className="text-primary font-bold text-sm leading-tight">
+                {childCompletedCount ?? 0}/{childTotalCount ?? 0}
+              </div>
+              <div className="text-[10px] text-text-tertiary mt-0.5">阶段进度</div>
+            </div>
+          ) : (
+            <div className="text-primary font-bold text-lg">{task.points}</div>
+          )}
           {showStatus && (
             <span
               className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${
@@ -320,8 +401,40 @@ function TaskBoard({
 }) {
   const [reviewingTask, setReviewingTask] = useState<Task | null>(null);
   const toast = useToastStore();
-  const filteredTasks = activeStatus === 'all' ? tasks : tasks.filter((t) => t.status === activeStatus);
+  // 过滤状态 + 排除子任务（子任务不独立显示）
+  const statusFiltered = activeStatus === 'all' ? tasks : tasks.filter((t) => t.status === activeStatus);
+  const filteredTasks = statusFiltered.filter((t) => t.task_kind !== 'child');
   const showStatus = activeStatus === 'all';
+
+  // 从全量 tasks 中为主题父任务计算进度与当前阶段
+  const calcParentThemeMeta = (task: Task) => {
+    if (task.task_kind !== 'parent') return undefined;
+    const childs = tasks
+      .filter((t) => t.parent_id === task.id && t.task_kind === 'child')
+      .sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+    // 从 sub_task_outline 解析总阶段数（包含未实例化的）
+    let outlineTotal = 0;
+    if (task.sub_task_outline) {
+      try {
+        const outline = JSON.parse(task.sub_task_outline);
+        outlineTotal = Array.isArray(outline) ? outline.length : 0;
+      } catch { /* ignore */ }
+    }
+    const total = Math.max(outlineTotal, childs.length);
+    const completed = childs.filter((c) => c.status === 3).length;
+    // 当前进行中：优先取第一个状态 ≠3 的实例化子任务（存在的）
+    let currentStage = childs.find((c) => c.status === 1);
+    if (!currentStage) currentStage = childs.find((c) => c.status === 2);
+    if (!currentStage) currentStage = childs.find((c) => c.status === 4);
+    if (!currentStage) currentStage = childs.find((c) => c.status !== 3);
+    return {
+      isParentTheme: true as const,
+      childCompletedCount: completed,
+      childTotalCount: total,
+      currentStageTitle: currentStage?.title,
+      currentStageSequence: currentStage?.sequence,
+    };
+  };
 
   const handleReject = async (task: Task) => {
     if (!onReviewed) return;
@@ -362,17 +475,21 @@ function TaskBoard({
     <div>
       <StatusTabs active={activeStatus} onChange={onStatusChange} tasks={tasks} />
       <div className="space-y-3 mt-3">
-        {filteredTasks.map((task) => (
-          <TaskItem
-            key={task.id}
-            task={task}
-            onClick={() => onTaskClick(task.id)}
-            showStatus={showStatus}
-            highlight={highlightTaskId === task.id}
-            onAdjust={onReviewed ? (t) => setReviewingTask(t) : undefined}
-            onReject={onReviewed ? handleReject : undefined}
-          />
-        ))}
+        {filteredTasks.map((task) => {
+          const parentMeta = calcParentThemeMeta(task);
+          return (
+            <TaskItem
+              key={task.id}
+              task={task}
+              onClick={() => onTaskClick(task.id)}
+              showStatus={showStatus}
+              highlight={highlightTaskId === task.id}
+              onAdjust={onReviewed ? (t) => setReviewingTask(t) : undefined}
+              onReject={onReviewed ? handleReject : undefined}
+              {...(parentMeta || {})}
+            />
+          );
+        })}
       </div>
       {reviewingTask && (
         <AIReviewModal
@@ -456,7 +573,7 @@ export function HomePage() {
     setError(null);
     try {
       const [tasksResult, balanceResult, statsResult] = await Promise.all([
-        tasksService.getTasks({ childId: selectedChildId, page: 1, pageSize: 50 }),
+        tasksService.getTasks({ childId: selectedChildId, taskKind: 'daily,habit_daily,child,parent', page: 1, pageSize: 50 }),
         scoreService.getBalance(selectedChildId),
         scoreService.getMonthlyStats(selectedChildId),
       ]);

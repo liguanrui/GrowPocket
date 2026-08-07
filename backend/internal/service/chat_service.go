@@ -123,7 +123,7 @@ func (s *ChatService) buildSystemPrompt(childID, familyID uint, userRole string)
 	}
 
 	// 今日任务
-	tasks, _, _ := s.task.ListTasks(familyID, childID, 0, 1, 5)
+	tasks, _, _ := s.task.ListTasks(familyID, childID, 0, nil, 1, 5)
 	if len(tasks) > 0 {
 		var taskStrs []string
 		for _, t := range tasks {

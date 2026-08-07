@@ -7,9 +7,18 @@ import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { getChildScores, getAbilities } from '../services/ability';
 import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
-import { setGoal, createCycle } from '../services/growthCycle';
+import { setGoalsBatch, createCycle } from '../services/growthCycle';
 import { generateAITasks } from '../services/tasks';
 import type { Task } from '../services/tasks';
+import { getPresetHabits, createCustomHabit } from '../services/habits';
+import type { Habit } from '../services/habits';
+import {
+  getPresetTemplates,
+  createCustomTemplate,
+  createParentTask,
+  generateChildren,
+} from '../services/parentTasks';
+import type { ParentTaskTemplate } from '../services/parentTasks';
 
 // 暖橙色彩常量
 const C = {
@@ -17,12 +26,26 @@ const C = {
   card: '#FFFFFF', muted: '#FFF1E6', mutedFg: '#7A7168', border: '#F5E6D3',
 };
 
-// 快速区间预设
-const QUICK_RANGES = [
-  { label: '7天', days: 7 },
-  { label: '14天', days: 14 },
-  { label: '1个月', days: 30 },
-] as const;
+// 主题任务类别选项（与 GrowthPage 一致）
+const THEME_CATEGORIES = [
+  { value: 'learning', label: '学习' },
+  { value: 'life', label: '生活' },
+  { value: 'interest', label: '兴趣' },
+  { value: 'sports', label: '运动' },
+  { value: 'social', label: '社交' },
+  { value: 'other', label: '其他' },
+];
+
+// 解析 sub_task_outline（JSON 字符串）为数组长度，用于提示生成子任务数
+function countSubTaskOutline(outline?: string): number {
+  if (!outline) return 0;
+  try {
+    const parsed = JSON.parse(outline);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
 
 // 与 GrowthPage 一致：年级 × 维度权重（primary 为主轴推荐）
 const FOCUS_LEVEL_FALLBACK: Record<number, Record<string, FocusLevel>> = {
@@ -46,18 +69,14 @@ function formatDateISO(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function addDays(dateISO: string, days: number): string {
-  const d = new Date(dateISO + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return formatDateISO(d);
-}
-
-function diffDays(startISO: string, endISO: string): number | null {
-  if (!startISO || !endISO) return null;
-  const a = new Date(startISO + 'T00:00:00').getTime();
-  const b = new Date(endISO + 'T00:00:00').getTime();
-  if (isNaN(a) || isNaN(b)) return null;
-  return Math.round((b - a) / (24 * 60 * 60 * 1000));
+// 根据 startDate + 周数计算 endDate（YYYY-MM-DD）
+function computeEndDate(startDate: string, weeks: number): string {
+  if (!startDate) return '';
+  const start = new Date(startDate + 'T00:00:00');
+  if (isNaN(start.getTime())) return '';
+  const end = new Date(start);
+  end.setDate(end.getDate() + weeks * 7);
+  return end.toISOString().slice(0, 10);
 }
 
 // 爱好标签清单
@@ -210,29 +229,63 @@ export function OnboardingPage() {
   const [scores, setScores] = useState<ChildAbilityScore[]>([]);
   const [dimensions, setDimensions] = useState<AbilityDimension[]>([]);
   const [setupStartDate, setSetupStartDate] = useState('');
-  const [setupEndDate, setSetupEndDate] = useState('');
-  const [setupGoals, setSetupGoals] = useState<Record<number, number>>({});
+  const [setupWeeks, setSetupWeeks] = useState(2); // 1-4 周，默认 2 周
+  const [setupGoals, setSetupGoals] = useState<number[]>([]); // 选中的 dimension_id 列表
   const [goalSaving, setGoalSaving] = useState(false);
   const [goalSaved, setGoalSaved] = useState(false);
   const [generatedTasks, setGeneratedTasks] = useState<Task[]>([]);
   const [generating, setGenerating] = useState(false);
   const [step6Grade, setStep6Grade] = useState(0);
   const [goalsPrefilled, setGoalsPrefilled] = useState(false);
+  // 习惯目标（可选，最多 2 个）
+  const [setupHabits, setSetupHabits] = useState<number[]>([]);
+  const [presetHabits, setPresetHabits] = useState<Habit[]>([]);
+  const [presetHabitsLoading, setPresetHabitsLoading] = useState(false);
+  const [showCustomHabitForm, setShowCustomHabitForm] = useState(false);
+  const [customHabitTitle, setCustomHabitTitle] = useState('');
+  const [customHabitDesc, setCustomHabitDesc] = useState('');
+  const [habitSubmitting, setHabitSubmitting] = useState(false);
+  // 主题任务（可选，最多 1 个，单选）
+  const [setupThemeTemplateId, setSetupThemeTemplateId] = useState<number | null>(null);
+  const [presetThemeTemplates, setPresetThemeTemplates] = useState<ParentTaskTemplate[]>([]);
+  const [presetThemesLoading, setPresetThemesLoading] = useState(false);
+  const [showCustomThemeForm, setShowCustomThemeForm] = useState(false);
+  const [customThemeTitle, setCustomThemeTitle] = useState('');
+  const [customThemeDesc, setCustomThemeDesc] = useState('');
+  const [customThemeDays, setCustomThemeDays] = useState<number>(14);
+  const [customThemeCategory, setCustomThemeCategory] = useState<string>('learning');
+  const [themeSubmitting, setThemeSubmitting] = useState(false);
+  // 预设列表是否已加载（避免重复请求）
+  const [presetLoaded, setPresetLoaded] = useState(false);
 
   // Step 6 初始化：加载能力分数、维度、年级
   useEffect(() => {
     if (step === 6 && urlChildId) {
       getChildScores(urlChildId).then(setScores).catch(() => {});
       getAbilities().then(setDimensions).catch(() => {});
-      // 默认今天起 30 天（1个月）
+      // 默认今天起，2 周
       const start = formatDateISO(new Date());
       setSetupStartDate(start);
-      setSetupEndDate(addDays(start, 30));
-      // 从孩子档案取年级（问卷返回后本地 birthday 状态可能已丢失）
+      // 从孩子档案取年级和年龄（问卷返回后本地 birthday 状态可能已丢失）
       childStore.fetchChildren().then(() => {
         const child = useChildStore.getState().children.find((c) => c.id === urlChildId);
         const g = child?.derived_grade ?? child?.grade ?? derivedGrade ?? 1;
         setStep6Grade(g && g > 0 ? g : 1);
+        // 根据孩子年龄加载预设习惯和主题模板
+        const childAge = child?.derived_age ?? child?.age ?? derivedAge ?? 6;
+        if (!presetLoaded) {
+          setPresetLoaded(true);
+          setPresetHabitsLoading(true);
+          getPresetHabits(childAge)
+            .then((list) => setPresetHabits(list || []))
+            .catch(() => setPresetHabits([]))
+            .finally(() => setPresetHabitsLoading(false));
+          setPresetThemesLoading(true);
+          getPresetTemplates(childAge)
+            .then((list) => setPresetThemeTemplates(list || []))
+            .catch(() => setPresetThemeTemplates([]))
+            .finally(() => setPresetThemesLoading(false));
+        }
       }).catch(() => {
         setStep6Grade(derivedGrade > 0 ? derivedGrade : 1);
       });
@@ -242,26 +295,20 @@ export function OnboardingPage() {
   // 按年级预勾选主轴维度（仅首次）
   useEffect(() => {
     if (step !== 6 || goalsPrefilled || dimensions.length === 0 || !step6Grade) return;
-    const goals: Record<number, number> = {};
+    const goals: number[] = [];
     for (const dim of dimensions) {
       if (resolveDimFocus(dim.code, step6Grade) === 'primary') {
-        goals[dim.id] = 20;
+        goals.push(dim.id);
       }
     }
     setSetupGoals(goals);
     setGoalsPrefilled(true);
   }, [step, dimensions, step6Grade, goalsPrefilled]);
 
-  const activeQuickDays = useMemo(
-    () => diffDays(setupStartDate, setupEndDate),
-    [setupStartDate, setupEndDate],
+  const setupEndDate = useMemo(
+    () => computeEndDate(setupStartDate, setupWeeks),
+    [setupStartDate, setupWeeks],
   );
-
-  const applyQuickRange = (days: number) => {
-    const start = setupStartDate || formatDateISO(new Date());
-    setSetupStartDate(start);
-    setSetupEndDate(addDays(start, days));
-  };
 
   const recommendedDims = useMemo(() => {
     if (!step6Grade || dimensions.length === 0) return [];
@@ -319,33 +366,70 @@ export function OnboardingPage() {
     }
   };
 
-  // Step 6B: 保存阶段目标
+  // Step 6B: 保存阶段目标（合并 dimension + habit 目标，主题任务独立 try/catch）
   const handleSaveGoals = async () => {
     if (!urlChildId) return;
-    if (!setupStartDate || !setupEndDate) {
-      toast.error('请选择时间区间');
+    if (!setupStartDate) {
+      toast.error('请选择开始日期');
       return;
     }
-    const goalEntries = Object.entries(setupGoals).filter(([, v]) => v > 0);
-    if (goalEntries.length === 0) {
-      toast.error('请至少为一个维度设置目标');
+    if (setupGoals.length === 0) {
+      toast.error('请至少选择一个维度');
       return;
     }
     setGoalSaving(true);
     try {
+      const endDate = computeEndDate(setupStartDate, setupWeeks);
       const startISO = new Date(setupStartDate + 'T00:00:00').toISOString();
-      const endISO = new Date(setupEndDate + 'T23:59:59').toISOString();
-      const name = `${setupStartDate.slice(5)}-${setupEndDate.slice(5)} 成长阶段`;
+      const endISO = new Date(endDate + 'T23:59:59').toISOString();
+      const name = `${setupStartDate.slice(5)}-${endDate.slice(5)} 成长阶段`;
       const cycle = await createCycle(urlChildId, name, startISO, endISO);
-      for (const [dimId, target] of goalEntries) {
-        await setGoal(cycle.id, urlChildId, Number(dimId), target);
-      }
+      // 批量设置阶段目标（合并 dimension 和 habit 目标，不传 target_score）
+      const goals = [
+        ...setupGoals.map((dimId) => ({
+          goal_type: 'dimension',
+          dimension_id: dimId,
+        })),
+        ...setupHabits.map((habitId) => ({
+          goal_type: 'habit',
+          habit_id: habitId,
+        })),
+      ];
+      await setGoalsBatch({
+        cycle_id: cycle.id,
+        child_id: urlChildId,
+        goals,
+      });
       toast.success('阶段目标已保存');
       setGoalSaved(true);
     } catch (e: any) {
       toast.error(e.message || '保存失败');
-    } finally {
       setGoalSaving(false);
+      return;
+    }
+    setGoalSaving(false);
+
+    // 主题任务创建：独立 try/catch，失败不阻断维度/习惯目标的保存
+    if (setupThemeTemplateId !== null) {
+      try {
+        const parentTask = await createParentTask({
+          child_id: urlChildId,
+          template_id: setupThemeTemplateId,
+        });
+        if (!parentTask.sub_task_outline) {
+          await generateChildren(parentTask.id);
+          toast.success('主题任务已创建，子任务大纲生成中');
+        } else {
+          const count = countSubTaskOutline(parentTask.sub_task_outline);
+          toast.success(
+            count > 0
+              ? `主题任务已创建，已生成 ${count} 个子任务大纲`
+              : '主题任务已创建，已生成子任务大纲',
+          );
+        }
+      } catch (e: any) {
+        toast.error(e.message || '主题任务创建失败');
+      }
     }
   };
 
@@ -377,16 +461,100 @@ export function OnboardingPage() {
     : true;
 
   const toggleGoalDim = (dimId: number) => {
-    if (setupGoals[dimId]) {
-      const next = { ...setupGoals };
-      delete next[dimId];
-      setSetupGoals(next);
-    } else {
-      setSetupGoals({ ...setupGoals, [dimId]: 20 });
+    setSetupGoals((prev) =>
+      prev.includes(dimId)
+        ? prev.filter((id) => id !== dimId)
+        : [...prev, dimId],
+    );
+  };
+
+  // 习惯目标多选 toggle：最多 2 个，超出阻止并提示
+  const toggleSetupHabit = (habitId: number) => {
+    setSetupHabits((prev) => {
+      if (prev.includes(habitId)) {
+        return prev.filter((id) => id !== habitId);
+      }
+      if (prev.length >= 2) {
+        toast.error('最多只能选择 2 个习惯目标');
+        return prev;
+      }
+      return [...prev, habitId];
+    });
+  };
+
+  // 创建自定义习惯：成功后自动加入预设列表并选中（受 2 个上限约束）
+  const handleCreateCustomHabit = async () => {
+    if (!urlChildId) return;
+    if (!customHabitTitle.trim()) {
+      toast.error('请输入习惯标题');
+      return;
+    }
+    setHabitSubmitting(true);
+    try {
+      const habit = await createCustomHabit({
+        child_id: urlChildId,
+        title: customHabitTitle.trim(),
+        description: customHabitDesc.trim(),
+        category: 'other',
+      });
+      setPresetHabits((prev) => [...prev, habit]);
+      setSetupHabits((prev) => {
+        if (prev.includes(habit.id)) return prev;
+        if (prev.length >= 2) {
+          toast.error('已选满 2 个习惯目标，请先取消一个再选');
+          return prev;
+        }
+        return [...prev, habit.id];
+      });
+      setCustomHabitTitle('');
+      setCustomHabitDesc('');
+      setShowCustomHabitForm(false);
+      toast.success('习惯已创建并自动选中');
+    } catch (e: any) {
+      toast.error(e.message || '创建失败');
+    } finally {
+      setHabitSubmitting(false);
     }
   };
-  const setGoalScore = (dimId: number, score: number) => {
-    setSetupGoals({ ...setupGoals, [dimId]: score });
+
+  // 主题任务单选 toggle：再次点击同一个取消选中
+  const toggleSetupTheme = (templateId: number) => {
+    setSetupThemeTemplateId((prev) => (prev === templateId ? null : templateId));
+  };
+
+  // 创建自定义主题模板：成功后加入预设列表并自动选中
+  const handleCreateCustomTheme = async () => {
+    if (!urlChildId) return;
+    if (!customThemeTitle.trim()) {
+      toast.error('请输入主题标题');
+      return;
+    }
+    if (!customThemeDays || customThemeDays <= 0) {
+      toast.error('请输入有效的预计周期天数');
+      return;
+    }
+    setThemeSubmitting(true);
+    try {
+      const template = await createCustomTemplate({
+        child_id: urlChildId,
+        title: customThemeTitle.trim(),
+        description: customThemeDesc.trim(),
+        category: customThemeCategory,
+        estimated_days: customThemeDays,
+      });
+      setPresetThemeTemplates((prev) => [...prev, template]);
+      setSetupThemeTemplateId(template.id);
+      setCustomThemeTitle('');
+      setCustomThemeDesc('');
+      setCustomThemeDays(14);
+      setCustomThemeCategory('learning');
+      setShowCustomThemeForm(false);
+      toast.success('主题已创建并自动选中');
+    } catch (e: any) {
+      toast.error(e.message || '创建失败');
+    } finally {
+      setThemeSubmitting(false);
+    }
   };
 
   return (
@@ -697,57 +865,45 @@ export function OnboardingPage() {
                     <Target size={16} style={{ color: C.primary }} />
                     <p className="text-sm font-semibold" style={{ color: '#2D2A26' }}>设置阶段目标</p>
                   </div>
-                  {/* 快速区间 */}
+                  {/* 开始日期 */}
                   <div className="mb-3">
-                    <p className="text-xs mb-1.5" style={{ color: C.mutedFg }}>快速设置区间</p>
-                    <div className="flex gap-2">
-                      {QUICK_RANGES.map((r) => {
-                        const active = activeQuickDays === r.days;
+                    <p className="text-xs mb-1.5" style={{ color: C.mutedFg }}>开始日期</p>
+                    <MobileDatePicker
+                      value={setupStartDate}
+                      onChange={setSetupStartDate}
+                      placeholder="请选择开始日期"
+                      className="w-full px-3 py-2 rounded-lg text-sm outline-none flex items-center justify-between"
+                      style={{ background: C.muted, border: `1px solid ${C.border}`, color: '#2D2A26' }}
+                    />
+                  </div>
+                  {/* 阶段时长：1-4 周按钮组 */}
+                  <div className="mb-3">
+                    <p className="text-xs mb-1.5" style={{ color: C.mutedFg }}>阶段时长</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[1, 2, 3, 4].map((w) => {
+                        const active = setupWeeks === w;
                         return (
                           <button
-                            key={r.days}
+                            key={w}
                             type="button"
-                            onClick={() => applyQuickRange(r.days)}
-                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all active:scale-95"
+                            onClick={() => setSetupWeeks(w)}
+                            className="py-2 rounded-xl text-xs font-medium transition-all active:scale-95"
                             style={{
                               background: active ? C.primary : C.muted,
                               color: active ? C.primaryFg : '#2D2A26',
                               border: `1px solid ${active ? C.primary : C.border}`,
                             }}
                           >
-                            {r.label}
+                            {w} 周
                           </button>
                         );
                       })}
                     </div>
-                  </div>
-                  {/* 日期区间 */}
-                  <div className="grid grid-cols-2 gap-2 mb-4">
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: C.mutedFg }}>开始</p>
-                      <MobileDatePicker
-                        value={setupStartDate}
-                        onChange={(v) => {
-                          setSetupStartDate(v);
-                          if (v && activeQuickDays && QUICK_RANGES.some((r) => r.days === activeQuickDays)) {
-                            setSetupEndDate(addDays(v, activeQuickDays));
-                          }
-                        }}
-                        placeholder="开始日期"
-                        className="w-full px-3 py-2 rounded-lg text-sm outline-none flex items-center justify-between"
-                        style={{ background: C.muted, border: `1px solid ${C.border}`, color: '#2D2A26' }}
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: C.mutedFg }}>结束</p>
-                      <MobileDatePicker
-                        value={setupEndDate}
-                        onChange={setSetupEndDate}
-                        placeholder="结束日期"
-                        className="w-full px-3 py-2 rounded-lg text-sm outline-none flex items-center justify-between"
-                        style={{ background: C.muted, border: `1px solid ${C.border}`, color: '#2D2A26' }}
-                      />
-                    </div>
+                    <p className="text-[11px] mt-1.5" style={{ color: C.mutedFg }}>
+                      {setupStartDate
+                        ? `阶段结束：${setupEndDate}，阶段结束时将触发成长回顾`
+                        : '阶段结束时将触发成长回顾'}
+                    </p>
                   </div>
                   {/* 年级推荐提示 */}
                   {step6Grade > 0 && recommendedDims.length > 0 && (
@@ -760,65 +916,320 @@ export function OnboardingPage() {
                       <span style={{ color: C.mutedFg }}>（已预勾选，可按需调整）</span>
                     </div>
                   )}
-                  {/* 维度目标列表 */}
-                  <div className="space-y-2 mb-4">
-                    {dimensions.map((dim) => {
-                      const selected = !!setupGoals[dim.id];
-                      const targetScore = setupGoals[dim.id] || 20;
-                      const focus = resolveDimFocus(dim.code, step6Grade || 1);
-                      const recommended = focus === 'primary';
-                      return (
-                        <div
-                          key={dim.id}
-                          className="flex items-center gap-2 rounded-xl px-2 py-1.5"
-                          style={{
-                            background: recommended ? 'rgba(245,158,107,0.08)' : 'transparent',
-                            border: recommended ? `1px solid rgba(245,158,107,0.25)` : '1px solid transparent',
-                          }}
-                        >
-                          <button
-                            onClick={() => toggleGoalDim(dim.id)}
-                            className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                  {/* 维度目标列表（仅勾选，不设分值） */}
+                  <div className="mb-4">
+                    <p className="text-xs mb-1.5" style={{ color: C.mutedFg }}>维度目标（可多选）</p>
+                    <p className="text-[11px] mb-2" style={{ color: C.mutedFg }}>AI 将基于目标和累计完成情况每日自动生成任务</p>
+                    <div className="space-y-2">
+                      {dimensions.map((dim) => {
+                        const selected = setupGoals.includes(dim.id);
+                        const currentScore = scores.find((s) => s.dimension_id === dim.id)?.score || 0;
+                        const focus = resolveDimFocus(dim.code, step6Grade || 1);
+                        const recommended = focus === 'primary';
+                        return (
+                          <div
+                            key={dim.id}
+                            className="flex items-center gap-2 rounded-xl px-2 py-1.5"
                             style={{
-                              background: selected ? C.primary : 'transparent',
-                              border: `2px solid ${selected ? C.primary : C.border}`,
+                              background: recommended ? 'rgba(245,158,107,0.08)' : 'transparent',
+                              border: recommended ? `1px solid rgba(245,158,107,0.25)` : '1px solid transparent',
                             }}
                           >
-                            {selected && <Check size={14} style={{ color: C.primaryFg }} />}
-                          </button>
-                          <span className="text-sm flex-1 flex items-center gap-1.5" style={{ color: '#2D2A26' }}>
-                            {dim.name}
-                            {recommended && (
-                              <span
-                                className="text-[10px] px-1.5 py-0.5 rounded-md font-medium"
-                                style={{ background: C.primary, color: C.primaryFg }}
+                            <button
+                              onClick={() => toggleGoalDim(dim.id)}
+                              className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                              style={{
+                                background: selected ? C.primary : 'transparent',
+                                border: `2px solid ${selected ? C.primary : C.border}`,
+                              }}
+                            >
+                              {selected && <Check size={14} style={{ color: C.primaryFg }} />}
+                            </button>
+                            <span className="text-sm flex-1 flex items-center gap-1.5" style={{ color: '#2D2A26' }}>
+                              {dim.name}
+                              {recommended && (
+                                <span
+                                  className="text-[10px] px-1.5 py-0.5 rounded-md font-medium"
+                                  style={{ background: C.primary, color: C.primaryFg }}
+                                >
+                                  推荐
+                                </span>
+                              )}
+                              {focus === 'latent' && (
+                                <span
+                                  className="text-[10px] px-1.5 py-0.5 rounded-md"
+                                  style={{ background: C.muted, color: C.mutedFg }}
+                                >
+                                  蓄势
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[11px]" style={{ color: C.mutedFg }}>当前 {currentScore} 分</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {/* 习惯目标区（可选，最多 2 个，emerald 色调） */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs" style={{ color: C.mutedFg }}>🌱 习惯目标（可选，最多 2 个）</p>
+                      {setupHabits.length > 0 && (
+                        <span className="text-[11px] font-medium text-emerald-600">
+                          已选 {setupHabits.length}/2
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] mb-2" style={{ color: C.mutedFg }}>培养良好习惯，每日打卡巩固成长</p>
+                    {presetHabitsLoading ? (
+                      <div className="py-3 text-center text-xs" style={{ color: C.mutedFg }}>加载预设习惯中...</div>
+                    ) : presetHabits.length > 0 ? (
+                      <div className="space-y-2">
+                        {presetHabits.map((habit) => {
+                          const checked = setupHabits.includes(habit.id);
+                          return (
+                            <div
+                              key={habit.id}
+                              className={`flex items-center gap-2 rounded-xl px-2 py-1.5 border transition-colors ${
+                                checked
+                                  ? 'bg-emerald-50 border-emerald-300'
+                                  : 'bg-transparent border-transparent'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleSetupHabit(habit.id)}
+                                className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                                  checked
+                                    ? 'border-emerald-500 bg-emerald-500'
+                                    : 'border-gray-300 bg-white'
+                                }`}
                               >
-                                推荐
-                              </span>
-                            )}
-                            {focus === 'latent' && (
-                              <span
-                                className="text-[10px] px-1.5 py-0.5 rounded-md"
-                                style={{ background: C.muted, color: C.mutedFg }}
-                              >
-                                蓄势
-                              </span>
-                            )}
-                          </span>
-                          <select
-                            value={targetScore}
-                            onChange={(e) => setGoalScore(dim.id, Number(e.target.value))}
-                            disabled={!selected}
-                            className="px-2 py-1 rounded-lg text-sm outline-none"
-                            style={{ background: C.muted, border: `1px solid ${C.border}`, color: '#2D2A26', opacity: selected ? 1 : 0.5 }}
+                                {checked && <Check size={14} className="text-white" />}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: '#2D2A26' }}>
+                                  {habit.title}
+                                  {habit.is_custom && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-medium">
+                                      自定义
+                                    </span>
+                                  )}
+                                </div>
+                                {habit.description && (
+                                  <div className="text-[11px] line-clamp-1" style={{ color: C.mutedFg }}>
+                                    {habit.description}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="py-3 text-center text-xs" style={{ color: C.mutedFg }}>
+                        暂无适配当前年龄的预设习惯
+                      </div>
+                    )}
+                    {/* 自定义习惯入口/表单 */}
+                    {!showCustomHabitForm ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomHabitForm(true)}
+                        className="mt-2 w-full py-2 rounded-xl border border-dashed border-emerald-300 text-emerald-600 text-xs font-medium hover:bg-emerald-50 transition-colors"
+                      >
+                        + 自定义习惯
+                      </button>
+                    ) : (
+                      <div className="mt-2 p-3 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-2">
+                        <input
+                          type="text"
+                          value={customHabitTitle}
+                          onChange={(e) => setCustomHabitTitle(e.target.value)}
+                          placeholder="习惯标题（如：每天阅读 20 分钟）"
+                          className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-emerald-400"
+                          style={{ color: '#2D2A26' }}
+                        />
+                        <input
+                          type="text"
+                          value={customHabitDesc}
+                          onChange={(e) => setCustomHabitDesc(e.target.value)}
+                          placeholder="描述（可选）"
+                          className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-emerald-400"
+                          style={{ color: '#2D2A26' }}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCustomHabitForm(false);
+                              setCustomHabitTitle('');
+                              setCustomHabitDesc('');
+                            }}
+                            className="flex-1 py-2 bg-white border border-gray-200 text-xs rounded-lg"
+                            style={{ color: C.mutedFg }}
                           >
-                            {[10, 20, 30, 40, 50, 60, 80, 100].map((v) => (
-                              <option key={v} value={v}>{v}分</option>
-                            ))}
-                          </select>
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCreateCustomHabit}
+                            disabled={habitSubmitting || !customHabitTitle.trim()}
+                            className="flex-1 py-2 bg-emerald-500 text-white text-xs rounded-lg font-medium disabled:opacity-50 hover:bg-emerald-600 transition-colors"
+                          >
+                            {habitSubmitting ? '创建中...' : '创建并选中'}
+                          </button>
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
+                  </div>
+                  {/* 主题任务区（可选，最多 1 个，单选，indigo 色调） */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs" style={{ color: C.mutedFg }}>🎯 主题任务（可选）</p>
+                      {setupThemeTemplateId !== null && (
+                        <span className="text-[11px] font-medium text-indigo-600">
+                          已选 1/1
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] mb-2" style={{ color: C.mutedFg }}>本周期最多开展 1 个主题任务，AI 将自动拆解为分阶段子任务</p>
+                    {presetThemesLoading ? (
+                      <div className="py-3 text-center text-xs" style={{ color: C.mutedFg }}>加载预设主题中...</div>
+                    ) : presetThemeTemplates.length > 0 ? (
+                      <div className="space-y-2">
+                        {presetThemeTemplates.map((tpl) => {
+                          const checked = setupThemeTemplateId === tpl.id;
+                          return (
+                            <button
+                              key={tpl.id}
+                              type="button"
+                              onClick={() => toggleSetupTheme(tpl.id)}
+                              className={`w-full text-left rounded-xl px-2 py-1.5 border transition-colors ${
+                                checked
+                                  ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-300'
+                                  : 'bg-transparent border-transparent hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-start gap-2">
+                                {/* 单选用圆形指示，与习惯多选方形区分 */}
+                                <div
+                                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
+                                    checked ? 'border-indigo-500 bg-indigo-500' : 'border-gray-300 bg-white'
+                                  }`}
+                                >
+                                  {checked && <Check size={12} className="text-white" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap" style={{ color: '#2D2A26' }}>
+                                    {tpl.title}
+                                    {tpl.is_custom && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700 font-medium">
+                                        自定义
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium">
+                                      {THEME_CATEGORIES.find((c) => c.value === tpl.category)?.label || tpl.category}
+                                    </span>
+                                  </div>
+                                  {tpl.description && (
+                                    <div className="text-[11px] line-clamp-2 mt-0.5" style={{ color: C.mutedFg }}>
+                                      {tpl.description}
+                                    </div>
+                                  )}
+                                  <div className="text-[10px] mt-1" style={{ color: C.mutedFg }}>
+                                    预计周期 {tpl.estimated_days} 天
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="py-3 text-center text-xs" style={{ color: C.mutedFg }}>
+                        暂无适配当前年龄的预设主题
+                      </div>
+                    )}
+                    {/* 自定义主题入口/表单 */}
+                    {!showCustomThemeForm ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomThemeForm(true)}
+                        className="mt-2 w-full py-2 rounded-xl border border-dashed border-indigo-300 text-indigo-600 text-xs font-medium hover:bg-indigo-50 transition-colors"
+                      >
+                        + 自定义主题
+                      </button>
+                    ) : (
+                      <div className="mt-2 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100 space-y-2">
+                        <input
+                          type="text"
+                          value={customThemeTitle}
+                          onChange={(e) => setCustomThemeTitle(e.target.value)}
+                          placeholder="主题标题（如：小小科学家养成计划）"
+                          className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-indigo-400"
+                          style={{ color: '#2D2A26' }}
+                        />
+                        <textarea
+                          value={customThemeDesc}
+                          onChange={(e) => setCustomThemeDesc(e.target.value)}
+                          placeholder="主题描述（可选）"
+                          rows={2}
+                          className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-indigo-400 resize-none"
+                          style={{ color: '#2D2A26' }}
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] mb-1" style={{ color: C.mutedFg }}>预计周期（天）</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={customThemeDays}
+                              onChange={(e) => setCustomThemeDays(Number(e.target.value) || 0)}
+                              className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-indigo-400"
+                              style={{ color: '#2D2A26' }}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] mb-1" style={{ color: C.mutedFg }}>类别</label>
+                            <select
+                              value={customThemeCategory}
+                              onChange={(e) => setCustomThemeCategory(e.target.value)}
+                              className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-indigo-400"
+                              style={{ color: '#2D2A26' }}
+                            >
+                              {THEME_CATEGORIES.map((c) => (
+                                <option key={c.value} value={c.value}>{c.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCustomThemeForm(false);
+                              setCustomThemeTitle('');
+                              setCustomThemeDesc('');
+                              setCustomThemeDays(14);
+                              setCustomThemeCategory('learning');
+                            }}
+                            className="flex-1 py-2 bg-white border border-gray-200 text-xs rounded-lg"
+                            style={{ color: C.mutedFg }}
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCreateCustomTheme}
+                            disabled={themeSubmitting || !customThemeTitle.trim()}
+                            className="flex-1 py-2 bg-indigo-500 text-white text-xs rounded-lg font-medium disabled:opacity-50 hover:bg-indigo-600 transition-colors"
+                          >
+                            {themeSubmitting ? '创建中...' : '创建并选中'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={handleSaveGoals}

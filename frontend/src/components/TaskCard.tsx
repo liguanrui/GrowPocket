@@ -1,6 +1,6 @@
 import { Star, MoreVertical } from 'lucide-react';
 import type { Task } from '../types';
-import { IPPAvatar } from './IPPAvatar';
+import { getTaskTags } from '../utils/taskTags';
 
 interface TaskCardProps {
   task: Task;
@@ -41,6 +41,9 @@ function formatDeadline(deadline?: Date) {
 
 export function TaskCard({ task, onClick, showActions, onApprove, onReject }: TaskCardProps) {
   const deadlineText = formatDeadline(task.deadline);
+  const tags = getTaskTags(task);
+  const visibleTags = tags.slice(0, 3);
+  const hiddenTagCount = tags.length - visibleTags.length;
 
   return (
     <div
@@ -49,17 +52,24 @@ export function TaskCard({ task, onClick, showActions, onApprove, onReject }: Ta
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          {/* 标题 + 状态 */}
+          {/* 标题 + 状态 + 标签 */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <h3 className="font-semibold text-text-primary truncate">{task.title}</h3>
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[task.status]}`}>
               {STATUS_TEXT[task.status]}
             </span>
-            {task.aiGenerated && (
-              <div className="flex items-center gap-1">
-                <IPPAvatar expression="encourage" size={32} />
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">AI 生成</span>
-              </div>
+            {visibleTags.map((tag) => (
+              <span
+                key={tag.label}
+                className={`px-2 py-0.5 rounded-full text-xs font-medium ${tag.color}`}
+              >
+                {tag.label}
+              </span>
+            ))}
+            {hiddenTagCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                +{hiddenTagCount}
+              </span>
             )}
           </div>
 

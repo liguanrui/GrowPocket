@@ -5,6 +5,7 @@ import (
 	"growpocket/internal/database"
 	"growpocket/internal/model"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type CreateTaskInput struct {
 	Photo     string     // 可选（创建时直接上传成果照片/奖惩凭证）
 	Deadline  *time.Time
 	Status    int        // 1=进行中（默认）, 3=直接已完成（奖惩任务）
+	GuardianRequired bool // 家长陪伴标记（请求体显式指定或风险关键词命中时为 true）
 }
 
 func (s *TaskService) CreateTask(input CreateTaskInput) (*model.Task, error) {
@@ -39,6 +41,9 @@ func (s *TaskService) CreateTask(input CreateTaskInput) (*model.Task, error) {
 		input.Status = model.TaskStatusInProgress
 	}
 
+	// 家长陪伴标记：显式指定或命中风险关键词时为 true
+	guardianRequired := input.GuardianRequired || containsRiskKeywords(input.Title, input.Description)
+
 	task := &model.Task{
 		FamilyID:    input.FamilyID,
 		Title:       input.Title,
@@ -50,6 +55,7 @@ func (s *TaskService) CreateTask(input CreateTaskInput) (*model.Task, error) {
 		CreatedBy:   input.CreatedBy,
 		Photo:       input.Photo,
 		Deadline:    input.Deadline,
+		GuardianRequired: guardianRequired,
 	}
 
 	// 如果 status = 3，创建即视为「已完成」，要立即结算积分（事务中）
@@ -120,7 +126,7 @@ func (s *TaskService) CreateTask(input CreateTaskInput) (*model.Task, error) {
 	return task, nil
 }
 
-func (s *TaskService) ListTasks(familyID uint, childID uint, status int, page, pageSize int) ([]model.Task, int64, error) {
+func (s *TaskService) ListTasks(familyID uint, childID uint, status int, kinds []string, page, pageSize int) ([]model.Task, int64, error) {
 	var tasks []model.Task
 	var total int64
 
@@ -130,6 +136,9 @@ func (s *TaskService) ListTasks(familyID uint, childID uint, status int, page, p
 	}
 	if status > 0 {
 		db = db.Where("status = ?", status)
+	}
+	if len(kinds) > 0 {
+		db = db.Where("task_kind IN ?", kinds)
 	}
 
 	db.Count(&total)
@@ -210,6 +219,8 @@ func (s *TaskService) SubmitTask(id, familyID uint, photo string) (*model.Task, 
 	}
 
 	task.Status = model.TaskStatusSubmitted
+	// Photo 字段复用：单图 URL 或 JSON 数组（["url1","url2"...]）均允许
+	// 提交方保证编码一致；历史单图仍保持字符串格式
 	task.Photo = photo
 	if err := database.DB.Save(task).Error; err != nil {
 		return nil, errors.New("提交失败")
@@ -300,6 +311,20 @@ func (s *TaskService) ReviewTask(id, familyID uint, input ReviewTaskInput) (*mod
 		return nil, errors.New("提交事务失败")
 	}
 
+	// 习惯打卡：habit_daily 完成后，更新对应 habit_master 的统计（StreakCount/TotalCount/LastCheckinDate）
+	if task.TaskKind == "habit_daily" {
+		habitService := &HabitService{}
+		if err := habitService.ReviewHabitDaily(task.ID); err != nil {
+			log.Printf("[ReviewTask] 习惯打卡统计更新失败 task=%d: %v", task.ID, err)
+		}
+	}
+
+	// 主题子任务：child 完成后，若父任务当前批次 child 均已完成，则推进下一批实例化
+	// 失败不阻断 ReviewTask 主流程，仅记录日志
+	if task.TaskKind == "child" && task.ParentID != 0 {
+		s.tryAdvanceParentBatch(task.ParentID)
+	}
+
 	achievementService := &AchievementService{}
 	updateTaskAchievementCounters(achievementService, task.ChildID, familyID, task.TemplateID, actualPoints)
 
@@ -313,6 +338,64 @@ func absInt(v int) int {
 		return -v
 	}
 	return v
+}
+
+// containsRiskKeywords 风险关键词检测：title 或 description 命中任一关键词即返回 true
+// 用于自动开启家长陪伴标记（GuardianRequired）
+func containsRiskKeywords(title, description string) bool {
+	keywords := []string{"刀", "火", "电", "化学", "高处", "切", "炒", "煎", "烤", "剪刀", "针", "炉", "烫"}
+	for _, kw := range keywords {
+		if strings.Contains(title, kw) || strings.Contains(description, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// tryAdvanceParentBatch 检查父任务当前批次的 child 任务是否全部完成，是则调用 AdvanceBatch 推进下一批实例化
+// 用于 ReviewTask 流程中 child 任务审核通过后的自动推进
+// 错误处理：AdvanceBatch 返回"所有子任务已生成完毕"或其他错误均不视为 ReviewTask 失败，仅记录日志
+func (s *TaskService) tryAdvanceParentBatch(parentID uint) {
+	var parent model.Task
+	if err := database.DB.First(&parent, parentID).Error; err != nil {
+		log.Printf("[ReviewTask] 查询父任务失败 parent=%d: %v", parentID, err)
+		return
+	}
+	if parent.TaskKind != "parent" {
+		return
+	}
+
+	// 查询当前已实例化的 child 任务
+	var children []model.Task
+	if err := database.DB.Where("parent_id = ? AND task_kind = ?", parent.ID, "child").
+		Find(&children).Error; err != nil {
+		log.Printf("[ReviewTask] 查询子任务失败 parent=%d: %v", parent.ID, err)
+		return
+	}
+	if len(children) == 0 {
+		return
+	}
+
+	// 检查当前批次是否全部完成（status=3）
+	allCompleted := true
+	for _, c := range children {
+		if c.Status != model.TaskStatusCompleted {
+			allCompleted = false
+			break
+		}
+	}
+	if !allCompleted {
+		return
+	}
+
+	// 推进下一批：AdvanceBatch 内部按 sequence 找下一个未实例化的大纲项
+	// 若所有大纲均已实例化，返回 "所有子任务已生成完毕" 错误，仅记录日志
+	parentTaskService := &ParentTaskService{}
+	if _, err := parentTaskService.AdvanceBatch(parent.ID); err != nil {
+		log.Printf("[ReviewTask] AdvanceBatch 推进失败 parent=%d: %v", parent.ID, err)
+		return
+	}
+	log.Printf("[ReviewTask] AdvanceBatch 推进成功 parent=%d", parent.ID)
 }
 
 func updateTaskAchievementCounters(achievementService *AchievementService, childID, familyID, templateID uint, points int) {

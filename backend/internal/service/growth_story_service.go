@@ -7,7 +7,9 @@ import (
 	"growpocket/internal/database"
 	"growpocket/internal/model"
 	"log"
+	"sort"
 	"strings"
+	"time"
 )
 
 // GrowthStoryService 成长故事服务（v3）
@@ -33,6 +35,343 @@ type aiStoryResult struct {
 	Title          string `json:"title"`
 	Content        string `json:"content"`
 	AbilitySummary string `json:"ability_summary"`
+}
+
+// habitStat 聚合周期内单个习惯的养成统计（来自 habit_master 任务）
+type habitStat struct {
+	HabitID         uint       // 习惯配置 ID
+	HabitTitle      string     // 习惯标题（取自 Habit 表）
+	StreakCount     int        // 连续坚持天数
+	TotalCount      int        // 累计坚持天数
+	HabitGoal       int        // 习惯目标天数
+	LastCheckinDate *time.Time // 上次打卡日期
+	ParentComment   string     // 家长批语（当前任务表无批语字段，暂为空字符串）
+	MasterTaskID    uint       // habit_master 任务 ID
+}
+
+// collectHabitStats 聚合周期内（created_at BETWEEN cycle.StartDate AND cycle.EndDate）
+// 的 habit_master 任务及其养成统计，并查询关联 Habit 信息（标题）。
+// 家长批语：当前任务表无 review_comment 字段，留空字符串；后续若有批语字段可在此扩展。
+func (s *GrowthStoryService) collectHabitStats(familyID, childID uint, cycle model.GrowthCycle) []habitStat {
+	var masters []model.Task
+	if err := database.DB.Where("family_id = ? AND child_id = ? AND task_kind = ? AND created_at BETWEEN ? AND ?",
+		familyID, childID, "habit_master", cycle.StartDate, cycle.EndDate).
+		Order("created_at ASC").Find(&masters).Error; err != nil {
+		log.Printf("[GrowthStory] 查询 habit_master 失败 family=%d child=%d: %v", familyID, childID, err)
+		return nil
+	}
+
+	stats := make([]habitStat, 0, len(masters))
+	for _, m := range masters {
+		if m.HabitID == 0 {
+			continue
+		}
+		var habit model.Habit
+		if err := database.DB.Where("id = ?", m.HabitID).First(&habit).Error; err != nil {
+			log.Printf("[GrowthStory] 习惯配置 %d 不存在: %v", m.HabitID, err)
+			continue
+		}
+		// 家长批语：查询关联 habit_daily 任务的 description 作为参考（当前无独立批语字段，留空）
+		// 保留 ParentComment 字段以便后续扩展，此处默认空字符串。
+		stats = append(stats, habitStat{
+			HabitID:         m.HabitID,
+			HabitTitle:      habit.Title,
+			StreakCount:     m.StreakCount,
+			TotalCount:      m.TotalCount,
+			HabitGoal:       m.HabitGoal,
+			LastCheckinDate: m.LastCheckinDate,
+			ParentComment:   "",
+			MasterTaskID:    m.ID,
+		})
+	}
+	return stats
+}
+
+// markFormedHabits 标记已养成的习惯为 IsActive=false。
+// 判定规则：TotalCount >= HabitGoal * 0.8（完成 80% 以上视为已养成）。
+// 标记后，下次目标设置时 preset 接口不再返回该习惯。
+// 失败仅记录日志，不影响故事生成主流程。
+func (s *GrowthStoryService) markFormedHabits(stats []habitStat) {
+	for _, st := range stats {
+		if st.HabitGoal <= 0 {
+			continue
+		}
+		// 完成度 >= 80% 视为已养成
+		if float64(st.TotalCount) >= float64(st.HabitGoal)*0.8 {
+			// 仅更新当前仍为 active 的习惯，避免重复写入
+			res := database.DB.Model(&model.Habit{}).
+				Where("id = ? AND is_active = ?", st.HabitID, true).
+				Update("is_active", false)
+			if res.Error != nil {
+				log.Printf("[GrowthStory] 标记习惯 %d 为已养成失败: %v", st.HabitID, res.Error)
+			} else if res.RowsAffected > 0 {
+				log.Printf("[GrowthStory] 习惯 %d「%s」已养成（累计 %d / 目标 %d），标记 IsActive=false",
+					st.HabitID, st.HabitTitle, st.TotalCount, st.HabitGoal)
+			}
+		}
+	}
+}
+
+// habitAssessLevel 用规则判断习惯养成程度（用于 AI 降级时本地评估）：
+//   - 完成度 >= 80%：已养成
+//   - 完成度 >= 50%：基本养成
+//   - 其他：待加强
+func habitAssessLevel(st habitStat) string {
+	if st.HabitGoal <= 0 {
+		return "待加强"
+	}
+	ratio := float64(st.TotalCount) / float64(st.HabitGoal)
+	switch {
+	case ratio >= 0.8:
+		return "已养成"
+	case ratio >= 0.5:
+		return "基本养成"
+	default:
+		return "待加强"
+	}
+}
+
+// themeTaskPhoto 主题任务相册中的单张照片信息（子任务成果）
+type themeTaskPhoto struct {
+	URL            string    `json:"url"`              // 子任务成果照片 URL
+	Caption        string    `json:"caption"`          // 照片配文（取子任务标题）
+	IsKeyMilestone bool      `json:"is_key_milestone"` // 是否关键里程碑
+	Sequence       int       `json:"sequence"`         // 子任务顺序（从 1 开始）
+	CompletedAt    time.Time `json:"completed_at"`     // 完成时间
+}
+
+// themeTaskGroup 主题任务分组：一个父任务及其在周期内的子任务列表
+type themeTaskGroup struct {
+	Parent          model.Task       // 父任务
+	Children        []model.Task     // 子任务列表（按 Sequence 升序）
+	AllCompleted    bool             // 是否全部完成（status=3）
+	CompletedCount  int              // 已完成子任务数
+	TotalCount      int              // 子任务总数
+	InProgressTitle string           // 当前正在进行的子任务标题（未全完成时取第一个未完成的）
+	Photos          []themeTaskPhoto // 成果相册（全完成时按时间线排列）
+	StartDate       time.Time        // 最早子任务创建时间
+	EndDate         time.Time        // 最晚子任务完成时间
+	DurationDays    int              // 整体完成天数
+}
+
+// collectThemeTasks 聚合周期内所有主题任务（按 ParentID 分组）。
+// 查询周期内 task_kind='child' 的任务，按 ParentID 分组，
+// 并批量查询对应父任务信息，构造每个分组的相册/进度数据。
+// 单个父任务聚合失败仅记录日志，不阻断其他分组与整体故事生成。
+func (s *GrowthStoryService) collectThemeTasks(familyID, childID uint, cycle model.GrowthCycle) []themeTaskGroup {
+	// 1. 查询周期内所有 child 任务
+	var children []model.Task
+	if err := database.DB.Where("family_id = ? AND child_id = ? AND task_kind = ? AND created_at BETWEEN ? AND ?",
+		familyID, childID, "child", cycle.StartDate, cycle.EndDate).
+		Order("parent_id ASC, sequence ASC").Find(&children).Error; err != nil {
+		log.Printf("[GrowthStory] 查询 child 任务失败 family=%d child=%d: %v", familyID, childID, err)
+		return nil
+	}
+	if len(children) == 0 {
+		return nil
+	}
+
+	// 2. 按 ParentID 分组（跳过 ParentID=0 的孤儿任务）
+	groupMap := make(map[uint][]model.Task)
+	for _, c := range children {
+		if c.ParentID == 0 {
+			continue
+		}
+		groupMap[c.ParentID] = append(groupMap[c.ParentID], c)
+	}
+	if len(groupMap) == 0 {
+		return nil
+	}
+
+	// 3. 批量查询父任务信息
+	parentIDs := make([]uint, 0, len(groupMap))
+	for pid := range groupMap {
+		parentIDs = append(parentIDs, pid)
+	}
+	var parents []model.Task
+	if err := database.DB.Where("id IN ? AND task_kind = ?", parentIDs, "parent").Find(&parents).Error; err != nil {
+		log.Printf("[GrowthStory] 查询父任务失败 ids=%v: %v", parentIDs, err)
+		return nil
+	}
+	parentMap := make(map[uint]model.Task, len(parents))
+	for _, p := range parents {
+		parentMap[p.ID] = p
+	}
+
+	// 4. 构造每个分组：判断完成情况、收集照片、计算时间跨度
+	groups := make([]themeTaskGroup, 0, len(parentIDs))
+	for pid, childs := range groupMap {
+		parent, ok := parentMap[pid]
+		if !ok {
+			log.Printf("[GrowthStory] 父任务 %d 不存在或非 parent 类型，跳过该分组", pid)
+			continue
+		}
+
+		// 按 Sequence 升序排序，保证时间线顺序
+		sort.SliceStable(childs, func(i, j int) bool {
+			return childs[i].Sequence < childs[j].Sequence
+		})
+
+		group := themeTaskGroup{
+			Parent:     parent,
+			Children:   childs,
+			TotalCount: len(childs),
+		}
+
+		completedCount := 0
+		photos := make([]themeTaskPhoto, 0)
+		var earliestCreated, latestCompleted time.Time
+		inProgressTitle := ""
+		for _, c := range childs {
+			if c.Status == model.TaskStatusCompleted {
+				completedCount++
+				// 收集成果照片
+				if c.Photo != "" {
+					photos = append(photos, themeTaskPhoto{
+						URL:            c.Photo,
+						Caption:        c.Title,
+						IsKeyMilestone: c.IsKeyMilestone,
+						Sequence:       c.Sequence,
+						CompletedAt:    c.UpdatedAt,
+					})
+				}
+				// 最晚完成时间
+				if latestCompleted.IsZero() || c.UpdatedAt.After(latestCompleted) {
+					latestCompleted = c.UpdatedAt
+				}
+			} else {
+				// 取第一个未完成的作为当前进行中子任务
+				if inProgressTitle == "" {
+					inProgressTitle = c.Title
+				}
+			}
+			// 最早创建时间
+			if earliestCreated.IsZero() || c.CreatedAt.Before(earliestCreated) {
+				earliestCreated = c.CreatedAt
+			}
+		}
+		group.CompletedCount = completedCount
+		group.AllCompleted = completedCount == len(childs) && len(childs) > 0
+		group.Photos = photos
+		group.InProgressTitle = inProgressTitle
+		group.StartDate = earliestCreated
+		group.EndDate = latestCompleted
+		if !earliestCreated.IsZero() && !latestCompleted.IsZero() {
+			group.DurationDays = int(latestCompleted.Sub(earliestCreated).Hours() / 24)
+		}
+
+		groups = append(groups, group)
+	}
+
+	// 按父任务创建时间升序排列，保证故事中主题任务顺序稳定
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groups[i].Parent.CreatedAt.Before(groups[j].Parent.CreatedAt)
+	})
+
+	return groups
+}
+
+// buildThemeTaskSection 构造主题任务区块的 markdown 文本。
+// 全完成的父任务生成相册区块（含里程碑高亮与时间线），
+// 未全完成的显示"进行中"状态与当前进度。
+// aiSummary 为 AI 生成的总体评价，为空则省略。
+func (s *GrowthStoryService) buildThemeTaskSection(groups []themeTaskGroup, aiSummary string) string {
+	if len(groups) == 0 {
+		return ""
+	}
+	parts := []string{"\n### 🎯 主题任务回顾\n"}
+
+	// AI 总体评价（若有）
+	if strings.TrimSpace(aiSummary) != "" {
+		parts = append(parts, strings.TrimSpace(aiSummary))
+		parts = append(parts, "")
+	}
+
+	for _, g := range groups {
+		parts = append(parts, fmt.Sprintf("#### %s", g.Parent.Title))
+		if g.Parent.Description != "" {
+			parts = append(parts, fmt.Sprintf("> %s", g.Parent.Description))
+		}
+
+		if g.AllCompleted {
+			// 全完成 —— 生成相册区块
+			parts = append(parts, fmt.Sprintf("✅ 已完成全部 %d 个子任务", g.TotalCount))
+			if g.DurationDays > 0 && !g.StartDate.IsZero() && !g.EndDate.IsZero() {
+				parts = append(parts, fmt.Sprintf("⏱ 整体用时：%s ~ %s（共 %d 天）",
+					g.StartDate.Format("2006-01-02"),
+					g.EndDate.Format("2006-01-02"),
+					g.DurationDays))
+			}
+
+			// 子任务成果照片时间线
+			if len(g.Photos) > 0 {
+				parts = append(parts, "\n**📷 成果相册**")
+				for _, p := range g.Photos {
+					line := fmt.Sprintf("- [%d] %s", p.Sequence, p.Caption)
+					if p.IsKeyMilestone {
+						line = "🌟 关键里程碑 " + line
+					}
+					if !p.CompletedAt.IsZero() {
+						line += fmt.Sprintf("（%s）", p.CompletedAt.Format("2006-01-02"))
+					}
+					parts = append(parts, line)
+				}
+			} else {
+				parts = append(parts, "\n_本主题任务暂无成果照片_")
+			}
+		} else {
+			// 未全完成 —— 显示进行中状态
+			parts = append(parts, fmt.Sprintf("🔄 进行中（已完成 %d/%d 个子任务）",
+				g.CompletedCount, g.TotalCount))
+			if g.InProgressTitle != "" {
+				parts = append(parts, fmt.Sprintf("当前进度：%s", g.InProgressTitle))
+			}
+		}
+		parts = append(parts, "")
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+// generateThemeTaskSummary 调用 AI 生成主题任务的总体评价。
+// AI 不可用或调用失败时返回空字符串，不阻断故事生成。
+func (s *GrowthStoryService) generateThemeTaskSummary(childName string, groups []themeTaskGroup) string {
+	if s.aiService == nil || len(groups) == 0 {
+		return ""
+	}
+	parts := []string{
+		fmt.Sprintf("你是儿童成长记录师。请为儿童 %s 在本阶段的主题任务完成情况给出一段总体评价（80-150字）。", childName),
+		"主题任务完成情况：",
+	}
+	for _, g := range groups {
+		if g.AllCompleted {
+			line := fmt.Sprintf("- 「%s」已完成全部 %d 个子任务", g.Parent.Title, g.TotalCount)
+			if g.DurationDays > 0 {
+				line += fmt.Sprintf("（用时 %d 天）", g.DurationDays)
+			}
+			keyMilestones := 0
+			for _, p := range g.Photos {
+				if p.IsKeyMilestone {
+					keyMilestones++
+				}
+			}
+			if keyMilestones > 0 {
+				line += fmt.Sprintf("，含 %d 个关键里程碑", keyMilestones)
+			}
+			parts = append(parts, line)
+		} else {
+			parts = append(parts, fmt.Sprintf("- 「%s」进行中（已完成 %d/%d）",
+				g.Parent.Title, g.CompletedCount, g.TotalCount))
+		}
+	}
+	parts = append(parts, "要求：评价孩子在主题任务中展现的能力与成长，富有温度。只返回评价正文，不要 JSON、不要标题。")
+
+	reply, err := s.aiService.Chat(strings.Join(parts, "\n"), nil, "请生成主题任务总体评价")
+	if err != nil {
+		log.Printf("[GrowthStory] 主题任务评价 AI 调用失败: %v", err)
+		return ""
+	}
+	return strings.TrimSpace(reply)
 }
 
 // GenerateStory 为指定周期生成阶段成长故事
@@ -137,8 +476,16 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		photoURLs = append(photoURLs, t.Photo)
 	}
 
-	// 6. 构造 system prompt（使用评定后的能力变化）
-	prompt := s.buildStoryPrompt(childName, cycle, tasks, abilityDeltas, photoURLs)
+	// 5.5 聚合周期内习惯养成统计（habit_master 任务 + 关联 Habit 信息）
+	// 用于注入 AI prompt 进行养成程度评估，并在故事生成后标记已养成的习惯
+	habitStats := s.collectHabitStats(familyID, childID, cycle)
+
+	// 5.6 聚合周期内主题任务（child 任务按 ParentID 分组），用于生成"🎯 主题任务回顾"区块
+	// 单个父任务聚合失败不阻断整体故事生成（详见 collectThemeTasks 内部错误处理）
+	themeGroups := s.collectThemeTasks(familyID, childID, cycle)
+
+	// 6. 构造 system prompt（使用评定后的能力变化 + 习惯养成统计 + 主题任务）
+	prompt := s.buildStoryPrompt(childName, cycle, tasks, abilityDeltas, photoURLs, habitStats, themeGroups)
 
 	// 7. 调用 AI
 	reply, err := s.aiService.Chat(prompt, nil, "请根据上述信息生成阶段成长故事，返回 JSON 格式")
@@ -221,6 +568,25 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 			}
 			parts = append(parts, "")
 		}
+		// 习惯养成评估（AI 降级时用规则判断养成程度）
+		if len(habitStats) > 0 {
+			parts = append(parts, "\n### 习惯养成评估\n")
+			for _, st := range habitStats {
+				level := habitAssessLevel(st)
+				line := fmt.Sprintf("- **%s**：连续 %d 天，累计 %d / 目标 %d 天 —— %s",
+					st.HabitTitle, st.StreakCount, st.TotalCount, st.HabitGoal, level)
+				parts = append(parts, line)
+			}
+			parts = append(parts, "")
+		}
+		// 主题任务回顾区块（与日常任务、习惯养成区块并列）
+		if len(themeGroups) > 0 {
+			themeSummary := s.generateThemeTaskSummary(childName, themeGroups)
+			themeSection := s.buildThemeTaskSection(themeGroups, themeSummary)
+			if themeSection != "" {
+				parts = append(parts, themeSection)
+			}
+		}
 		if len(photoURLs) > 0 {
 			parts = append(parts, fmt.Sprintf("\n这一阶段还留下了 %d 张珍贵的照片，都收藏在故事相册里啦。\n", len(photoURLs)))
 		}
@@ -234,6 +600,16 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		content = strings.Join(parts, "\n")
 		// 降级故事的标题也更接地气一点
 		title = fmt.Sprintf("%s 的阶段回顾（本地方）", childName)
+	}
+
+	// 8.5 主题任务回顾区块（AI 成功路径：追加到 AI 生成内容末尾；降级路径已在 parts 中插入）
+	// 若周期内无主题任务则跳过，避免空内容
+	if aiOK && len(themeGroups) > 0 {
+		themeSummary := s.generateThemeTaskSummary(childName, themeGroups)
+		themeSection := s.buildThemeTaskSection(themeGroups, themeSummary)
+		if themeSection != "" {
+			content = content + "\n" + themeSection
+		}
 	}
 
 	// 9. 创建 GrowthStory 记录
@@ -264,6 +640,11 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		// 故事已保存成功，但周期状态异常——保留 reviewing
 		// 下次请求时因幂等检查（已有故事）会直接返回故事，不影响用户体验
 	}
+
+	// 11. 标记已养成的习惯（IsActive=false），下次目标设置时 preset 接口不再返回该习惯
+	// 用规则判断：TotalCount >= HabitGoal * 0.8 视为已养成。
+	// 此步骤独立于 AI 评估，失败仅记录日志，不影响故事生成结果。
+	s.markFormedHabits(habitStats)
 
 	// 关键：所有步骤成功后，取消失败回滚标记
 	// 注意：必须在 100% 成功后才赋值，否则 Fail-Safe 默认回滚
@@ -543,16 +924,21 @@ func (s *GrowthStoryService) GetCycleTasks(cycleID, familyID uint) ([]model.Task
 	return tasks, nil
 }
 
-// buildStoryPrompt 构造成长故事生成提示词
-func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.GrowthCycle, tasks []model.Task, deltas []AbilityDelta, photos []string) string {
+// buildStoryPrompt 构造成长故事生成提示词（三区块结构：日常任务 / 习惯养成 / 主题任务）
+// Prompt 清晰分为三区块，每个区块独立呈现；无数据的区块自动跳过，避免生成空内容。
+// AI 调用使用现有封装（s.aiService.Chat），此处仅构造 prompt 文本。
+func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.GrowthCycle, tasks []model.Task, deltas []AbilityDelta, photos []string, habitStats []habitStat, themeGroups []themeTaskGroup) string {
 	var parts []string
-	parts = append(parts, fmt.Sprintf("你是儿童成长记录师。请为儿童 %s 在周期 [%s]（%s ~ %s）内生成一段成长故事。",
+	parts = append(parts, fmt.Sprintf("你是一位专业的儿童成长记录师。请基于以下信息为儿童 %s 在周期 [%s]（%s ~ %s）生成本周期的成长故事。",
 		childName, cycle.Name,
 		cycle.StartDate.Format("2006-01-02"), cycle.EndDate.Format("2006-01-02")))
+	parts = append(parts, "故事应包含三区块的内容回顾：日常任务、习惯养成、主题任务。每个区块给出独立的评价和鼓励，整体语调温暖、积极，关注孩子的成长过程。若某区块无数据则跳过，不生成空内容。")
 
-	// 完成的任务
+	// ===== 区块一：日常任务（完成任务列表 + 任务数量 + 能力变化 + 精选照片）=====
+	parts = append(parts, "\n## 日常任务")
 	if len(tasks) > 0 {
-		parts = append(parts, fmt.Sprintf("周期内完成的任务共 %d 项：", len(tasks)))
+		parts = append(parts, fmt.Sprintf("完成任务数：%d 条", len(tasks)))
+		parts = append(parts, "任务列表：")
 		limit := len(tasks)
 		if limit > 20 {
 			limit = 20
@@ -561,31 +947,79 @@ func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.Grow
 			t := tasks[i]
 			parts = append(parts, fmt.Sprintf("- %s（%s，%d 积分）", t.Title, t.Category, t.Points))
 		}
+		// 能力维度变化（日常任务带来的能力提升，作为本区块的补充信息）
+		if len(deltas) > 0 {
+			var deltaStrs []string
+			for _, d := range deltas {
+				if d.Delta > 0 {
+					deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d→%d（+%d）", d.DimensionName, d.OldScore, d.NewScore, d.Delta))
+				} else if d.Delta < 0 {
+					deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d→%d（%d）", d.DimensionName, d.OldScore, d.NewScore, d.Delta))
+				} else {
+					deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d（持平）", d.DimensionName, d.NewScore))
+				}
+			}
+			parts = append(parts, fmt.Sprintf("能力维度变化：%s。", strings.Join(deltaStrs, "，")))
+		}
+		// 精选照片
+		if len(photos) > 0 {
+			parts = append(parts, fmt.Sprintf("周期内共有 %d 张精选成果照片。", len(photos)))
+		}
 	} else {
 		parts = append(parts, "周期内暂无完成的任务记录。")
 	}
 
-	// 能力维度变化
-	if len(deltas) > 0 {
-		var deltaStrs []string
-		for _, d := range deltas {
-			if d.Delta > 0 {
-				deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d→%d（+%d）", d.DimensionName, d.OldScore, d.NewScore, d.Delta))
-			} else if d.Delta < 0 {
-				deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d→%d（%d）", d.DimensionName, d.OldScore, d.NewScore, d.Delta))
+	// ===== 区块二：习惯养成（习惯名 + 连续天数 + 累计天数 + 目标 + 家长批语 + AI 评估养成程度）=====
+	// 无习惯目标时跳过该区块，不生成空内容
+	if len(habitStats) > 0 {
+		parts = append(parts, "\n## 习惯养成")
+		parts = append(parts, "请根据以下数据评估每个习惯的养成程度（已养成/基本养成/待加强），并在故事中融入习惯养成的小结：")
+		for _, st := range habitStats {
+			line := fmt.Sprintf("- %s：连续 %d 天，累计 %d 天（目标 %d 天）",
+				st.HabitTitle, st.StreakCount, st.TotalCount, st.HabitGoal)
+			if st.ParentComment != "" {
+				line += fmt.Sprintf("，家长批语：「%s」", st.ParentComment)
+			}
+			parts = append(parts, line)
+		}
+		parts = append(parts, "输出格式：每个习惯一行，包含习惯名、养成程度、简短评价，融入故事正文。")
+	}
+
+	// ===== 区块三：主题任务（父任务标题 + 完成度 + 子任务 + 关键里程碑）=====
+	// 无主题任务时跳过该区块，不生成空内容
+	if len(themeGroups) > 0 {
+		parts = append(parts, "\n## 主题任务")
+		parts = append(parts, "请根据以下主题任务完成情况，在故事中融入主题任务的回顾与评价：")
+		for _, g := range themeGroups {
+			if g.AllCompleted {
+				line := fmt.Sprintf("- %s：已完成全部 %d 个子任务", g.Parent.Title, g.TotalCount)
+				if g.DurationDays > 0 {
+					line += fmt.Sprintf("（用时约 %d 天）", g.DurationDays)
+				}
+				keyMilestones := 0
+				for _, p := range g.Photos {
+					if p.IsKeyMilestone {
+						keyMilestones++
+					}
+				}
+				if keyMilestones > 0 {
+					line += fmt.Sprintf("，含 %d 个关键里程碑", keyMilestones)
+				}
+				parts = append(parts, line)
 			} else {
-				deltaStrs = append(deltaStrs, fmt.Sprintf("%s：%d（持平）", d.DimensionName, d.NewScore))
+				parts = append(parts, fmt.Sprintf("- %s：进行中（完成度 %d/%d）",
+					g.Parent.Title, g.CompletedCount, g.TotalCount))
 			}
 		}
-		parts = append(parts, fmt.Sprintf("能力维度变化：%s。", strings.Join(deltaStrs, "，")))
+		parts = append(parts, "请在故事正文中评价孩子在主题任务中展现的能力与成长。")
 	}
 
-	// 精选照片
-	if len(photos) > 0 {
-		parts = append(parts, fmt.Sprintf("周期内共有 %d 张精选成果照片。", len(photos)))
-	}
-
-	parts = append(parts, "要求：生成富有温度的成长故事，包含标题、正文（300-600 字）。")
+	// ===== 生成要求 =====
+	parts = append(parts, "\n## 要求")
+	parts = append(parts, "1. 故事分为三部分：日常任务回顾、习惯养成回顾、主题任务回顾（无数据的区块可省略）。")
+	parts = append(parts, "2. 每部分给出温暖、具体的评价和鼓励。")
+	parts = append(parts, "3. 整体语调积极、鼓励，关注孩子的成长过程。")
+	parts = append(parts, "4. 控制在 500-800 字。")
 	parts = append(parts, "返回纯 JSON（不要 markdown 代码块），格式：{\"title\":\"...\",\"content\":\"...\"}")
 	return strings.Join(parts, "\n")
 }

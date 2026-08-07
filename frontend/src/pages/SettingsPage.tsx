@@ -1,15 +1,77 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { Settings, User, Users, ListTodo, LogOut, ChevronRight } from 'lucide-react';
+import { useUIStore } from '../stores/uiStore';
+import { useToastStore } from '../stores/toastStore';
+import { Settings, User, Users, ListTodo, LogOut, ChevronRight, Clock, FastForward, RotateCcw, FlaskConical } from 'lucide-react';
+import { getDebugTime, advanceTime, resetTime } from '../services/debug';
+import type { DebugTimeInfo } from '../services/debug';
 
 export function SettingsPage() {
   const navigate = useNavigate();
   const authStore = useAuthStore();
+  const setNeedRefreshTasks = useUIStore((s) => s.setNeedRefreshTasks);
+  const toast = useToastStore();
+
+  // 调试面板状态（仅开发环境显示）
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugTime, setDebugTime] = useState<DebugTimeInfo | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
 
   const handleLogout = () => {
     if (confirm('确定要退出登录吗？')) {
       authStore.logout();
       navigate('/login');
+    }
+  };
+
+  // 调试：加载当前时间
+  const handleLoadDebugTime = async () => {
+    try {
+      const info = await getDebugTime();
+      setDebugTime(info);
+    } catch (e: any) {
+      toast.error(e.message || '调试接口不可用（需 APP_ENV=development）');
+    }
+  };
+
+  // 调试：快进 N 天
+  const handleAdvanceTime = async (days: number) => {
+    if (debugLoading) return;
+    setDebugLoading(true);
+    try {
+      const info = await advanceTime(days);
+      setDebugTime(info);
+      setNeedRefreshTasks(true);
+      toast.success(`已快进 ${days} 天，任务列表已刷新`);
+    } catch (e: any) {
+      toast.error(e.message || '快进失败');
+    } finally {
+      setDebugLoading(false);
+    }
+  };
+
+  // 调试：重置时间
+  const handleResetTime = async () => {
+    if (debugLoading) return;
+    setDebugLoading(true);
+    try {
+      const info = await resetTime();
+      setDebugTime(info);
+      setNeedRefreshTasks(true);
+      toast.success('已恢复真实时间');
+    } catch (e: any) {
+      toast.error(e.message || '重置失败');
+    } finally {
+      setDebugLoading(false);
+    }
+  };
+
+  const toggleDebugPanel = () => {
+    const next = !debugOpen;
+    setDebugOpen(next);
+    if (next && !debugTime) {
+      handleLoadDebugTime();
     }
   };
 
@@ -97,6 +159,83 @@ export function SettingsPage() {
             );
           })}
         </div>
+
+        {/* 调试工具：仅开发环境显示 */}
+        {import.meta.env.DEV && (
+          <div className="mt-6 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-100 rounded-2xl overflow-hidden">
+            <button
+              onClick={toggleDebugPanel}
+              className="w-full p-4 flex items-center gap-3 hover:bg-purple-100/40 transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                <FlaskConical size={20} className="text-purple-600" />
+              </div>
+              <div className="flex-1 text-left">
+                <div className="font-semibold text-purple-900 flex items-center gap-2">
+                  调试工具
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-200 text-purple-700">DEV</span>
+                </div>
+                <div className="text-xs text-purple-600">时间穿越测试：快进天数模拟阶段推进</div>
+              </div>
+              <ChevronRight
+                size={18}
+                className={`text-purple-400 transition-transform ${debugOpen ? 'rotate-90' : ''}`}
+              />
+            </button>
+
+            {debugOpen && (
+              <div className="px-4 pb-4 space-y-3">
+                {/* 当前时间展示 */}
+                <div className="bg-white/70 rounded-xl p-3 flex items-center gap-2">
+                  <Clock size={16} className={debugTime?.is_virtual ? 'text-purple-600' : 'text-gray-400'} />
+                  <div className="flex-1">
+                    <div className="text-xs text-gray-500">当前时间</div>
+                    <div className="text-sm font-medium text-gray-800">
+                      {debugTime ? new Date(debugTime.current_time).toLocaleString('zh-CN') : '加载中...'}
+                    </div>
+                  </div>
+                  {debugTime?.is_virtual && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                      虚拟模式
+                    </span>
+                  )}
+                </div>
+
+                {/* 快进按钮组 */}
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => handleAdvanceTime(1)}
+                    disabled={debugLoading}
+                    className="py-2.5 bg-purple-500 text-white rounded-xl text-sm font-medium hover:bg-purple-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                  >
+                    <FastForward size={14} />
+                    快进 1 天
+                  </button>
+                  <button
+                    onClick={() => handleAdvanceTime(7)}
+                    disabled={debugLoading}
+                    className="py-2.5 bg-indigo-500 text-white rounded-xl text-sm font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                  >
+                    <FastForward size={14} />
+                    快进 7 天
+                  </button>
+                  <button
+                    onClick={handleResetTime}
+                    disabled={debugLoading}
+                    className="py-2.5 bg-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-300 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                  >
+                    <RotateCcw size={14} />
+                    重置
+                  </button>
+                </div>
+
+                <p className="text-xs text-purple-500 leading-relaxed">
+                  快进后后端会自动生成新一天的习惯打卡任务，并检查主题子任务是否超过 3 天未完成（触发兜底推进）。
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-8">
           <button
