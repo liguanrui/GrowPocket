@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"growpocket/internal/database"
 	"growpocket/internal/model"
+	"growpocket/internal/util/timeutil"
 	"log"
 	"sort"
 	"strings"
@@ -307,6 +308,7 @@ func (s *ParentTaskService) instantiateChild(parent model.Task, item subTaskOutl
 	if points <= 0 {
 		points = 20
 	}
+	now := timeutil.Now()
 	child := &model.Task{
 		FamilyID:       parent.FamilyID,
 		Title:          item.Title,
@@ -321,6 +323,8 @@ func (s *ParentTaskService) instantiateChild(parent model.Task, item subTaskOutl
 		Category:       parent.Category,
 		Sequence:       item.Sequence,
 		IsKeyMilestone: item.IsKeyMilestone,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := database.DB.Create(child).Error; err != nil {
 		return nil, errors.New("实例化子任务失败")

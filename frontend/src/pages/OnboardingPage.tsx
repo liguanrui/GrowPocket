@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Check, Sparkles, Target, Award, BookOpen } from 'lucide-react';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { MobileDatePicker } from '../components/MobileDatePicker';
+import { DayStepper } from '../components/DayStepper';
+import { SoftSelect } from '../components/SoftSelect';
 import { useChildStore } from '../stores/childStore';
 import { useToastStore } from '../stores/toastStore';
 import { getChildScores, getAbilities } from '../services/ability';
@@ -26,13 +28,14 @@ const C = {
   card: '#FFFFFF', muted: '#FFF1E6', mutedFg: '#7A7168', border: '#F5E6D3',
 };
 
-// 主题任务类别选项（与 GrowthPage 一致）
+// 主题任务类别选项（与后端 parent_task_template seed / CreateTaskPage 一致）
 const THEME_CATEGORIES = [
-  { value: 'learning', label: '学习' },
-  { value: 'life', label: '生活' },
-  { value: 'interest', label: '兴趣' },
-  { value: 'sports', label: '运动' },
-  { value: 'social', label: '社交' },
+  { value: 'nature', label: '自然探索' },
+  { value: 'family_creation', label: '家庭共创' },
+  { value: 'creative', label: '创意表达' },
+  { value: 'craft', label: '手工制作' },
+  { value: 'financial', label: '财商培养' },
+  { value: 'community', label: '社区公益' },
   { value: 'other', label: '其他' },
 ];
 
@@ -253,7 +256,7 @@ export function OnboardingPage() {
   const [customThemeTitle, setCustomThemeTitle] = useState('');
   const [customThemeDesc, setCustomThemeDesc] = useState('');
   const [customThemeDays, setCustomThemeDays] = useState<number>(14);
-  const [customThemeCategory, setCustomThemeCategory] = useState<string>('learning');
+  const [customThemeCategory, setCustomThemeCategory] = useState<string>('nature');
   const [themeSubmitting, setThemeSubmitting] = useState(false);
   // 预设列表是否已加载（避免重复请求）
   const [presetLoaded, setPresetLoaded] = useState(false);
@@ -547,7 +550,7 @@ export function OnboardingPage() {
       setCustomThemeTitle('');
       setCustomThemeDesc('');
       setCustomThemeDays(14);
-      setCustomThemeCategory('learning');
+      setCustomThemeCategory('nature');
       setShowCustomThemeForm(false);
       toast.success('主题已创建并自动选中');
     } catch (e: any) {
@@ -1128,9 +1131,6 @@ export function OnboardingPage() {
                                         自定义
                                       </span>
                                     )}
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium">
-                                      {THEME_CATEGORIES.find((c) => c.value === tpl.category)?.label || tpl.category}
-                                    </span>
                                   </div>
                                   {tpl.description && (
                                     <div className="text-[11px] line-clamp-2 mt-0.5" style={{ color: C.mutedFg }}>
@@ -1181,27 +1181,23 @@ export function OnboardingPage() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[11px] mb-1" style={{ color: C.mutedFg }}>预计周期（天）</label>
-                            <input
-                              type="number"
-                              min={1}
+                            <DayStepper
                               value={customThemeDays}
-                              onChange={(e) => setCustomThemeDays(Number(e.target.value) || 0)}
-                              className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-indigo-400"
-                              style={{ color: '#2D2A26' }}
+                              onChange={setCustomThemeDays}
+                              min={7}
+                              max={90}
+                              className="rounded-lg bg-white"
+                              inputClassName="px-3 py-2 text-sm"
                             />
                           </div>
                           <div>
                             <label className="block text-[11px] mb-1" style={{ color: C.mutedFg }}>类别</label>
-                            <select
+                            <SoftSelect
                               value={customThemeCategory}
-                              onChange={(e) => setCustomThemeCategory(e.target.value)}
-                              className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm outline-none focus:border-indigo-400"
-                              style={{ color: '#2D2A26' }}
-                            >
-                              {THEME_CATEGORIES.map((c) => (
-                                <option key={c.value} value={c.value}>{c.label}</option>
-                              ))}
-                            </select>
+                              onChange={setCustomThemeCategory}
+                              options={THEME_CATEGORIES}
+                              compact
+                            />
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -1212,7 +1208,7 @@ export function OnboardingPage() {
                               setCustomThemeTitle('');
                               setCustomThemeDesc('');
                               setCustomThemeDays(14);
-                              setCustomThemeCategory('learning');
+                              setCustomThemeCategory('nature');
                             }}
                             className="flex-1 py-2 bg-white border border-gray-200 text-xs rounded-lg"
                             style={{ color: C.mutedFg }}

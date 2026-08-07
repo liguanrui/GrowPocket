@@ -230,7 +230,7 @@ export function SettingsPage() {
                 </div>
 
                 <p className="text-xs text-purple-500 leading-relaxed">
-                  快进后后端会自动生成新一天的习惯打卡任务，并检查主题子任务是否超过 3 天未完成（触发兜底推进）。
+                  快进后会为当前家庭生成习惯打卡，并检查主题子任务是否超过 3 天未完成（触发兜底推进）。AI 任务会在后台补生成。
                 </p>
               </div>
             )}

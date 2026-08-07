@@ -9,6 +9,8 @@ import { listTaskTemplates } from '../services/taskTemplates';
 import type { TaskTemplate } from '../services/taskTemplates';
 import { getPresetTemplates, createParentTask, generateChildren } from '../services/parentTasks';
 import type { ParentTaskTemplate } from '../services/parentTasks';
+import { DayStepper } from '../components/DayStepper';
+import { SoftSelect } from '../components/SoftSelect';
 
 // 主题任务类别（与后端 parent_task_template seed 一致：nature/family_creation/creative/craft/financial/community）
 const THEME_CATEGORIES = [
@@ -277,9 +279,6 @@ function ParentTaskTemplates({
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-text-primary flex items-center gap-1.5 flex-wrap">
                       {tpl.title}
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium">
-                        {THEME_CATEGORY_LABEL[tpl.category] || tpl.category}
-                      </span>
                     </div>
                     {tpl.description && (
                       <div className="text-xs text-text-tertiary line-clamp-2 mt-0.5">
@@ -706,30 +705,21 @@ export function CreateTaskPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-2">预计周期（天）*</label>
-                  <input
-                    type="number"
+                  <DayStepper
+                    value={estimatedDays}
+                    onChange={setEstimatedDays}
                     min={7}
                     max={90}
-                    value={estimatedDays}
-                    onChange={(e) => {
-                      const n = Number(e.target.value) || 0;
-                      setEstimatedDays(n);
-                    }}
-                    className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
                   />
                   <p className="mt-1 text-xs text-text-tertiary">范围 7-90 天</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-2">类别</label>
-                  <select
+                  <SoftSelect
                     value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
-                  >
-                    {THEME_CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                  </select>
+                    onChange={setCategory}
+                    options={THEME_CATEGORIES}
+                  />
                 </div>
               </div>
 

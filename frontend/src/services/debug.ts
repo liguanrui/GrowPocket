@@ -21,6 +21,7 @@ export async function advanceTime(days: number): Promise<DebugTimeInfo> {
     method: 'POST',
     url: '/debug/advance-time',
     data: { days },
+    timeout: 60000,
   });
 }
 

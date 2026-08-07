@@ -16,6 +16,8 @@ import { getChildScores, getAbilities } from '../services/ability';
 import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../services/ability';
 // 注意：IPPAvatar 不在此页使用（阶段名+成长值块已移除），如需添加请从 '../components/IPPAvatar' 引入
 import { MobileDatePicker } from '../components/MobileDatePicker';
+import { DayStepper } from '../components/DayStepper';
+import { SoftSelect } from '../components/SoftSelect';
 import { AcademicMilestoneModal } from '../components/AcademicMilestoneModal';
 import { getCurrentCycle, setGoalsBatch, createCycle, updateCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
@@ -43,13 +45,14 @@ function getDimensionColor(index: number): string {
   return DIMENSION_COLORS[index % DIMENSION_COLORS.length];
 }
 
-// 主题任务类别选项（value 为后端 category code，label 为中文展示）
+// 主题任务类别选项（与后端 parent_task_template seed 一致）
 const THEME_CATEGORIES = [
-  { value: 'learning', label: '学习' },
-  { value: 'life', label: '生活' },
-  { value: 'interest', label: '兴趣' },
-  { value: 'sports', label: '运动' },
-  { value: 'social', label: '社交' },
+  { value: 'nature', label: '自然探索' },
+  { value: 'family_creation', label: '家庭共创' },
+  { value: 'creative', label: '创意表达' },
+  { value: 'craft', label: '手工制作' },
+  { value: 'financial', label: '财商培养' },
+  { value: 'community', label: '社区公益' },
   { value: 'other', label: '其他' },
 ];
 const THEME_CATEGORY_LABEL: Record<string, string> = THEME_CATEGORIES.reduce(
@@ -816,7 +819,7 @@ export function GrowthPage() {
   const [customThemeTitle, setCustomThemeTitle] = useState('');
   const [customThemeDesc, setCustomThemeDesc] = useState('');
   const [customThemeDays, setCustomThemeDays] = useState<number>(14); // 预计周期天数，默认 14 天
-  const [customThemeCategory, setCustomThemeCategory] = useState<string>('learning');
+  const [customThemeCategory, setCustomThemeCategory] = useState<string>('nature');
   const [themeSubmitting, setThemeSubmitting] = useState(false);
   // 专家模式开关（localStorage 持久化）：关闭显示等级名称，开启显示原始 0-100 分数
   const [expertMode, setExpertMode] = useState<boolean>(() => localStorage.getItem('growthExpertMode') === 'true');
@@ -957,7 +960,7 @@ export function GrowthPage() {
     setCustomThemeTitle('');
     setCustomThemeDesc('');
     setCustomThemeDays(14);
-    setCustomThemeCategory('learning');
+    setCustomThemeCategory('nature');
     setPresetThemeTemplates([]);
     const age = computeChildAge(selectedChild);
     setPresetHabitsLoading(true);
@@ -1055,7 +1058,7 @@ export function GrowthPage() {
       setCustomThemeTitle('');
       setCustomThemeDesc('');
       setCustomThemeDays(14);
-      setCustomThemeCategory('learning');
+      setCustomThemeCategory('nature');
       setShowCustomThemeForm(false);
       toast.success('主题已创建并自动选中');
     } catch (e: any) {
@@ -1869,9 +1872,6 @@ export function GrowthPage() {
                                   自定义
                                 </span>
                               )}
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium">
-                                {THEME_CATEGORY_LABEL[tpl.category] || tpl.category}
-                              </span>
                             </div>
                             {tpl.description && (
                               <div className="text-xs text-text-tertiary line-clamp-2 mt-0.5">
@@ -1921,25 +1921,23 @@ export function GrowthPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[11px] text-text-tertiary mb-1">预计周期（天）</label>
-                      <input
-                        type="number"
-                        min={1}
+                      <DayStepper
                         value={customThemeDays}
-                        onChange={(e) => setCustomThemeDays(Number(e.target.value) || 0)}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-indigo-400"
+                        onChange={setCustomThemeDays}
+                        min={7}
+                        max={90}
+                        className="rounded-lg bg-white"
+                        inputClassName="px-3 py-2 text-sm"
                       />
                     </div>
                     <div>
                       <label className="block text-[11px] text-text-tertiary mb-1">类别</label>
-                      <select
+                      <SoftSelect
                         value={customThemeCategory}
-                        onChange={(e) => setCustomThemeCategory(e.target.value)}
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-gray-100 text-sm text-text-primary outline-none focus:border-indigo-400"
-                      >
-                        {THEME_CATEGORIES.map((c) => (
-                          <option key={c.value} value={c.value}>{c.label}</option>
-                        ))}
-                      </select>
+                        onChange={setCustomThemeCategory}
+                        options={THEME_CATEGORIES}
+                        compact
+                      />
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -1950,7 +1948,7 @@ export function GrowthPage() {
                         setCustomThemeTitle('');
                         setCustomThemeDesc('');
                         setCustomThemeDays(14);
-                        setCustomThemeCategory('learning');
+                        setCustomThemeCategory('nature');
                       }}
                       className="flex-1 py-2 bg-white border border-gray-200 text-text-secondary text-xs rounded-lg"
                     >

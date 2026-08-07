@@ -4,9 +4,9 @@ import (
 	"growpocket/internal/database"
 	"growpocket/internal/middleware"
 	"growpocket/internal/model"
+	"growpocket/internal/util/timeutil"
 	"growpocket/pkg/util"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -150,8 +150,8 @@ func GetHabitStats(c *gin.Context) {
 		return
 	}
 
-	// 查最近 21 天的 habit_daily 任务（按 created_at 降序，按 child_id 过滤）
-	since := time.Now().AddDate(0, 0, -21)
+	// 查最近 21 天的 habit_daily 任务（按虚拟时钟，与 CreatedAt 写入一致）
+	since := timeutil.Now().AddDate(0, 0, -21)
 	var dailyTasks []model.Task
 	dailyQuery := database.DB.Where("task_kind = ? AND habit_id = ? AND child_id = ? AND created_at >= ?", "habit_daily", id, master.ChildID, since)
 	if err := dailyQuery.Order("created_at DESC").Find(&dailyTasks).Error; err != nil {

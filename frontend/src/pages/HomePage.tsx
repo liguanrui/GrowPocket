@@ -566,7 +566,10 @@ export function HomePage() {
   }, []);
 
   const loadData = async (showLoading = true) => {
-    if (!selectedChildId) return;
+    if (!selectedChildId) {
+      if (showLoading) setLoading(false);
+      return;
+    }
     // 使用请求序号避免并发竞态，而不是直接丢弃新请求
     const reqId = ++loadingSeqRef.current;
     if (showLoading) setLoading(true);
@@ -587,8 +590,10 @@ export function HomePage() {
       if (reqId !== loadingSeqRef.current) return;
       setError(e.message || '加载失败');
     } finally {
+      // 无论本次是否带 loading 遮罩，最新请求结束都必须清掉 loading，
+      // 否则 loadData(true) 被后续 loadData(false) 顶替时会一直转圈
       if (reqId === loadingSeqRef.current) {
-        if (showLoading) setLoading(false);
+        setLoading(false);
       }
     }
   };

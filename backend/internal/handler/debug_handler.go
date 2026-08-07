@@ -1,19 +1,17 @@
 package handler
 
 import (
+	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"growpocket/internal/database"
 	"growpocket/internal/middleware"
-	"growpocket/internal/model"
 	"growpocket/internal/service"
 	"growpocket/internal/util/timeutil"
 	"growpocket/pkg/util"
 )
 
 // DebugHandler 提供开发环境的调试接口（时间穿越）
-// 仅在 APP_ENV=development 时由 main.go 注册路由
 type DebugHandler struct {
 	taskGenService *service.TaskGenerationService
 }
@@ -23,7 +21,8 @@ func NewDebugHandler(taskGenService *service.TaskGenerationService) *DebugHandle
 }
 
 // AdvanceTime POST /api/debug/advance-time body {"days":1}
-// 推进虚拟时间 N 天，并主动触发任务生成 + 过期父任务检查
+// 按天推进虚拟时间；每步只做当前家庭的轻量日切（习惯 + 主题过期推进），
+// AI 任务生成放到后台，避免前端 10s 超时。
 func (h *DebugHandler) AdvanceTime(c *gin.Context) {
 	var req struct {
 		Days int `json:"days"`
@@ -36,19 +35,33 @@ func (h *DebugHandler) AdvanceTime(c *gin.Context) {
 		util.FailBadRequest(c, "days 必须在 1-365 之间")
 		return
 	}
-	// 1. 推进虚拟时间
-	timeutil.AdvanceTime(req.Days)
-	// 2. 触发所有孩子的任务生成（含 habit_daily 生成 + 主题任务推进）
-	h.taskGenService.GenerateForAllChildren()
-	// 3. 触发当前家庭所有孩子的过期父任务检查
+
 	familyID := middleware.GetFamilyID(c)
-	var children []model.User
-	database.DB.Where("family_id = ? AND role = ?", familyID, model.RoleChild).Find(&children)
-	for _, child := range children {
-		h.taskGenService.CheckStaleParentTasks(child.ID)
+	start := time.Now()
+
+	// 按天推进：每天做习惯打卡就绪 + 主题过期检查（不调 LLM）
+	for d := 0; d < req.Days; d++ {
+		timeutil.AdvanceTime(1)
+		if h.taskGenService != nil {
+			h.taskGenService.PrepareDayForFamily(familyID)
+		}
 	}
-	// 4. 返回新的虚拟时间
+
+	// AI 补生成放到后台，不阻塞响应
+	if h.taskGenService != nil {
+		go func(fid uint) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[DebugAdvance] 后台 AI 生成 panic: %v", r)
+				}
+			}()
+			h.taskGenService.GenerateAIForFamily(fid)
+		}(familyID)
+	}
+
 	now := timeutil.Now()
+	log.Printf("[DebugAdvance] family=%d days=%d cost=%s virtual=%s",
+		familyID, req.Days, time.Since(start), now.Format(time.RFC3339))
 	util.OK(c, gin.H{
 		"current_time":  now,
 		"is_virtual":    timeutil.IsVirtual(),

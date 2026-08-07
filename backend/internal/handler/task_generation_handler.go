@@ -5,9 +5,9 @@ import (
 	"growpocket/internal/middleware"
 	"growpocket/internal/model"
 	"growpocket/internal/service"
+	"growpocket/internal/util/timeutil"
 	"growpocket/pkg/util"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -120,10 +120,10 @@ func (h *TaskGenerationHandler) GenerateToday(c *gin.Context) {
 		return
 	}
 
-	// 返回今日 AI 任务列表
+	// 返回今日 AI 任务列表（使用虚拟时钟，与生成幂等窗口一致）
 	var tasks []model.Task
-	today := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Now().Location())
-	tomorrow := today.Add(24 * time.Hour)
+	today := timeutil.Today()
+	tomorrow := timeutil.Tomorrow()
 	database.DB.Where("child_id = ? AND family_id = ? AND ai_generated = ? AND created_at >= ? AND created_at < ?",
 		req.ChildID, familyID, true, today, tomorrow).Find(&tasks)
 	util.OK(c, gin.H{"tasks": tasks, "count": len(tasks)})

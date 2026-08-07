@@ -25,6 +25,15 @@ func NewHabitService(aiService *AIService) *HabitService {
 //  1. 查询当前 active 周期下 GoalType=habit 的目标（关联 HabitID）
 //  2. 对每个习惯目标：查/建 habit_master；做中断检测；幂等检查当日 habit_daily；创建当日 habit_daily
 func (s *HabitService) EnsureHabitDailyReady(childID uint) error {
+	return s.ensureHabitDailyReady(childID, false)
+}
+
+// EnsureHabitDailyReadyLite 调试快进用：跳过 AI 鼓励语，避免阻塞请求
+func (s *HabitService) EnsureHabitDailyReadyLite(childID uint) error {
+	return s.ensureHabitDailyReady(childID, true)
+}
+
+func (s *HabitService) ensureHabitDailyReady(childID uint, skipAIEncouragement bool) error {
 	// 1. 查当前 active 周期
 	var cycle model.GrowthCycle
 	if err := database.DB.Where("child_id = ? AND status = ?", childID, "active").First(&cycle).Error; err != nil {
@@ -108,8 +117,12 @@ func (s *HabitService) EnsureHabitDailyReady(childID uint) error {
 			continue
 		}
 
-		// 创建当日 habit_daily
-		encouragement := s.generateHabitEncouragement(master.StreakCount, master.TotalCount, master.HabitGoal, childName, habit.Title)
+		// 创建当日 habit_daily（CreatedAt 必须用虚拟时间，否则调试快进后幂等窗口对不上）
+		encouragement := "坚持就是胜利，加油！"
+		if !skipAIEncouragement {
+			encouragement = s.generateHabitEncouragement(master.StreakCount, master.TotalCount, master.HabitGoal, childName, habit.Title)
+		}
+		now := timeutil.Now()
 		daily := &model.Task{
 			FamilyID:    cycle.FamilyID,
 			Title:       habit.Title,
@@ -121,6 +134,8 @@ func (s *HabitService) EnsureHabitDailyReady(childID uint) error {
 			TaskKind:    "habit_daily",
 			ParentID:    master.ID,
 			HabitID:     habitID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		}
 		if err := database.DB.Create(daily).Error; err != nil {
 			log.Printf("[Habit] 创建 habit_daily 失败 habit_id=%d: %v", habitID, err)

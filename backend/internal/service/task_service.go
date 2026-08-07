@@ -4,6 +4,7 @@ import (
 	"errors"
 	"growpocket/internal/database"
 	"growpocket/internal/model"
+	"growpocket/internal/util/timeutil"
 	"log"
 	"strings"
 	"time"
@@ -95,14 +96,16 @@ func (s *TaskService) CreateTask(input CreateTaskInput) (*model.Task, error) {
 		}
 		taskID := task.ID
 		relatedType := "task"
+		now := timeutil.Now()
 		txRec := &model.Transaction{
-			ChildID:     input.ChildID,
-			Type:        tType,
-			Amount:      absInt(input.Points),
-			Reason:      reason,
-			RelatedID:   &taskID,
-			RelatedType: &relatedType,
+			ChildID:      input.ChildID,
+			Type:         tType,
+			Amount:       absInt(input.Points),
+			Reason:       reason,
+			RelatedID:    &taskID,
+			RelatedType:  &relatedType,
 			BalanceAfter: newBalance,
+			CreatedAt:    now,
 		}
 		if err := tx.Create(txRec).Error; err != nil {
 			tx.Rollback()
@@ -285,6 +288,7 @@ func (s *TaskService) ReviewTask(id, familyID uint, input ReviewTaskInput) (*mod
 	}
 	taskID := task.ID
 	relatedType := "task"
+	now := timeutil.Now()
 	txRec := &model.Transaction{
 		ChildID:      task.ChildID,
 		Type:         tType,
@@ -293,6 +297,7 @@ func (s *TaskService) ReviewTask(id, familyID uint, input ReviewTaskInput) (*mod
 		RelatedID:    &taskID,
 		RelatedType:  &relatedType,
 		BalanceAfter: newBalance,
+		CreatedAt:    now,
 	}
 	if err := tx.Create(txRec).Error; err != nil {
 		tx.Rollback()

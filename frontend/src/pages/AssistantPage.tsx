@@ -280,7 +280,7 @@ export function AssistantPage() {
 
   const stt = useSpeechRecognition({ lang: 'zh-CN', interimResults: true });
   // 儿童友好默认：稍高的 pitch（1.1）模仿小萌芽柔和女声；rate=1.05 不拖沓
-  const tts = useSpeechSynthesis({ lang: 'zh-CN', rate: 1.05, pitch: 1.1, preprocess: true });
+  const tts = useSpeechSynthesis({ lang: 'zh-CN', preprocess: true, preferCloud: true });
 
   const children = childStore.children;
   const selectedChildId = childStore.currentChildId || children[0]?.id || null;

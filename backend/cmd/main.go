@@ -127,6 +127,15 @@ func main() {
 		authorized.GET("/growth/album", growthHandler.Album)
 		authorized.GET("/growth/timeline", growthHandler.Timeline)
 
+		// 成就勋章
+		achievementHandler := handler.NewAchievementHandler()
+		authorized.GET("/achievements", achievementHandler.GetAchievements)
+		authorized.POST("/achievements/check", achievementHandler.CheckAndUnlock)
+		authorized.GET("/achievements/awards", achievementHandler.GetAchievementAwards)
+		authorized.POST("/achievements", achievementHandler.CreateAchievement)
+		authorized.PUT("/achievements/:id", achievementHandler.UpdateAchievement)
+		authorized.DELETE("/achievements/:id", achievementHandler.DeleteAchievement)
+
 		// 能力维度（v3）
 		abilityHandler := handler.NewAbilityHandler()
 		authorized.GET("/abilities", abilityHandler.ListDimensions)
@@ -197,6 +206,10 @@ func main() {
 		authorized.POST("/chat/sessions", chatHandler.CreateSession)
 		authorized.GET("/chat/sessions/search", chatHandler.SearchSessions)
 		authorized.GET("/chat/sessions/:id/messages", chatHandler.GetSessionMessages)
+
+		// 云端 TTS（小萌芽甜美童声，Edge Neural）
+		ttsHandler := handler.NewTTSHandler(service.NewTTSService())
+		authorized.POST("/tts", ttsHandler.Synthesize)
 
 		// 成长故事（v3）
 		growthStoryHandler := handler.NewGrowthStoryHandler(service.NewGrowthStoryService(aiService))

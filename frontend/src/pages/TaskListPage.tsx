@@ -40,7 +40,10 @@ export function TaskListPage() {
 
   const loadData = async (showLoading = true) => {
     const child = useChildStore.getState().getCurrentChild();
-    if (!child) return;
+    if (!child) {
+      if (showLoading) setLoading(false);
+      return;
+    }
     const reqId = ++loadSeqRef.current;
     if (showLoading) setLoading(true);
     setError(null);
@@ -61,7 +64,8 @@ export function TaskListPage() {
       if (reqId !== loadSeqRef.current) return;
       setError(e.message || '加载失败');
     } finally {
-      if (reqId === loadSeqRef.current && showLoading) setLoading(false);
+      // 最新请求结束必须清 loading，避免 true/false 并发顶替后一直转圈
+      if (reqId === loadSeqRef.current) setLoading(false);
     }
   };
 

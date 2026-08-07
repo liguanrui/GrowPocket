@@ -181,6 +181,7 @@ func (s *TaskGenerationService) GenerateTasksForChild(childID, familyID, created
 		if category == "" {
 			category = "其他"
 		}
+		now := timeutil.Now()
 		task := &model.Task{
 			FamilyID:           familyID,
 			Title:              sug.Title,
@@ -195,6 +196,8 @@ func (s *TaskGenerationService) GenerateTasksForChild(childID, familyID, created
 			AbilityDimensionID: sug.DimensionID,
 			AIGenerated:        true,
 			RuleSanitized:      true,
+			CreatedAt:          now,
+			UpdatedAt:          now,
 		}
 		if err := database.DB.Create(task).Error; err != nil {
 			log.Printf("[TaskGen] 创建 AI 任务失败: %v", err)
@@ -793,6 +796,42 @@ func (s *TaskGenerationService) GenerateForAllChildren() {
 		}
 		if err := s.GenerateTasksForChild(child.ID, child.FamilyID, createdBy, child.Nickname); err != nil {
 			log.Printf("[TaskGen] 儿童 %d 生成失败: %v", child.ID, err)
+		}
+	}
+}
+
+// PrepareDayForFamily 调试快进用：仅为指定家庭做轻量日切（习惯打卡 + 主题过期推进），不调 LLM
+func (s *TaskGenerationService) PrepareDayForFamily(familyID uint) {
+	var children []model.User
+	database.DB.Where("family_id = ? AND role = ?", familyID, model.RoleChild).Find(&children)
+	for _, child := range children {
+		if s.habitService != nil {
+			if err := s.habitService.EnsureHabitDailyReadyLite(child.ID); err != nil {
+				log.Printf("[DebugAdvance] 习惯日切失败 child=%d: %v", child.ID, err)
+			}
+		}
+		if err := s.CheckStaleParentTasks(child.ID); err != nil {
+			log.Printf("[DebugAdvance] CheckStaleParentTasks 失败 child=%d: %v", child.ID, err)
+		}
+	}
+}
+
+// GenerateAIForFamily 仅为指定家庭补生成今日 AI 任务（幂等）
+func (s *TaskGenerationService) GenerateAIForFamily(familyID uint) {
+	var children []model.User
+	database.DB.Where("family_id = ? AND role = ?", familyID, model.RoleChild).Find(&children)
+	var parent model.User
+	database.DB.Where("family_id = ? AND role = ?", familyID, model.RoleParent).First(&parent)
+	for _, child := range children {
+		if hasTodayAITask(child.ID, child.FamilyID) {
+			continue
+		}
+		createdBy := parent.ID
+		if createdBy == 0 {
+			createdBy = child.ID
+		}
+		if err := s.GenerateTasksForChild(child.ID, child.FamilyID, createdBy, child.Nickname); err != nil {
+			log.Printf("[TaskGen] 家庭 %d 儿童 %d 生成失败: %v", familyID, child.ID, err)
 		}
 	}
 }

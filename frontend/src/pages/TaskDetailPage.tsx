@@ -25,6 +25,17 @@ const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> =
   4: { label: '已拒绝', color: 'text-red-700', bg: 'bg-red-100' },
 };
 
+/** 主题任务类别码 → 中文（与 CreateTaskPage / seed 一致） */
+const THEME_CATEGORY_LABEL: Record<string, string> = {
+  nature: '自然探索',
+  family_creation: '家庭共创',
+  creative: '创意表达',
+  craft: '手工制作',
+  financial: '财商培养',
+  community: '社区公益',
+  other: '其他',
+};
+
 function formatDateTime(dateStr: string): string {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;
@@ -842,7 +853,7 @@ export function TaskDetailPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 {themeParentTask.category && (
                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                    {themeParentTask.category}
+                    {THEME_CATEGORY_LABEL[themeParentTask.category] || themeParentTask.category}
                   </span>
                 )}
                 <span className="text-sm text-text-secondary">
