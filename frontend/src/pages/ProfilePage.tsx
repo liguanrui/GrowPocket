@@ -58,7 +58,7 @@ export function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-primary to-primary-dark pt-6 pb-16 px-4 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-primary to-primary-dark pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 rounded-2xl bg-white/20 flex items-center justify-center overflow-hidden">
@@ -72,7 +72,7 @@ export function ProfilePage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8">
+      <div className="max-w-lg mx-auto px-4 pt-3">
         <div className="bg-card rounded-2xl p-4 shadow-md mb-4">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm text-text-tertiary">当前家庭</span>

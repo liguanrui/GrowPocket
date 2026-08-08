@@ -357,11 +357,13 @@ func (s *AchievementService) addAchievementPoints(childID uint, amount int, name
 	tx := database.DB.Begin()
 
 	newBalance := child.Balance + amount
+	relatedType := "achievement"
 	transaction := model.Transaction{
 		ChildID:      childID,
 		Type:         model.TransactionTypeIncome,
 		Amount:       amount,
 		Reason:       "成就奖励: " + name,
+		RelatedType:  &relatedType,
 		BalanceAfter: newBalance,
 	}
 	if err := tx.Create(&transaction).Error; err != nil {

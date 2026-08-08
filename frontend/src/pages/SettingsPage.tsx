@@ -117,15 +117,15 @@ export function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-primary to-amber-500 pt-6 pb-10 px-4 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-primary to-amber-500 pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center">
-              <Settings size={24} className="text-white" />
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+              <Settings size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">设置</h1>
-              <p className="text-white/80 text-sm">管理账户和家庭</p>
+              <h1 className="text-base font-bold text-white">设置</h1>
+              <p className="text-white/80 text-xs">管理账户和家庭</p>
             </div>
           </div>
 

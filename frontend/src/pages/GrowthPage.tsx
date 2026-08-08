@@ -1331,12 +1331,12 @@ export function GrowthPage() {
   return (
     <div className="min-h-screen bg-bg pb-24">
       {/* Header：绿色渐变 */}
-      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-8 pb-10 px-5 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div>
-              <h1 className="text-xl font-bold text-white">成长记录</h1>
-              <p className="text-white/80 text-sm mt-0.5">记录每一个成长瞬间</p>
+              <h1 className="text-base font-bold text-white">成长记录</h1>
+              <p className="text-white/80 text-xs mt-0.5">记录每一个成长瞬间</p>
             </div>
             <button
               onClick={() => setShowShareModal(true)}

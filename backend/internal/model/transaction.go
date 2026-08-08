@@ -34,6 +34,9 @@ var RelatedTypeAllowlist = map[string]struct{}{
 	"redeem":         {}, // 兑换扣除（支出）
 	"master_project": {}, // 大师挑战验收通过的稀有积分奖励（模块 B）
 	"academic":       {}, // V3.1 模块 D：学业奖励池里程碑发放（学业白名单，受月度次数与单次上限守卫）
+	"activity":       {}, // 社区公益活动完成奖励
+	"donation":       {}, // 公益捐赠收件完成后发放积分
+	"achievement":    {}, // 成就勋章奖励
 }
 
 // forbiddenReasonKeywords 明确禁止发放积分的动作关键词（匹配 Reason 字段）

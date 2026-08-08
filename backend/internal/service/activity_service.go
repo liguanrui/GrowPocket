@@ -200,12 +200,16 @@ func (s *ActivityService) CompleteActivity(activityID, familyID, childID uint, p
 	newBalance := child.Balance + points
 	database.DB.Model(&child).Update("balance", newBalance)
 
-	// 创建 Transaction 记录
+	// 创建 Transaction 记录（RelatedType 必须走白名单）
+	relatedType := "activity"
+	relatedID := activity.ID
 	tx := &model.Transaction{
 		ChildID:      childID,
-		Type:         0,
+		Type:         model.TransactionTypeIncome,
 		Amount:       points,
 		Reason:       "参与公益活动: " + activity.Title,
+		RelatedID:    &relatedID,
+		RelatedType:  &relatedType,
 		BalanceAfter: newBalance,
 		CreatedAt:    now,
 	}

@@ -6,6 +6,7 @@ import {
 import { useToastStore } from '../stores/toastStore';
 import { masterChallengeApi } from '../services/masterChallenge';
 import type { InstanceDetail, MasterChallengeStage } from '../services/masterChallenge';
+import { masterChallengeIcon } from '../utils/masterChallengeIcon';
 
 // 实例状态 → 中文标签 + 颜色
 function instanceStatusMeta(status: string): { label: string; cls: string } {
@@ -209,61 +210,55 @@ export function MasterChallengeDetailPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-gradient-to-br from-amber-400 to-yellow-500 text-white rounded-b-3xl pt-8 pb-8 px-5">
-        <div className="flex items-center justify-between mb-3">
+      {/* Header：紧凑顶栏，不 sticky，避免遮挡下方阶段列表 */}
+      <div className="bg-gradient-to-br from-amber-400 to-yellow-500 text-white rounded-b-2xl pt-3 pb-3.5 px-4">
+        <div className="flex items-center gap-2 mb-2">
           <button
             onClick={handleBack}
             className="flex items-center justify-center w-8 h-8 -ml-1 text-white"
             aria-label="返回"
           >
-            <ChevronLeft size={24} />
+            <ChevronLeft size={22} />
           </button>
-          <h1 className="text-base font-bold">大师挑战详情</h1>
-          <Trophy size={22} />
+          <h1 className="flex-1 text-base font-bold truncate">大师挑战详情</h1>
+          <span className="text-lg flex-shrink-0" aria-hidden>
+            {masterChallengeIcon(template?.icon)}
+          </span>
         </div>
-        {/* 标题 + 状态标签 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <h2 className="text-lg font-bold flex-1 min-w-0 line-clamp-2">{instance.title}</h2>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${statusMeta.cls} flex-shrink-0`}>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-bold flex-1 min-w-0 truncate">{instance.title}</h2>
+          <span className={`text-[11px] px-2 py-0.5 rounded-full ${statusMeta.cls} flex-shrink-0`}>
             {statusMeta.label}
           </span>
         </div>
-        {/* 进度条 */}
-        <div className="mt-3">
-          <div className="h-2 rounded-full bg-white/30 overflow-hidden">
+        <div className="mt-2">
+          <div className="h-1.5 rounded-full bg-white/30 overflow-hidden">
             <div
               className="h-full rounded-full bg-white transition-all"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <div className="flex items-center justify-between mt-1.5 text-xs text-white/90">
-            <span>进度 {progress}%</span>
-            <span className="font-medium">
-              {completedStages}/{totalStages} 阶段完成
+          <div className="flex items-center justify-between mt-1 text-[11px] text-white/90 gap-2">
+            <span>
+              进度 {progress}% · {completedStages}/{totalStages} 阶段
             </span>
+            {template && (
+              <span className="flex items-center gap-2 flex-shrink-0 font-medium">
+                <span className="inline-flex items-center gap-0.5">
+                  <Clock size={11} />
+                  {template.estimated_days}天
+                </span>
+                <span className="inline-flex items-center gap-0.5">
+                  <Trophy size={11} />
+                  +{template.points_reward}
+                </span>
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-4">
-        {/* 模板信息（主轴维度 / 周期 / 积分） */}
-        {template && (
-          <div className="bg-card rounded-2xl p-3 shadow-sm mb-3 flex items-center gap-3 text-xs text-text-tertiary">
-            <span className="text-2xl flex-shrink-0">{template.icon || '🎯'}</span>
-            <div className="flex-1 flex items-center gap-3 flex-wrap">
-              <span className="flex items-center gap-0.5">
-                <Clock size={11} />
-                {template.estimated_days} 天
-              </span>
-              <span className="flex items-center gap-0.5 text-amber-600 font-medium">
-                <Trophy size={11} />
-                +{template.points_reward} 积分
-              </span>
-            </div>
-          </div>
-        )}
-
+      <div className="max-w-lg mx-auto px-4 pt-3">
         {/* 阶段时间线 */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
           <div className="flex items-center gap-1.5 mb-3">

@@ -26,10 +26,10 @@ export function CommunityPage() {
   return (
     <div className="min-h-screen bg-bg pb-20">
       {/* 顶部渐变区域 */}
-      <div className="bg-gradient-to-br from-success to-success-dark pt-8 pb-10 px-5">
+      <div className="bg-gradient-to-br from-success to-success-dark pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
-          <h1 className="text-xl font-bold text-white">社区广场</h1>
-          <p className="text-white/80 text-sm mt-1.5">与其他家庭一起成长</p>
+          <h1 className="text-base font-bold text-white">社区广场</h1>
+          <p className="text-white/80 text-xs mt-0.5">与其他家庭一起成长</p>
         </div>
       </div>
 

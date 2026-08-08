@@ -130,7 +130,7 @@ export function GrowthStoryListPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 1. Header：高度收紧，避免 sticky 绿条盖住下方摘要卡 */}
-      <div className="sticky top-0 z-10 bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-b-3xl pt-4 pb-8 px-5">
+      <div className="bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-b-2xl pt-3 pb-4 px-4">
         <div className="relative flex items-center justify-center">
           <button
             onClick={handleBack}
@@ -143,7 +143,7 @@ export function GrowthStoryListPage() {
         </div>
       </div>
 
-      <div className="px-5 -mt-5 relative z-20">
+      <div className="px-4 pt-3 relative z-20">
         {/* 2. Summary Banner */}
         <div
           className="rounded-2xl border border-gray-100 p-4 flex items-center gap-3"

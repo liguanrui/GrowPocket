@@ -132,7 +132,7 @@ export function QuestionnairePage() {
     <div className="min-h-screen flex flex-col" style={{ background: C.bg }}>
       {/* 顶部进度区 */}
       <header
-        className="sticky top-0 z-20 pt-6 pb-4 px-5 rounded-b-3xl"
+        className="sticky top-0 z-20 pt-3 pb-3 px-4 rounded-b-2xl"
         style={{ background: `linear-gradient(135deg, ${C.primary}, #F5A572)` }}
       >
         <div className="max-w-[448px] mx-auto">

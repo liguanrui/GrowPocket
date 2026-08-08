@@ -98,22 +98,24 @@ function StatusTabs({
   tasks: Task[];
 }) {
   return (
-    <div className="flex gap-2 overflow-x-auto bg-card rounded-2xl p-1 shadow-sm">
+    <div className="flex gap-0.5 bg-card rounded-2xl p-1 shadow-sm">
       {STATUS_TABS.map((tab) => {
-        const Icon = tab.icon;
         const count = tab.id === 'all' ? tasks.length : tasks.filter((t) => t.status === tab.id).length;
         const isActive = active === tab.id;
         return (
           <button
             key={String(tab.id)}
             onClick={() => onChange(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl whitespace-nowrap text-xs font-medium transition-all flex-1 justify-center ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-0.5 px-1 py-2 rounded-xl text-[11px] font-medium transition-all ${
               isActive ? 'bg-primary text-white shadow' : 'text-text-secondary hover:bg-gray-50'
             }`}
           >
-            <Icon size={14} />
-            <span>{tab.label}</span>
-            <span className={`text-[10px] px-1.5 rounded-full ${isActive ? 'bg-white/20' : 'bg-gray-100 text-text-tertiary'}`}>
+            <span className="truncate">{tab.label}</span>
+            <span
+              className={`flex-shrink-0 text-[10px] min-w-[1.1rem] px-1 rounded-full text-center ${
+                isActive ? 'bg-white/20' : 'bg-gray-100 text-text-tertiary'
+              }`}
+            >
               {count}
             </span>
           </button>
@@ -128,7 +130,7 @@ function TaskItem({
   onClick,
   showStatus,
   highlight,
-  onAdjust,
+  onComplete,
   onReject,
   isParentTheme,
   currentStageTitle,
@@ -140,7 +142,7 @@ function TaskItem({
   onClick: () => void;
   showStatus?: boolean;
   highlight?: boolean;
-  onAdjust?: (task: Task) => void;
+  onComplete?: (task: Task) => void;
   onReject?: (task: Task) => void;
   isParentTheme?: boolean;
   currentStageTitle?: string;
@@ -258,14 +260,14 @@ function TaskItem({
           )}
         </div>
       </div>
-      {canReviewAI && (onAdjust || onReject) && (
+      {canReviewAI && (onComplete || onReject) && (
         <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
-          {onAdjust && (
+          {onComplete && (
             <button
-              onClick={(e) => { e.stopPropagation(); onAdjust(task); }}
+              onClick={(e) => { e.stopPropagation(); onComplete(task); }}
               className="flex-1 py-1.5 text-xs rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
             >
-              调整
+              完成
             </button>
           )}
           {onReject && (
@@ -399,7 +401,7 @@ function TaskBoard({
   highlightTaskId?: number | null;
   onReviewed?: () => void;
 }) {
-  const [reviewingTask, setReviewingTask] = useState<Task | null>(null);
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const toast = useToastStore();
   // 过滤状态 + 排除子任务（子任务不独立显示）
   const statusFiltered = activeStatus === 'all' ? tasks : tasks.filter((t) => t.status === activeStatus);
@@ -436,14 +438,35 @@ function TaskBoard({
     };
   };
 
+  // 家长一键完成 AI 任务（提交验收 + 通过），完成后跳到「已完成」Tab
+  const handleComplete = async (task: Task) => {
+    if (!onReviewed || actionLoadingId) return;
+    setActionLoadingId(task.id);
+    try {
+      await tasksService.submitTask(task.id);
+      await tasksService.reviewTask(task.id, true, task.points);
+      toast.success(`任务已完成，已发放 ${task.points} 积分`);
+      onStatusChange(3);
+      onReviewed();
+    } catch (e: any) {
+      toast.error(e.message || '完成失败');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const handleReject = async (task: Task) => {
-    if (!onReviewed) return;
+    if (!onReviewed || actionLoadingId) return;
+    setActionLoadingId(task.id);
     try {
       await tasksService.reviewAITask(task.id, 'reject');
       toast.success('已拒绝 AI 任务');
+      onStatusChange(4);
       onReviewed();
     } catch (e: any) {
       toast.error(e.message || '操作失败');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -484,23 +507,13 @@ function TaskBoard({
               onClick={() => onTaskClick(task.id)}
               showStatus={showStatus}
               highlight={highlightTaskId === task.id}
-              onAdjust={onReviewed ? (t) => setReviewingTask(t) : undefined}
+              onComplete={onReviewed ? handleComplete : undefined}
               onReject={onReviewed ? handleReject : undefined}
               {...(parentMeta || {})}
             />
           );
         })}
       </div>
-      {reviewingTask && (
-        <AIReviewModal
-          task={reviewingTask}
-          onClose={() => setReviewingTask(null)}
-          onReviewed={() => {
-            setReviewingTask(null);
-            onReviewed?.();
-          }}
-        />
-      )}
       <style>{`
         @keyframes highlightPulse {
           0%, 100% {
@@ -623,6 +636,13 @@ export function HomePage() {
     }
   }, [uiStore.needRefreshTasks, uiStore.needRefreshScore]);
 
+  // 从详情页完成/拒绝返回时，切换到对应状态 Tab
+  useEffect(() => {
+    if (uiStore.pendingTaskStatus == null) return;
+    setActiveStatus(uiStore.pendingTaskStatus);
+    uiStore.setPendingTaskStatus(null);
+  }, [uiStore.pendingTaskStatus]);
+
   useEffect(() => {
     if (uiStore.highlightTaskId !== null && tasks.length > 0) {
       const hasTask = tasks.some((t) => t.id === uiStore.highlightTaskId);
@@ -679,7 +699,7 @@ export function HomePage() {
   if (!selectedChild || children.length === 0) {
     return (
       <div className="min-h-screen bg-bg pb-24">
-        <div className="bg-gradient-to-br from-primary to-primary-dark pt-6 pb-8 px-4">
+        <div className="bg-gradient-to-br from-primary to-primary-dark pt-3 pb-4 px-4">
           <div className="max-w-lg mx-auto">
             <h1 className="text-xl font-bold text-white">我的家庭</h1>
           </div>
@@ -702,7 +722,7 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-primary to-primary-dark pt-8 pb-8 px-5 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-primary to-primary-dark pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-5">
             <div>
