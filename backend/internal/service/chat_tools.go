@@ -858,6 +858,9 @@ func (s *ChatService) toolRedeemItem(ctx context.Context, args map[string]any, f
 
 // W3. set_stage_goal 提议设置阶段目标（需家长权限）
 func (s *ChatService) toolSetStageGoal(ctx context.Context, args map[string]any, familyID, childID uint, userRole string) (string, error) {
+	if userRole != "parent" {
+		return "", fmt.Errorf("此操作仅家长可执行")
+	}
 	cycleID := getIntArg(args, "cycle_id", 0)
 	dimensionID := getIntArg(args, "dimension_id", 0)
 	targetScore := getIntArg(args, "target_score", 0)
@@ -897,6 +900,9 @@ func (s *ChatService) toolSetStageGoal(ctx context.Context, args map[string]any,
 
 // W4. create_cycle 提议创建成长周期（需家长权限）
 func (s *ChatService) toolCreateCycle(ctx context.Context, args map[string]any, familyID, childID uint, userRole string) (string, error) {
+	if userRole != "parent" {
+		return "", fmt.Errorf("此操作仅家长可执行")
+	}
 	name := getStringArg(args, "name", "")
 	startDateStr := getStringArg(args, "start_date", "")
 	endDateStr := getStringArg(args, "end_date", "")
@@ -935,6 +941,9 @@ func (s *ChatService) toolCreateCycle(ctx context.Context, args map[string]any, 
 
 // W5. adjust_score 提议调整积分（需家长权限；delta>0 奖励，delta<0 扣除）
 func (s *ChatService) toolAdjustScore(ctx context.Context, args map[string]any, familyID, childID uint, userRole string) (string, error) {
+	if userRole != "parent" {
+		return "", fmt.Errorf("此操作仅家长可执行")
+	}
 	delta := getIntArg(args, "delta", 0)
 	title := getStringArg(args, "title", "")
 	description := getStringArg(args, "description", "")
@@ -986,7 +995,109 @@ func (s *ChatService) toolAdjustScore(ctx context.Context, args map[string]any, 
 	return marshalResult(sug)
 }
 
-// registerWriteTools 注册 5 个写工具到 toolRegistry（IsWrite=true）
+// W6. create_task_template 提议创建家庭自定义任务模板（需家长权限）
+// 家长可与 AI 助理探讨任务设计，由 AI 提议模板字段，家长确认后写入家庭模板库
+func (s *ChatService) toolCreateTaskTemplate(ctx context.Context, args map[string]any, familyID, childID uint, userRole string) (string, error) {
+	if userRole != "parent" {
+		return "", fmt.Errorf("此操作仅家长可执行")
+	}
+	title := getStringArg(args, "title", "")
+	description := getStringArg(args, "description", "")
+	icon := getStringArg(args, "icon", "")
+	category := getStringArg(args, "category", "")
+	difficulty := getStringArg(args, "difficulty", "")
+	frequency := getStringArg(args, "frequency", "")
+	tags := getStringArg(args, "tags", "")
+	templateType := getStringArg(args, "template_type", "daily")
+	points := getIntArg(args, "points", 10)
+	minAge := getIntArg(args, "min_age", 6)
+	maxAge := getIntArg(args, "max_age", 12)
+	estimatedTime := getIntArg(args, "estimated_time", 15)
+	abilityDimensionID := uint(getIntArg(args, "ability_dimension_id", 0))
+	estimatedDays := getIntArg(args, "estimated_days", 0)
+	keyMilestones := getStringArg(args, "key_milestones", "")
+
+	if title == "" {
+		return "", fmt.Errorf("title 参数必填")
+	}
+	// 校验 template_type
+	switch templateType {
+	case "", "daily", "habit", "parent":
+		if templateType == "" {
+			templateType = "daily"
+		}
+	default:
+		return "", fmt.Errorf("template_type 必须是 daily/habit/parent 之一")
+	}
+	// 校验 difficulty
+	switch difficulty {
+	case "", "easy", "medium", "hard":
+		if difficulty == "" {
+			difficulty = "medium"
+		}
+	default:
+		return "", fmt.Errorf("difficulty 必须是 easy/medium/hard 之一")
+	}
+
+	// 查维度名（用于 summary 展示）
+	dimName := "未指定"
+	if abilityDimensionID > 0 {
+		if dim, err := s.ability.GetDimensionByID(abilityDimensionID); err == nil {
+			dimName = dim.Name
+		}
+	}
+
+	// 构造 summary：清晰展示模板关键信息，数字会被前端高亮
+	typeLabel := map[string]string{"daily": "日常任务", "habit": "习惯养成", "parent": "主题任务"}[templateType]
+	summary := fmt.Sprintf("创建%s模板「%s」｜%s｜%d-%d岁｜%s维度｜%d积分",
+		typeLabel, title, category, minAge, maxAge, dimName, points)
+	if description != "" {
+		// 描述截断避免卡片过长
+		desc := description
+		if len([]rune(desc)) > 40 {
+			desc = string([]rune(desc)[:40]) + "..."
+		}
+		summary += "｜" + desc
+	}
+
+	// 构造 api_body（与 POST /api/task-templates 的 createTaskTemplateReq 字段对齐）
+	apiBody := map[string]any{
+		"title":                title,
+		"description":          description,
+		"points":               points,
+		"icon":                 icon,
+		"category":             category,
+		"min_age":              minAge,
+		"max_age":              maxAge,
+		"estimated_time":       estimatedTime,
+		"difficulty":           difficulty,
+		"frequency":            frequency,
+		"tags":                 tags,
+		"ability_dimension_id": abilityDimensionID,
+		"template_type":        templateType,
+	}
+	// parent 类型额外字段
+	if templateType == "parent" {
+		apiBody["estimated_days"] = estimatedDays
+		apiBody["key_milestones"] = keyMilestones
+	}
+
+	sug := ActionSuggestion{
+		Action:      "create_task_template",
+		Params:      map[string]any{"title": title, "template_type": templateType},
+		Summary:     summary,
+		ConfirmText: "确认创建",
+		CancelText:  "取消",
+		// 实际路由: POST /api/task-templates (main.go L174)；handler createTaskTemplateReq 从 body 取全部字段
+		APIEndpoint:    "/task-templates",
+		APIMethod:      "POST",
+		APIBody:        apiBody,
+		RequiresParent: true,
+	}
+	return marshalResult(sug)
+}
+
+// registerWriteTools 注册 6 个写工具到 toolRegistry（IsWrite=true）
 func (s *ChatService) registerWriteTools() {
 	tools := []ToolEntry{
 		// W1. submit_task
@@ -1121,6 +1232,84 @@ func (s *ChatService) registerWriteTools() {
 				},
 			},
 			Execute: s.toolAdjustScore,
+		IsWrite: true,
+		},
+		// W6. create_task_template
+		{
+			Definition: ToolDefinition{
+				Type: "function",
+				Function: ToolFunctionDef{
+					Name:        "create_task_template",
+					Description: "提议为家庭创建一个自定义任务模板（家长权限，向用户展示确认卡片）。家长想添加自定义任务/习惯/主题任务时调用。模板类型 template_type: daily=日常任务, habit=习惯养成, parent=主题任务。能力维度 ability_dimension_id: 1=生活自理, 2=独立自主, 3=动手实践, 4=学习认知, 5=社交协作, 6=身心健康。",
+					Parameters: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"title": map[string]any{
+								"type":        "string",
+								"description": "模板标题（必填，4-30字）",
+							},
+							"description": map[string]any{
+								"type":        "string",
+								"description": "任务描述/完成要求",
+							},
+							"template_type": map[string]any{
+								"type":        "string",
+								"description": "模板类型：daily=日常任务, habit=习惯养成, parent=主题任务（默认 daily）",
+							},
+							"ability_dimension_id": map[string]any{
+								"type":        "integer",
+								"description": "主能力维度 ID：1=生活自理, 2=独立自主, 3=动手实践, 4=学习认知, 5=社交协作, 6=身心健康",
+							},
+							"points": map[string]any{
+								"type":        "integer",
+								"description": "完成奖励积分（默认 10）",
+							},
+							"min_age": map[string]any{
+								"type":        "integer",
+								"description": "适用最小年龄（默认 6）",
+							},
+							"max_age": map[string]any{
+								"type":        "integer",
+								"description": "适用最大年龄（默认 12）",
+							},
+							"difficulty": map[string]any{
+								"type":        "string",
+								"description": "难度：easy/medium/hard（默认 medium）",
+							},
+							"category": map[string]any{
+								"type":        "string",
+								"description": "分类，如 学习/家务/行为习惯/运动/其他",
+							},
+							"frequency": map[string]any{
+								"type":        "string",
+								"description": "频率：daily/weekly/monthly/once",
+							},
+							"estimated_time": map[string]any{
+								"type":        "integer",
+								"description": "预计完成时间（分钟）",
+							},
+							"tags": map[string]any{
+								"type":        "string",
+								"description": "标签，逗号分隔",
+							},
+							"icon": map[string]any{
+								"type":        "string",
+								"description": "emoji 图标",
+							},
+							"estimated_days": map[string]any{
+								"type":        "integer",
+								"description": "主题任务预计天数（仅 parent 类型）",
+							},
+							"key_milestones": map[string]any{
+								"type":        "string",
+								"description": "主题任务关键里程碑 JSON（仅 parent 类型）",
+							},
+						},
+						"required": []string{"title"},
+					},
+				},
+			},
+			Execute: s.toolCreateTaskTemplate,
 			IsWrite: true,
 		},
 	}

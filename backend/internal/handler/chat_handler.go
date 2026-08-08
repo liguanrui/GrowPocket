@@ -27,6 +27,7 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		Message   string `json:"message" binding:"required"`
 		SessionID uint   `json:"session_id"`
 		ChildID   uint   `json:"child_id" binding:"required"`
+		Mode      string `json:"mode"` // parent=家长代聊 / child=儿童本人；空值按 role 推断
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		util.FailBadRequest(c, "请提供 message 和 child_id")
@@ -47,10 +48,18 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		role = "parent"
 	}
 
+	// 规范化 mode：儿童角色强制 child 模式（防止伪造）
+	mode := req.Mode
+	if role == "child" {
+		mode = "child"
+	} else if mode != "child" {
+		mode = "parent"
+	}
+
 	// 如果没有 session_id，创建新会话
 	sessionID := req.SessionID
 	if sessionID == 0 {
-		session, err := h.chatService.CreateSession(familyID, req.ChildID, userID, role)
+		session, err := h.chatService.CreateSession(familyID, req.ChildID, userID, role, mode)
 		if err != nil {
 			util.FailInternal(c, "创建会话失败")
 			return
@@ -58,10 +67,10 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		sessionID = session.ID
 	}
 
-	reply, intent, suggestedActions, err := h.chatService.SendMessage(sessionID, role, req.ChildID, familyID, req.Message)
+	reply, intent, suggestedActions, err := h.chatService.SendMessage(sessionID, role, req.ChildID, familyID, req.Message, mode)
 	if err != nil {
-		log.Printf("[Chat] SendMessage 失败 session=%d child=%d family=%d role=%s msg=%q err=%v",
-			sessionID, req.ChildID, familyID, role, req.Message, err)
+		log.Printf("[Chat] SendMessage 失败 session=%d child=%d family=%d role=%s mode=%s msg=%q err=%v",
+			sessionID, req.ChildID, familyID, role, mode, req.Message, err)
 		util.FailInternal(c, "AI 回复失败: "+err.Error())
 		return
 	}
@@ -211,7 +220,8 @@ func (h *ChatHandler) SearchSessions(c *gin.Context) {
 // 主动新建会话
 func (h *ChatHandler) CreateSession(c *gin.Context) {
 	var req struct {
-		ChildID uint `json:"child_id" binding:"required"`
+		ChildID uint   `json:"child_id" binding:"required"`
+		Mode    string `json:"mode"` // parent/child；空值按 role 推断
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		util.FailBadRequest(c, "请提供 child_id")
@@ -230,7 +240,15 @@ func (h *ChatHandler) CreateSession(c *gin.Context) {
 		role = "parent"
 	}
 
-	session, err := h.chatService.CreateSession(familyID, req.ChildID, userID, role)
+	// 规范化 mode：儿童角色强制 child 模式
+	mode := req.Mode
+	if role == "child" {
+		mode = "child"
+	} else if mode != "child" {
+		mode = "parent"
+	}
+
+	session, err := h.chatService.CreateSession(familyID, req.ChildID, userID, role, mode)
 	if err != nil {
 		util.FailInternal(c, "创建会话失败")
 		return

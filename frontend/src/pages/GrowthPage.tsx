@@ -20,7 +20,7 @@ import { DayStepper } from '../components/DayStepper';
 import { SoftSelect } from '../components/SoftSelect';
 import { AcademicMilestoneModal } from '../components/AcademicMilestoneModal';
 import { getCurrentCycle, setGoalsBatch, createCycle, updateCycle } from '../services/growthCycle';
-import type { DimensionProgress } from '../services/growthCycle';
+import type { DimensionProgress, Goal } from '../services/growthCycle';
 import { getPresetHabits, createCustomHabit } from '../services/habits';
 import type { Habit } from '../services/habits';
 import {
@@ -786,6 +786,7 @@ export function GrowthPage() {
   const [error, setError] = useState<string | null>(null);
   // 阶段目标相关
   const [cycleId, setCycleId] = useState<number | null>(null);
+  const [cycleGoals, setCycleGoals] = useState<Goal[]>([]); // 当前周期下所有 goals（dimension/habit/parent_task）
   const [progressList, setProgressList] = useState<DimensionProgress[]>([]);
   const [cycleName, setCycleName] = useState('');
   const [cycleStartDate, setCycleStartDate] = useState('');
@@ -885,9 +886,11 @@ export function GrowthPage() {
             setCycleStartDate(cycleResult.cycle.start_date);
             setCycleEndDate(cycleResult.cycle.end_date);
             setProgressList(cycleResult.progress || []);
+            setCycleGoals(cycleResult.goals || []);
           } else {
             setCycleId(null);
             setProgressList([]);
+            setCycleGoals([]);
           }
         }
       } catch (e: any) {
@@ -936,24 +939,33 @@ export function GrowthPage() {
       const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
       const weeks = Math.max(1, Math.min(4, Math.round(diffDays / 7)));
       setSetupWeeks(weeks);
-      // 提取已设置目标的维度
-      const selectedDims = progressList
-        .filter((p) => p.target_score > 0)
-        .map((p) => p.dimension_id);
-      setSetupGoals(selectedDims);
+      // 回填已设置的维度目标：所有 goal_type 空或 dimension 的 cycleGoals，或 progressList 里全部维度（为了兼容旧周期 target_score=0 未正确设置）
+      const dimIdsFromGoals = cycleGoals
+        .filter((g) => !g.goal_type || g.goal_type === 'dimension')
+        .map((g) => g.dimension_id);
+      const dimIdsFromProgress = progressList.map((p) => p.dimension_id);
+      // 去重，优先按 cycleGoals（更准确的设置历史），不足再补 progressList 里的维度
+      const dedup: number[] = [];
+      const seen = new Set<number>();
+      for (const d of [...dimIdsFromGoals, ...dimIdsFromProgress]) {
+        if (seen.has(d)) continue;
+        seen.add(d);
+        dedup.push(d);
+      }
+      setSetupGoals(dedup);
+      // 回填已设置的习惯目标（goal_type === habit）
+      const habitIds = cycleGoals
+        .filter((g) => g.goal_type === 'habit' && g.habit_id)
+        .map((g) => Number(g.habit_id));
+      setSetupHabits(habitIds.slice(0, 2)); // 受最多 2 个上限约束
     } else {
       const now = new Date();
       setSetupStartDate(now.toISOString().slice(0, 10));
       setSetupWeeks(2); // 默认 2 周
       setSetupGoals([]);
+      setSetupHabits([]);
     }
-    // 重置习惯目标相关状态，并根据孩子年龄加载预设习惯
-    setSetupHabits([]);
-    setShowCustomHabitForm(false);
-    setCustomHabitTitle('');
-    setCustomHabitDesc('');
-    setPresetHabits([]);
-    // 重置主题任务相关状态，并根据孩子年龄加载预设主题模板
+    // 重置主题任务相关状态（parent_task goal 没有保存 template_id，无法可靠回填；避免错填所以保持未选）
     setSetupThemeTemplateId(null);
     setSetupThemeCustom(null);
     setShowCustomThemeForm(false);
@@ -962,6 +974,11 @@ export function GrowthPage() {
     setCustomThemeDays(14);
     setCustomThemeCategory('nature');
     setPresetThemeTemplates([]);
+    // 重置自定义习惯表单状态 + 加载预设（习惯回填在上面已经做了）
+    setShowCustomHabitForm(false);
+    setCustomHabitTitle('');
+    setCustomHabitDesc('');
+    setPresetHabits([]);
     const age = computeChildAge(selectedChild);
     setPresetHabitsLoading(true);
     getPresetHabits(age)
@@ -1118,6 +1135,7 @@ export function GrowthPage() {
         setCycleStartDate(cycleResult.cycle.start_date);
         setCycleEndDate(cycleResult.cycle.end_date);
         setProgressList(cycleResult.progress || []);
+        setCycleGoals(cycleResult.goals || []);
       }
     } catch (e: any) {
       toast.error(e.message || '保存失败');
@@ -1328,22 +1346,13 @@ export function GrowthPage() {
           </button>
         )}
 
-        {/* 1. 阶段目标（三按钮 + 单一进度条 + 阶段标签） */}
+        {/* 1. 阶段目标（单一进度条 + 阶段标签） */}
         <div className="bg-card rounded-2xl p-4 shadow-sm mb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold text-text-primary">阶段目标</h2>
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                {stageLabel}
-              </span>
-            </div>
-            <button
-              onClick={() => navigate(`/growth/stories?child_id=${selectedChild.id}`)}
-              className="flex items-center gap-1 text-xs text-text-tertiary hover:text-primary transition-colors"
-            >
-              查看详情
-              <ChevronRight size={14} />
-            </button>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-text-primary">阶段目标</h2>
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+              {stageLabel}
+            </span>
           </div>
 
           {/* 目标文本 */}
@@ -1365,10 +1374,12 @@ export function GrowthPage() {
             </div>
           </div>
 
-          {/* 按钮区：无目标时只显示「设置目标」，有目标时显示「调整目标」+「触发回顾」 */}
+          {/* 按钮区：家长可见。
+              - 没有进行中的周期（cycleId 为空）→ 只显示「设置目标」
+              - 有进行中的周期（cycleId 存在）→ 显示「调整目标」+「触发回顾」 */}
           {isParent && (
             <div className="flex gap-2 mt-4">
-              {!hasGoals ? (
+              {!cycleId ? (
                 <button
                   onClick={openGoalSetup}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors"
@@ -1751,7 +1762,7 @@ export function GrowthPage() {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-text-primary flex items-center gap-1.5">
                             {habit.title}
-                            {habit.is_custom && (
+                            {!habit.is_system && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-medium">
                                 自定义
                               </span>
@@ -1867,7 +1878,7 @@ export function GrowthPage() {
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium text-text-primary flex items-center gap-1.5 flex-wrap">
                               {tpl.title}
-                              {tpl.is_custom && (
+                              {!tpl.is_system && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700 font-medium">
                                   自定义
                                 </span>

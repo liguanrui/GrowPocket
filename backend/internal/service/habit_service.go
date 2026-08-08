@@ -63,9 +63,9 @@ func (s *HabitService) ensureHabitDailyReady(childID uint, skipAIEncouragement b
 		}
 		habitID := *g.HabitID
 
-		// 查 Habit 配置
-		var habit model.Habit
-		if err := database.DB.Where("id = ?", habitID).First(&habit).Error; err != nil {
+		// 查 Habit 配置（Habit 已合并为 TaskTemplate，通过 TemplateType="habit" 区分）
+		var habit model.TaskTemplate
+		if err := database.DB.Where("id = ? AND template_type = ?", habitID, "habit").First(&habit).Error; err != nil {
 			log.Printf("[Habit] 习惯 %d 不存在: %v", habitID, err)
 			continue
 		}

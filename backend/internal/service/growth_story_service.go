@@ -66,8 +66,8 @@ func (s *GrowthStoryService) collectHabitStats(familyID, childID uint, cycle mod
 		if m.HabitID == 0 {
 			continue
 		}
-		var habit model.Habit
-		if err := database.DB.Where("id = ?", m.HabitID).First(&habit).Error; err != nil {
+		var habit model.TaskTemplate
+		if err := database.DB.Where("id = ? AND template_type = ?", m.HabitID, "habit").First(&habit).Error; err != nil {
 			log.Printf("[GrowthStory] 习惯配置 %d 不存在: %v", m.HabitID, err)
 			continue
 		}
@@ -99,8 +99,8 @@ func (s *GrowthStoryService) markFormedHabits(stats []habitStat) {
 		// 完成度 >= 80% 视为已养成
 		if float64(st.TotalCount) >= float64(st.HabitGoal)*0.8 {
 			// 仅更新当前仍为 active 的习惯，避免重复写入
-			res := database.DB.Model(&model.Habit{}).
-				Where("id = ? AND is_active = ?", st.HabitID, true).
+			res := database.DB.Model(&model.TaskTemplate{}).
+				Where("id = ? AND template_type = ? AND is_active = ?", st.HabitID, "habit", true).
 				Update("is_active", false)
 			if res.Error != nil {
 				log.Printf("[GrowthStory] 标记习惯 %d 为已养成失败: %v", st.HabitID, res.Error)

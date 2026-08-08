@@ -22,7 +22,7 @@ func NewParentTaskHandler(svc *service.ParentTaskService) *ParentTaskHandler {
 }
 
 // GetPresetParentTaskTemplates GET /api/parent-task-templates/preset?age=8
-// 按年龄过滤预设主题模板（age >= AgeMin AND age <= AgeMax AND is_custom=false）
+// 按年龄过滤预设主题模板（当前家庭的 TaskTemplate WHERE template_type='parent' AND is_system=true AND min_age<=age AND max_age>=age）
 func GetPresetParentTaskTemplates(c *gin.Context) {
 	ageStr := c.Query("age")
 	age, err := strconv.Atoi(ageStr)
@@ -31,15 +31,16 @@ func GetPresetParentTaskTemplates(c *gin.Context) {
 		return
 	}
 
-	var templates []model.ParentTaskTemplate
+	familyID := middleware.GetFamilyID(c)
+	var templates []model.TaskTemplate
 	if err := database.DB.
-		Where("age_min <= ? AND age_max >= ? AND is_custom = ?", age, age, false).
+		Where("family_id = ? AND template_type = ? AND is_system = ? AND min_age <= ? AND max_age >= ?", familyID, "parent", true, age, age).
 		Find(&templates).Error; err != nil {
 		util.FailInternal(c, err.Error())
 		return
 	}
 	if templates == nil {
-		templates = []model.ParentTaskTemplate{}
+		templates = []model.TaskTemplate{}
 	}
 	util.OK(c, templates)
 }
@@ -53,7 +54,7 @@ type createCustomParentTaskTemplateReq struct {
 }
 
 // CreateCustomParentTaskTemplate POST /api/parent-task-templates/custom
-// 创建自定义主题模板（IsCustom=true, FamilyID=从JWT获取）
+// 创建自定义主题模板（调用 TaskTemplateService.CreateTemplate，TemplateType="parent"，IsSystem=false 表示自定义）
 func CreateCustomParentTaskTemplate(c *gin.Context) {
 	var req createCustomParentTaskTemplateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,16 +62,28 @@ func CreateCustomParentTaskTemplate(c *gin.Context) {
 		return
 	}
 
-	template := model.ParentTaskTemplate{
-		FamilyID:      middleware.GetFamilyID(c),
-		ChildID:       req.ChildID,
-		Title:         req.Title,
-		Description:   req.Description,
-		Category:      req.Category,
-		EstimatedDays: req.EstimatedDays,
-		IsCustom:      true,
-	}
-	if err := database.DB.Create(&template).Error; err != nil {
+	svc := service.NewTaskTemplateService()
+	template, err := svc.CreateTemplate(
+		middleware.GetFamilyID(c),
+		middleware.GetUserID(c),
+		req.Title,
+		req.Description,
+		"",               // icon 默认
+		req.Category,     // 保持原值：family_creation/creative/community/financial/nature/craft
+		0,                // points
+		0,                // sortOrder
+		0,                // minAge 默认
+		0,                // maxAge 默认
+		0,                // estimatedTime 默认
+		"",               // difficulty 默认
+		"",               // frequency 默认
+		"",               // tags
+		0,                // abilityDimensionID
+		"parent",         // templateType
+		req.EstimatedDays,
+		"",               // keyMilestones
+	)
+	if err != nil {
 		util.FailInternal(c, err.Error())
 		return
 	}
@@ -151,8 +164,8 @@ func (h *ParentTaskHandler) GenerateChildren(c *gin.Context) {
 	// 若来自模板，附带模板的 KeyMilestones 作为参考
 	keyMilestonesSeed := ""
 	if parent.TemplateID != 0 {
-		var tpl model.ParentTaskTemplate
-		if err := database.DB.First(&tpl, parent.TemplateID).Error; err == nil {
+		var tpl model.TaskTemplate
+		if err := database.DB.Where("id = ? AND template_type = ?", parent.TemplateID, "parent").First(&tpl).Error; err == nil {
 			keyMilestonesSeed = tpl.KeyMilestones
 		}
 	}

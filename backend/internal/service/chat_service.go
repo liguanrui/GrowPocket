@@ -76,11 +76,21 @@ func NewChatService(aiService *AIService) *ChatService {
 
 // SendMessage 发送消息并获取回复
 // 返回：reply 文字回复、intent 意图、suggestedActions 写操作建议卡片列表
-func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, familyID uint, userMessage string) (string, string, []ActionSuggestion, error) {
+// mode 为对话模式：parent=家长代聊 / child=儿童本人
+func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, familyID uint, userMessage, mode string) (string, string, []ActionSuggestion, error) {
 	ctx := context.Background()
 
+	// 规范化 mode：空值时按 userRole 推断（parent→parent, child→child）
+	if mode != "parent" && mode != "child" {
+		if userRole == "child" {
+			mode = "child"
+		} else {
+			mode = "parent"
+		}
+	}
+
 	// 构造系统提示词
-	systemPrompt := s.buildSystemPrompt(childID, familyID, userRole)
+	systemPrompt := s.buildSystemPrompt(childID, familyID, userRole, mode)
 
 	// 获取历史消息
 	var history []model.ChatMessage
@@ -229,16 +239,53 @@ func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, fami
 	return reply, intent, suggestedActions, nil
 }
 
-// buildSystemPrompt 构造系统提示词（精简版，仅注入角色与鉴权上下文，数据快照由工具按需获取）
-func (s *ChatService) buildSystemPrompt(childID, familyID uint, userRole string) string {
+// buildSystemPrompt 构造系统提示词
+// 注入：角色身份、对话模式（家长代聊 / 儿童本人）、儿童档案（昵称/年龄/年级/生日）、家庭/儿童 ID、工具能力与权限边界
+func (s *ChatService) buildSystemPrompt(childID, familyID uint, userRole, mode string) string {
+	// 查询儿童档案（childID 即 user_id，统一在 users 表）
+	var child model.User
+	nickname := "小朋友"
+	ageStr := "未知"
+	birthdayStr := "未填写"
+	gradeStr := "0（学前）"
+	if err := database.DB.Where("id = ?", childID).First(&child).Error; err == nil {
+		if child.Nickname != "" {
+			nickname = child.Nickname
+		}
+		if child.Birthday != nil {
+			birthdayStr = child.Birthday.Format("2006-01-02")
+			age := ComputeAge(*child.Birthday)
+			ageStr = fmt.Sprintf("%d", age)
+		} else if child.Age != nil {
+			ageStr = fmt.Sprintf("%d", *child.Age)
+		}
+		if g, _ := ResolveGrade(&child); g > 0 {
+			gradeStr = fmt.Sprintf("%d", g)
+		}
+	}
+
 	var parts []string
 	parts = append(parts, "你是「小萌芽」，GrowPocket 的 AI 成长助理，一个温暖的种子精灵。")
 	parts = append(parts, "你的角色是陪伴 6-12 岁儿童成长。")
-	parts = append(parts, fmt.Sprintf("当前对话者角色：%s（parent=家长，child=儿童）。", userRole))
-	parts = append(parts, fmt.Sprintf("当前儿童 ID：%d，家庭 ID：%d。", childID, familyID))
-	parts = append(parts, "回答要简洁、温暖、富有鼓励性。")
-	parts = append(parts, "如果家长请求设置目标或回顾，你可以调用对应工具协助。")
-	parts = append(parts, "注意：当前用户是儿童时，不能执行家长专属操作（设置目标、调整积分、创建周期），若儿童请求这些操作，温柔地告诉他们需要请家长帮忙。")
+	parts = append(parts, "")
+	parts = append(parts, fmt.Sprintf("【当前对话模式：%s】", mode))
+	if mode == "child" {
+		parts = append(parts, fmt.Sprintf("- 儿童模式：就是「%s」本人在和你聊天。你是 TA 的伙伴，以「你」称呼 TA，对话围绕 TA 自己的任务/积分/成长。", nickname))
+		parts = append(parts, "- 语气要求：温暖、童趣、短句、鼓励，避免长段落和表格，回复控制在 80 字以内。")
+		parts = append(parts, "- 权限边界：儿童不可执行家长专属操作（设置目标/调积分/建周期/建任务模板）。若 TA 提出这些请求，温柔告诉 TA「这个要请爸爸妈妈帮忙哦」。")
+	} else {
+		parts = append(parts, fmt.Sprintf("- 家长模式：家长在以「%s」为关注点与你交流。你可以协助家长设计任务、调整积分、设置目标、创建任务模板、回顾成长。", nickname))
+		parts = append(parts, "- 语气要求：专业、有条理，可使用要点和表格。")
+		parts = append(parts, "- 家长想添加自定义任务模板时，可以调用 create_task_template 工具协助设计：先与家长探讨任务标题、适龄范围、能力维度、积分、难度等，然后提议模板字段供家长确认。能力维度 ID：1=生活自理, 2=独立自主, 3=动手实践, 4=学习认知, 5=社交协作, 6=身心健康。模板类型：daily=日常任务, habit=习惯养成, parent=主题任务。")
+	}
+	parts = append(parts, "")
+	parts = append(parts, "【被关注的儿童档案】")
+	parts = append(parts, fmt.Sprintf("- 昵称：%s", nickname))
+	parts = append(parts, fmt.Sprintf("- 年龄：%s 岁（生日 %s）", ageStr, birthdayStr))
+	parts = append(parts, fmt.Sprintf("- 年级：%s（0=学前）", gradeStr))
+	parts = append(parts, fmt.Sprintf("- 家庭 ID：%d，儿童 user_id：%d", familyID, childID))
+	parts = append(parts, "")
+	parts = append(parts, "以上档案信息已注入，无需再用工具查询儿童基础信息；如需更详细的能力得分/周期/任务等数据，可调用对应工具。")
 	return strings.Join(parts, "\n")
 }
 
@@ -279,7 +326,7 @@ func (s *ChatService) intentFromToolName(toolName string) string {
 		return "query_task"
 	case "list_redeem_items", "list_redeem_records", "redeem_item":
 		return "query_reward"
-	case "set_stage_goal", "create_cycle", "adjust_score":
+	case "set_stage_goal", "create_cycle", "adjust_score", "create_task_template":
 		return "parent_set_goal"
 	case "list_growth_stories":
 		return "parent_review"
@@ -321,12 +368,21 @@ func (s *ChatService) detectIntent(message string) string {
 }
 
 // CreateSession 创建对话会话
-func (s *ChatService) CreateSession(familyID, childID, userID uint, role string) (*model.ChatSession, error) {
+// mode 为对话模式：parent=家长代聊 / child=儿童本人；空值按 role 推断
+func (s *ChatService) CreateSession(familyID, childID, userID uint, role, mode string) (*model.ChatSession, error) {
+	if mode != "parent" && mode != "child" {
+		if role == "child" {
+			mode = "child"
+		} else {
+			mode = "parent"
+		}
+	}
 	session := &model.ChatSession{
 		FamilyID: familyID,
 		ChildID:  childID,
 		UserID:   userID,
 		Role:     role,
+		Mode:     mode,
 	}
 	if err := database.DB.Create(session).Error; err != nil {
 		return nil, err

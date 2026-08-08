@@ -18,6 +18,7 @@ export interface ChatSession {
   child_id: number;
   user_id: number;
   role: string;
+  mode?: string; // 对话模式：parent=家长代聊 / child=儿童本人
   title: string;
   last_message: string;
   last_message_at: string;
@@ -39,11 +40,18 @@ export interface GetHistoryResponse {
   session_id: number;
 }
 
-export async function sendMessage(message: string, childId: number, sessionId?: number): Promise<SendMessageResponse> {
+export type ChatMode = 'parent' | 'child';
+
+export async function sendMessage(
+  message: string,
+  childId: number,
+  sessionId?: number,
+  mode?: ChatMode,
+): Promise<SendMessageResponse> {
   return request<SendMessageResponse>({
     method: 'POST',
     url: '/chat/message',
-    data: { message, child_id: childId, session_id: sessionId },
+    data: { message, child_id: childId, session_id: sessionId, mode },
   });
 }
 
@@ -73,11 +81,11 @@ export async function searchSessions(childId: number, q: string): Promise<ChatSe
 }
 
 // 主动新建会话
-export async function createSession(childId: number): Promise<ChatSession> {
+export async function createSession(childId: number, mode?: ChatMode): Promise<ChatSession> {
   return request<ChatSession>({
     method: 'POST',
     url: '/chat/sessions',
-    data: { child_id: childId },
+    data: { child_id: childId, mode },
   });
 }
 

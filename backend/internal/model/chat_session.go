@@ -9,6 +9,7 @@ type ChatSession struct {
 	ChildID       uint      `gorm:"index;not null" json:"child_id"`
 	UserID        uint      `gorm:"not null" json:"user_id"`
 	Role          string    `gorm:"size:20" json:"role"` // parent/child
+	Mode          string    `gorm:"size:20;default:'parent'" json:"mode"` // 对话模式：parent=家长代聊 / child=儿童本人
 	Title         string    `gorm:"size:100" json:"title"`
 	LastMessage   string    `gorm:"type:text" json:"last_message"`
 	LastMessageAt time.Time `json:"last_message_at"`

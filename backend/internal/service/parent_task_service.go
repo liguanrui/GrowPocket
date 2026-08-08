@@ -47,7 +47,7 @@ type CreateParentTaskInput struct {
 
 // CreateParentTask 创建主题任务（父任务）
 // 支持两种方式：
-//  1. template_id 不为 0：从 ParentTaskTemplate 创建
+//  1. template_id 不为 0：从 TaskTemplate(template_type='parent') 创建
 //  2. 自定义创建：使用 title + description + estimated_days + category
 //
 // 创建后自动调用 GenerateSubTaskOutline 生成大纲并实例化第 1 个子任务
@@ -66,9 +66,9 @@ func (s *ParentTaskService) CreateParentTask(input CreateParentTaskInput) (*mode
 	)
 
 	if input.TemplateID != 0 {
-		// 从模板创建
-		var tpl model.ParentTaskTemplate
-		if err := database.DB.First(&tpl, input.TemplateID).Error; err != nil {
+		// 从模板创建（统一查 TaskTemplate WHERE template_type='parent'）
+		var tpl model.TaskTemplate
+		if err := database.DB.Where("id = ? AND template_type = ?", input.TemplateID, "parent").First(&tpl).Error; err != nil {
 			return nil, errors.New("主题任务模板不存在")
 		}
 		title = tpl.Title

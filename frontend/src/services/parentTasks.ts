@@ -4,16 +4,17 @@ import type { Task } from './tasks';
 export interface ParentTaskTemplate {
   id: number;
   family_id: number;
-  child_id: number;
   title: string;
   description: string;
   category: string;
-  age_min: number;
-  age_max: number;
+  min_age: number;
+  max_age: number;
   estimated_days: number;
-  key_milestones: string; // JSON string
-  is_custom: boolean;
+  key_milestones: string;
+  is_system: boolean;
   created_at: string;
+  template_type: string;
+  [key: string]: unknown; // 兼容 TaskTemplate 返回的多余字段
 }
 
 // 获取年龄段适配的预设主题任务模板

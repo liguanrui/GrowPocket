@@ -88,7 +88,7 @@ func (h *TaskGenerationHandler) ReviewAITask(c *gin.Context) {
 }
 
 // GenerateToday POST /api/tasks/ai-generate
-// 家长手动触发：为指定儿童立即生成今日 AI 任务
+// 家长手动触发：为指定儿童立即生成今日 AI 任务（仅 daily，跳过习惯和主题任务）
 func (h *TaskGenerationHandler) GenerateToday(c *gin.Context) {
 	if middleware.GetRole(c) != "parent" {
 		util.FailForbidden(c, "仅家长可生成 AI 任务")
@@ -115,7 +115,7 @@ func (h *TaskGenerationHandler) GenerateToday(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.GenerateTasksForChild(req.ChildID, familyID, userID, child.Nickname); err != nil {
+	if err := h.service.GenerateDailyTasksOnly(req.ChildID, familyID, userID, child.Nickname); err != nil {
 		util.FailInternal(c, "生成失败: "+err.Error())
 		return
 	}

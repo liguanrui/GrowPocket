@@ -5,6 +5,7 @@ import (
 	"growpocket/internal/model"
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -118,18 +119,22 @@ func NewTaskTemplateHandler() *TaskTemplateHandler {
 }
 
 type createTaskTemplateReq struct {
-	Title       string `json:"title" binding:"required,max=200"`
-	Description string `json:"description"`
-	Points      int    `json:"points" binding:"min=0"`
-	Icon        string `json:"icon" binding:"max=50"`
-	Category    string `json:"category" binding:"max=50"`
-	SortOrder   int    `json:"sort_order"`
-	MinAge      int    `json:"min_age"`
-	MaxAge      int    `json:"max_age"`
-	EstimatedTime int `json:"estimated_time"`
-	Difficulty  string `json:"difficulty"`
-	Frequency   string `json:"frequency"`
-	Tags        string `json:"tags"`
+	Title              string `json:"title" binding:"required,max=200"`
+	Description        string `json:"description"`
+	Points             int    `json:"points" binding:"min=0"`
+	Icon               string `json:"icon" binding:"max=50"`
+	Category           string `json:"category" binding:"max=50"`
+	SortOrder          int    `json:"sort_order"`
+	MinAge             int    `json:"min_age"`
+	MaxAge             int    `json:"max_age"`
+	EstimatedTime      int    `json:"estimated_time"`
+	Difficulty         string `json:"difficulty"`
+	Frequency          string `json:"frequency"`
+	Tags               string `json:"tags"`
+	AbilityDimensionID uint   `json:"ability_dimension_id"`
+	TemplateType       string `json:"template_type"`  // daily/habit/parent
+	EstimatedDays      int    `json:"estimated_days"` // 仅 parent
+	KeyMilestones      string `json:"key_milestones"` // 仅 parent JSON
 }
 
 func (h *TaskTemplateHandler) CreateTemplate(c *gin.Context) {
@@ -154,6 +159,10 @@ func (h *TaskTemplateHandler) CreateTemplate(c *gin.Context) {
 		req.Difficulty,
 		req.Frequency,
 		req.Tags,
+		req.AbilityDimensionID,
+		req.TemplateType,
+		req.EstimatedDays,
+		req.KeyMilestones,
 	)
 	if err != nil {
 		util.FailInternal(c, err.Error())
@@ -163,19 +172,23 @@ func (h *TaskTemplateHandler) CreateTemplate(c *gin.Context) {
 }
 
 type updateTaskTemplateReq struct {
-	Title        *string `json:"title"`
-	Description  *string `json:"description"`
-	Points       *int    `json:"points"`
-	Icon         *string `json:"icon"`
-	Category     *string `json:"category"`
-	Difficulty   *string `json:"difficulty"`
-	Frequency    *string `json:"frequency"`
-	Tags         *string `json:"tags"`
-	SortOrder    *int    `json:"sort_order"`
-	MinAge       *int    `json:"min_age"`
-	MaxAge       *int    `json:"max_age"`
-	EstimatedTime *int   `json:"estimated_time"`
-	IsActive     *bool   `json:"is_active"`
+	Title              *string `json:"title"`
+	Description        *string `json:"description"`
+	Points             *int    `json:"points"`
+	Icon               *string `json:"icon"`
+	Category           *string `json:"category"`
+	Difficulty         *string `json:"difficulty"`
+	Frequency          *string `json:"frequency"`
+	Tags               *string `json:"tags"`
+	SortOrder          *int    `json:"sort_order"`
+	MinAge             *int    `json:"min_age"`
+	MaxAge             *int    `json:"max_age"`
+	EstimatedTime      *int    `json:"estimated_time"`
+	IsActive           *bool   `json:"is_active"`
+	AbilityDimensionID *uint   `json:"ability_dimension_id"`
+	TemplateType       *string `json:"template_type"`
+	EstimatedDays      *int    `json:"estimated_days"`
+	KeyMilestones      *string `json:"key_milestones"`
 }
 
 func (h *TaskTemplateHandler) UpdateTemplate(c *gin.Context) {
@@ -207,6 +220,10 @@ func (h *TaskTemplateHandler) UpdateTemplate(c *gin.Context) {
 		req.MaxAge,
 		req.EstimatedTime,
 		req.IsActive,
+		req.AbilityDimensionID,
+		req.TemplateType,
+		req.EstimatedDays,
+		req.KeyMilestones,
 	)
 	if err != nil {
 		util.FailBadRequest(c, err.Error())
@@ -230,7 +247,42 @@ func (h *TaskTemplateHandler) DeleteTemplate(c *gin.Context) {
 }
 
 func (h *TaskTemplateHandler) ListTemplates(c *gin.Context) {
-	templates, err := h.service.ListTemplates(middleware.GetFamilyID(c))
+	familyID := middleware.GetFamilyID(c)
+	// A 筛选：支持 dimension_id / is_system / age / category 查询参数
+	filter := &service.TemplateFilter{}
+	hasFilter := false
+	if dimStr := c.Query("dimension_id"); dimStr != "" {
+		if dimID, err := strconv.ParseUint(dimStr, 10, 64); err == nil {
+			d := uint(dimID)
+			filter.DimensionID = &d
+			hasFilter = true
+		}
+	}
+	if sysStr := c.Query("is_system"); sysStr != "" {
+		isSys := sysStr == "true" || sysStr == "1"
+		filter.IsSystem = &isSys
+		hasFilter = true
+	}
+	if ageStr := c.Query("age"); ageStr != "" {
+		if age, err := strconv.Atoi(ageStr); err == nil {
+			filter.AgeMin = &age
+			filter.AgeMax = &age
+			hasFilter = true
+		}
+	}
+	if catStr := c.Query("category"); catStr != "" {
+		filter.Category = &catStr
+		hasFilter = true
+	}
+	if ttStr := c.Query("template_type"); ttStr != "" {
+		filter.TemplateType = &ttStr
+		hasFilter = true
+	}
+	var fptr *service.TemplateFilter
+	if hasFilter {
+		fptr = filter
+	}
+	templates, err := h.service.ListTemplates(familyID, fptr)
 	if err != nil {
 		util.FailInternal(c, err.Error())
 		return
@@ -292,5 +344,118 @@ func (h *TaskTemplateHandler) CreateTaskFromTemplate(c *gin.Context) {
 		return
 	}
 	util.OK(c, task)
+}
+
+// ===== B 恢复系统默认模板 =====
+
+func (h *TaskTemplateHandler) ResetSystemTemplate(c *gin.Context) {
+	title := c.Query("title")
+	if title == "" {
+		util.FailBadRequest(c, "title 参数不能为空")
+		return
+	}
+	if err := h.service.ResetSystemTemplate(middleware.GetFamilyID(c), title); err != nil {
+		util.FailBadRequest(c, err.Error())
+		return
+	}
+	util.OK(c, gin.H{"message": "已恢复为系统默认"})
+}
+
+func (h *TaskTemplateHandler) RestoreAllSystemTemplates(c *gin.Context) {
+	restored, err := h.service.RestoreAllSystemTemplates(middleware.GetFamilyID(c))
+	if err != nil {
+		util.FailInternal(c, err.Error())
+		return
+	}
+	util.OK(c, gin.H{"restored": restored})
+}
+
+// ===== C 按维度批量启停 =====
+
+type batchToggleReq struct {
+	DimensionID uint `json:"dimension_id" binding:"required"`
+	IsActive    bool `json:"is_active"`
+}
+
+func (h *TaskTemplateHandler) BatchToggleByDimension(c *gin.Context) {
+	var req batchToggleReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		util.FailBadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+	affected, err := h.service.BatchToggleByDimension(middleware.GetFamilyID(c), req.DimensionID, req.IsActive)
+	if err != nil {
+		util.FailInternal(c, err.Error())
+		return
+	}
+	util.OK(c, gin.H{"affected": affected})
+}
+
+// C 多选批量启停
+type batchToggleByIDsReq struct {
+	IDs      []uint `json:"ids" binding:"required"`
+	IsActive bool   `json:"is_active"`
+}
+
+func (h *TaskTemplateHandler) BatchToggleByIDs(c *gin.Context) {
+	var req batchToggleByIDsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		util.FailBadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+	affected, err := h.service.BatchToggleByIDs(middleware.GetFamilyID(c), req.IDs, req.IsActive)
+	if err != nil {
+		util.FailInternal(c, err.Error())
+		return
+	}
+	util.OK(c, gin.H{"affected": affected})
+}
+
+// ===== D 模板广场 =====
+
+func (h *TaskTemplateHandler) ShareToPlaza(c *gin.Context) {
+	id, err := parseUintID(c.Param("id"))
+	if err != nil {
+		util.FailBadRequest(c, "ID 格式错误")
+		return
+	}
+	plaza, err := h.service.ShareToPlaza(middleware.GetFamilyID(c), id, middleware.GetUserID(c))
+	if err != nil {
+		util.FailBadRequest(c, err.Error())
+		return
+	}
+	util.OK(c, plaza)
+}
+
+func (h *TaskTemplateHandler) ListPlaza(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	var dimID *uint
+	if dimStr := c.Query("dimension_id"); dimStr != "" {
+		if d, err := strconv.ParseUint(dimStr, 10, 64); err == nil {
+			dd := uint(d)
+			dimID = &dd
+		}
+	}
+	list, total, err := h.service.ListPlaza(dimID, page, size)
+	if err != nil {
+		util.FailInternal(c, err.Error())
+		return
+	}
+	util.OK(c, gin.H{"list": list, "total": total, "page": page, "size": size})
+}
+
+func (h *TaskTemplateHandler) ImportFromPlaza(c *gin.Context) {
+	id, err := parseUintID(c.Param("id"))
+	if err != nil {
+		util.FailBadRequest(c, "ID 格式错误")
+		return
+	}
+	tpl, err := h.service.ImportFromPlaza(middleware.GetFamilyID(c), middleware.GetUserID(c), id)
+	if err != nil {
+		util.FailBadRequest(c, err.Error())
+		return
+	}
+	util.OK(c, tpl)
 }
 

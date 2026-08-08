@@ -5,7 +5,12 @@ import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import * as templateService from '../services/taskTemplates';
 import type { TaskTemplate } from '../services/taskTemplates';
-import { TASK_CATEGORY_OPTIONS } from '../services/taskTemplates';
+import {
+  TASK_CATEGORY_OPTIONS,
+  ABILITY_DIMENSION_OPTIONS,
+  DIFFICULTY_OPTIONS,
+  FREQUENCY_OPTIONS,
+} from '../services/taskTemplates';
 
 const EMOJI_OPTIONS = ['🌟', '🔥', '💪', '💎', '🥈', '🥇', '👑', '🐝', '⭐', '🏆', '🎁', '❤️', '🏅', '⚡', '🌈', '🎯', '🎖️', '💯', '🎪', '🎨'];
 
@@ -24,6 +29,12 @@ export function TemplateEditPage() {
     category: '学习',
     sort_order: 0,
     is_active: true,
+    min_age: 6,
+    max_age: 12,
+    estimated_time: 15,
+    difficulty: 'medium',
+    frequency: 'once',
+    ability_dimension_id: 4,
   });
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(isEdit);
@@ -45,6 +56,12 @@ export function TemplateEditPage() {
         category: template.category,
         sort_order: template.sort_order,
         is_active: template.is_active,
+        min_age: template.min_age,
+        max_age: template.max_age,
+        estimated_time: template.estimated_time,
+        difficulty: template.difficulty,
+        frequency: template.frequency,
+        ability_dimension_id: template.ability_dimension_id,
       });
     } catch (e: any) {
       toast.error(e.message || '加载失败');
@@ -187,6 +204,97 @@ export function TemplateEditPage() {
                 >
                   <span>{option.icon}</span>
                   <span>{option.value}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-2">能力维度</label>
+            <div className="flex flex-wrap gap-2">
+              {ABILITY_DIMENSION_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setForm({ ...form, ability_dimension_id: option.value })}
+                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-sm transition-all ${
+                    form.ability_dimension_id === option.value
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-100 text-text-secondary hover:bg-gray-200'
+                  }`}
+                >
+                  <span>{option.icon}</span>
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-2">最小年龄</label>
+              <input
+                type="number"
+                min="0"
+                value={form.min_age}
+                onChange={(e) => setForm({ ...form, min_age: Math.max(0, Number(e.target.value) || 0) })}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-2">最大年龄</label>
+              <input
+                type="number"
+                min="0"
+                value={form.max_age}
+                onChange={(e) => setForm({ ...form, max_age: Math.max(0, Number(e.target.value) || 0) })}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-2">预计分钟</label>
+              <input
+                type="number"
+                min="0"
+                value={form.estimated_time}
+                onChange={(e) => setForm({ ...form, estimated_time: Math.max(0, Number(e.target.value) || 0) })}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-2">难度</label>
+            <div className="flex flex-wrap gap-2">
+              {DIFFICULTY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setForm({ ...form, difficulty: option.value })}
+                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-sm transition-all ${
+                    form.difficulty === option.value
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-100 text-text-secondary hover:bg-gray-200'
+                  }`}
+                >
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-2">频次</label>
+            <div className="flex flex-wrap gap-2">
+              {FREQUENCY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setForm({ ...form, frequency: option.value })}
+                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-sm transition-all ${
+                    form.frequency === option.value
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-100 text-text-secondary hover:bg-gray-200'
+                  }`}
+                >
+                  <span>{option.label}</span>
                 </button>
               ))}
             </div>

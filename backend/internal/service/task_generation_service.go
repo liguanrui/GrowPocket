@@ -55,17 +55,30 @@ type learningDimBoost struct {
 	learningDimID uint // 学习认知维度 ID（code='learning'）
 }
 
-// GenerateTasksForChild 为儿童生成每日 AI 任务（三段式混合生成主流程）
-// 不改变函数签名：每日 08:00 scheduler 与 hasTodayAITask 幂等逻辑保持不变
+// GenerateTasksForChild 为儿童生成每日 AI 任务（自动模式：每日定时触发）
+// 流程：1.习惯每日子任务就绪（含AI鼓励语+进度） 2.生成2-3个daily任务
+// 主题任务（parent_task）不参与每日自动生成，由家长手动推进
 func (s *TaskGenerationService) GenerateTasksForChild(childID, familyID, createdBy uint, childName string) error {
-	// 先确保习惯每日子任务就绪（habit_daily），与 AI 任务生成相互独立
+	// Step 1: 确保习惯每日子任务就绪（habit_daily），含 AI 鼓励语结合持续进度
 	if s.habitService != nil {
 		if err := s.habitService.EnsureHabitDailyReady(childID); err != nil {
 			log.Printf("[TaskGen] 习惯每日任务就绪检查失败 child=%d: %v", childID, err)
 		}
 	}
 
-	// Step 1: 收集上下文（保留现有逻辑）
+	// Step 2: 生成 daily 任务
+	return s.generateDailyTasks(childID, familyID, createdBy, childName)
+}
+
+// GenerateDailyTasksOnly 手动触发：仅生成 daily 任务，跳过习惯和主题任务
+// 供家长手动点击"AI生成"时调用
+func (s *TaskGenerationService) GenerateDailyTasksOnly(childID, familyID, createdBy uint, childName string) error {
+	return s.generateDailyTasks(childID, familyID, createdBy, childName)
+}
+
+// generateDailyTasks daily 任务生成核心逻辑（召回→LLM→守门员→写库）
+func (s *TaskGenerationService) generateDailyTasks(childID, familyID, createdBy uint, childName string) error {
+	// Step 1: 收集上下文
 	scores, _ := s.ability.GetChildScores(childID, familyID)
 	dimensions, _ := s.ability.ListDimensions()
 	cycle, goals, _ := s.cycleService.GetCurrentCycle(childID, familyID)
@@ -207,18 +220,8 @@ func (s *TaskGenerationService) GenerateTasksForChild(childID, familyID, created
 	}
 
 	// 结构化日志（模块 C3）
-	log.Printf("[TaskGen] child=%d recalled=%d prompt_sent=true llm_returned=%d sanitized=%d rejected=%d",
-		childID, len(candidates), llmReturned, sanitizedCount, rejectedCount)
-
-	// 补齐 GoalType=parent_task 目标关联的父任务子任务推进（Task 27.2）
-	// 单个 parent_task 补齐失败不阻断整体流程，仅记录日志
-	s.processParentTaskGoals(goals)
-
-	// 兜底：检查该孩子是否有 3 天未完成的 parent 任务，推进下一批实例化
-	// 失败不阻断 GenerateTasksForChild 主流程，仅记录日志
-	if err := s.CheckStaleParentTasks(childID); err != nil {
-		log.Printf("[TaskGen] CheckStaleParentTasks 失败 child=%d: %v", childID, err)
-	}
+	log.Printf("[TaskGen] child=%d recalled=%d prompt_sent=true llm_returned=%d sanitized=%d rejected=%d created=%d",
+		childID, len(candidates), llmReturned, sanitizedCount, rejectedCount, created)
 
 	return nil
 }
@@ -296,15 +299,16 @@ func (s *TaskGenerationService) processParentTaskGoals(goals []model.Goal) {
 }
 
 // recallCandidateTemplates 召回候选任务模板（RAG 阶段）
-// 流程：查家庭模板→无则全局 → 适龄过滤 → 蓄势维过滤(含 Task A5 配额) → Jaccard 去重 → 主轴/最弱/随机排序 → top 20
+// 流程：查家庭 daily 模板→无则全局 → 适龄过滤 → 蓄势维过滤(含 Task A5 配额) → Jaccard 去重 → 主轴/最弱/随机排序 → top 20
+// 注意：仅召回 template_type='daily' 的模板，habit/parent 不参与日常 AI 任务生成
 func (s *TaskGenerationService) recallCandidateTemplates(child model.User, grade int, scores []model.ChildAbilityScore, recentTaskTitles []string) ([]model.TaskTemplate, error) {
-	// 1. 查家庭模板，没有则查全局模板（family_id = 0）
+	// 1. 查家庭 daily 模板，没有则查全局模板（family_id = 0）
 	var templates []model.TaskTemplate
-	if err := database.DB.Where("family_id = ? AND is_active = ?", child.FamilyID, true).Find(&templates).Error; err != nil {
+	if err := database.DB.Where("family_id = ? AND is_active = ? AND template_type = ?", child.FamilyID, true, "daily").Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	if len(templates) == 0 {
-		if err := database.DB.Where("family_id = ? AND is_active = ?", 0, true).Find(&templates).Error; err != nil {
+		if err := database.DB.Where("family_id = ? AND is_active = ? AND template_type = ?", 0, true, "daily").Find(&templates).Error; err != nil {
 			return nil, err
 		}
 	}

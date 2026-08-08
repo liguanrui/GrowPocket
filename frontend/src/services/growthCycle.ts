@@ -23,6 +23,9 @@ export interface Goal {
   target_score: number;
   created_at?: string;
   updated_at?: string;
+  goal_type?: 'dimension' | 'habit' | 'parent_task';
+  habit_id?: number | null;
+  parent_task_id?: number | null;
 }
 
 // 维度目标进度

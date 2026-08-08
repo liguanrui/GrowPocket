@@ -31,9 +31,28 @@ func main() {
 		log.Printf("初始化成就数据失败: %v", err)
 	}
 
-	// 为已有家庭补齐默认任务模板
+	// 任务模板重置：通过环境变量 RESET_TEMPLATES=true 触发，清除旧数据并重新插入最新模板
+	if os.Getenv("RESET_TEMPLATES") == "true" {
+		log.Printf("检测到 RESET_TEMPLATES=true，开始重置所有家庭任务模板...")
+		if err := service.ReseedAllFamiliesTemplates(); err != nil {
+			log.Printf("重置任务模板失败: %v", err)
+		} else {
+			log.Printf("任务模板重置完成")
+		}
+	}
+
+	// 为已有家庭补齐默认任务模板（基础幂等初始化，旧33条兼容）
 	if err := service.SeedAllFamiliesTemplates(); err != nil {
 		log.Printf("补齐任务模板失败: %v", err)
+	}
+	// 任务模板 v2 扩充迁移：为老家庭补齐约 117 条新模板 + 旧模板 AbilityDimensionID 回填
+	// 幂等：按 title 去重插入，已迁移过的家庭不会重复写入
+	if err := service.SeedAllFamiliesTemplates_Expanded(); err != nil {
+		log.Printf("扩充任务模板(v2)失败: %v", err)
+	}
+	// E 系统模板继承同步：将未自定义的系统模板字段更新为最新版本（保护家长已手动改过的模板）
+	if err := service.SyncSystemTemplates(); err != nil {
+		log.Printf("同步系统模板失败: %v", err)
 	}
 
 	// 初始化 AI 服务
@@ -159,6 +178,17 @@ func main() {
 		authorized.PUT("/task-templates/:id", taskTemplateHandler.UpdateTemplate)
 		authorized.DELETE("/task-templates/:id", taskTemplateHandler.DeleteTemplate)
 		authorized.POST("/task-templates/:id/create-task", taskTemplateHandler.CreateTaskFromTemplate)
+		// B 恢复系统默认模板（单条按 title / 全部恢复）
+		authorized.POST("/task-template-actions/reset", taskTemplateHandler.ResetSystemTemplate)
+		authorized.POST("/task-template-actions/restore-all", taskTemplateHandler.RestoreAllSystemTemplates)
+		// C 按能力维度批量启停系统模板
+		authorized.POST("/task-template-actions/batch-toggle", taskTemplateHandler.BatchToggleByDimension)
+		// C 多选批量启停模板
+		authorized.POST("/task-template-actions/batch-toggle-ids", taskTemplateHandler.BatchToggleByIDs)
+		// D 模板广场（分享/浏览/导入）
+		authorized.POST("/task-templates/:id/share", taskTemplateHandler.ShareToPlaza)
+		authorized.GET("/task-template-plaza", taskTemplateHandler.ListPlaza)
+		authorized.POST("/task-template-plaza/:id/import", taskTemplateHandler.ImportFromPlaza)
 
 		// AI 智能推荐
 		taskRecommendHandler := handler.NewTaskRecommendHandler()

@@ -3,15 +3,16 @@ import { request } from './api';
 export interface Habit {
   id: number;
   family_id: number;
-  child_id: number;
   title: string;
   description: string;
   category: string;
-  age_min: number;
-  age_max: number;
-  is_custom: boolean;
+  min_age: number;
+  max_age: number;
+  is_system: boolean;
   is_active: boolean;
   created_at: string;
+  template_type: string;
+  [key: string]: unknown; // 兼容 TaskTemplate 返回的多余字段
 }
 
 export interface HabitStats {

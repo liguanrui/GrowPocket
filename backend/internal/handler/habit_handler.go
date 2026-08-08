@@ -4,6 +4,7 @@ import (
 	"growpocket/internal/database"
 	"growpocket/internal/middleware"
 	"growpocket/internal/model"
+	"growpocket/internal/service"
 	"growpocket/internal/util/timeutil"
 	"growpocket/pkg/util"
 	"strconv"
@@ -12,7 +13,8 @@ import (
 )
 
 // GetPresetHabits GET /api/habits/preset?age=8
-// 按年龄过滤预设习惯（age >= AgeMin AND age <= AgeMax AND is_custom=false AND is_active=true）
+// 按年龄过滤预设习惯（template_type='habit' AND is_system=true AND is_active=true AND 年龄范围内）
+// 预设习惯现在为每家庭副本，按当前家庭过滤
 func GetPresetHabits(c *gin.Context) {
 	ageStr := c.Query("age")
 	age, err := strconv.Atoi(ageStr)
@@ -21,15 +23,17 @@ func GetPresetHabits(c *gin.Context) {
 		return
 	}
 
-	var habits []model.Habit
+	familyID := middleware.GetFamilyID(c)
+	var habits []model.TaskTemplate
 	if err := database.DB.
-		Where("age_min <= ? AND age_max >= ? AND is_custom = ? AND is_active = ?", age, age, false, true).
+		Where("family_id = ? AND template_type = ? AND is_system = ? AND is_active = ? AND min_age <= ? AND max_age >= ?",
+			familyID, "habit", true, true, age, age).
 		Find(&habits).Error; err != nil {
 		util.FailInternal(c, err.Error())
 		return
 	}
 	if habits == nil {
-		habits = []model.Habit{}
+		habits = []model.TaskTemplate{}
 	}
 	util.OK(c, habits)
 }
@@ -42,7 +46,8 @@ type createCustomHabitReq struct {
 }
 
 // CreateCustomHabit POST /api/habits/custom
-// 创建自定义习惯（IsCustom=true, FamilyID=从JWT获取, ChildID=请求体, IsActive=true）
+// 创建自定义习惯（改用 TaskTemplate，TemplateType="habit", IsSystem=false 表示自定义, IsActive=true）
+// 注意：TaskTemplate 无 ChildID 字段，req.ChildID 保留以兼容前端但不再使用
 func CreateCustomHabit(c *gin.Context) {
 	var req createCustomHabitReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,16 +55,18 @@ func CreateCustomHabit(c *gin.Context) {
 		return
 	}
 
-	habit := model.Habit{
-		FamilyID:    middleware.GetFamilyID(c),
-		ChildID:     req.ChildID,
-		Title:       req.Title,
-		Description: req.Description,
-		Category:    req.Category,
-		IsCustom:    true,
-		IsActive:    true,
-	}
-	if err := database.DB.Create(&habit).Error; err != nil {
+	familyID := middleware.GetFamilyID(c)
+	createdBy := middleware.GetUserID(c)
+	tplSvc := service.NewTaskTemplateService()
+	// 习惯 Category 值（life/chore/cooking 等）保持原值不做映射，前端会适配
+	habit, err := tplSvc.CreateTemplate(
+		familyID, createdBy,
+		req.Title, req.Description, "", req.Category,
+		0, 0, 0, 0, 0,
+		"", "daily", "", 0,
+		"habit", 0, "",
+	)
+	if err != nil {
 		util.FailInternal(c, err.Error())
 		return
 	}
@@ -67,7 +74,8 @@ func CreateCustomHabit(c *gin.Context) {
 }
 
 // GetActiveHabits GET /api/habits/active?child_id=2
-// 获取当前周期绑定的习惯：查当前 active 周期的 GoalType=habit 目标关联的 HabitID，返回 Habit 列表
+// 获取当前周期绑定的习惯：查当前 active 周期的 GoalType=habit 目标关联的 HabitID，返回 TaskTemplate 列表
+// Goal.HabitID 原指向 Habit.ID，现指向 TaskTemplate.ID，字段名不变
 func GetActiveHabits(c *gin.Context) {
 	childIDStr := c.Query("child_id")
 	childID64, err := strconv.ParseUint(childIDStr, 10, 64)
@@ -85,7 +93,7 @@ func GetActiveHabits(c *gin.Context) {
 		Order("created_at DESC").
 		First(&cycle).Error; err != nil {
 		// 无活跃周期，返回空列表
-		util.OK(c, []model.Habit{})
+		util.OK(c, []model.TaskTemplate{})
 		return
 	}
 
@@ -105,17 +113,17 @@ func GetActiveHabits(c *gin.Context) {
 		}
 	}
 	if len(habitIDs) == 0 {
-		util.OK(c, []model.Habit{})
+		util.OK(c, []model.TaskTemplate{})
 		return
 	}
 
-	var habits []model.Habit
-	if err := database.DB.Where("id IN ?", habitIDs).Find(&habits).Error; err != nil {
+	var habits []model.TaskTemplate
+	if err := database.DB.Where("id IN ? AND template_type = ?", habitIDs, "habit").Find(&habits).Error; err != nil {
 		util.FailInternal(c, err.Error())
 		return
 	}
 	if habits == nil {
-		habits = []model.Habit{}
+		habits = []model.TaskTemplate{}
 	}
 	util.OK(c, habits)
 }

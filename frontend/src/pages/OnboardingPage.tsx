@@ -1013,7 +1013,7 @@ export function OnboardingPage() {
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: '#2D2A26' }}>
                                   {habit.title}
-                                  {habit.is_custom && (
+                                  {!habit.is_system && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-medium">
                                       自定义
                                     </span>
@@ -1126,7 +1126,7 @@ export function OnboardingPage() {
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap" style={{ color: '#2D2A26' }}>
                                     {tpl.title}
-                                    {tpl.is_custom && (
+                                    {!tpl.is_system && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700 font-medium">
                                         自定义
                                       </span>

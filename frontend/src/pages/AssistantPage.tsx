@@ -1,13 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Send, PanelLeft, SquarePen, ChevronDown, Search, X, Plus, MessageCircle,
   Check, Star, CheckSquare, TrendingUp, Gift, UserPlus, Volume2, VolumeX,
   Mic, Keyboard, Volume1, Coins, BarChart3, ListTodo, FileText, ShoppingBag,
   Receipt, Clock, Image, Target, Sparkles, Trophy, Heart, Calendar, Flag,
+  LayoutTemplate,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
 import type { Child } from '../stores/childStore';
+import { useAuthStore } from '../stores/authStore';
 import * as chatService from '../services/chat';
 import type { ChatMessage, ChatSession } from '../services/chat';
 // V3.1 思路 C：IP 不再按成长指数切形态，无需 getGrowthIndex import
@@ -119,7 +123,7 @@ const READONLY_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
   ],
 };
 
-// 5 个写操作建议工具提示
+// 6 个写操作建议工具提示
 const WRITE_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
   title: '做一做',
   subtitle: '发起操作',
@@ -130,6 +134,7 @@ const WRITE_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
     { name: 'set_stage_goal', label: '设置阶段目标', prompt: '帮我为周期设置一个能力目标', icon: Target },
     { name: 'create_cycle', label: '创建成长周期', prompt: '创建一个新的成长周期', icon: Calendar },
     { name: 'adjust_score', label: '奖励积分', prompt: '给宝贝奖励 50 积分，标题：作业认真', icon: Flag },
+    { name: 'create_task_template', label: '添加任务模板', prompt: '帮我添加一个自定义任务模板，我们一起设计标题、适龄范围和能力维度', icon: LayoutTemplate },
   ],
 };
 
@@ -522,8 +527,40 @@ export function AssistantPage() {
   const tts = useSpeechSynthesis({ lang: 'zh-CN', preprocess: true, preferCloud: true });
 
   const children = childStore.children;
-  const selectedChildId = childStore.currentChildId || children[0]?.id || null;
-  const selectedChild = children.find((c) => c.id === selectedChildId) || null;
+  const authUser = useAuthStore((s) => s.user);
+  const isParent = authUser?.role === 'parent';
+
+  // 对话模式：parent=家长代聊 / child=儿童本人
+  // 儿童角色强制 child 模式且不可切换；家长角色默认 parent，可手动切到 child 演练
+  const [mode, setMode] = useState<'parent' | 'child'>(() => {
+    const saved = localStorage.getItem('assistantMode');
+    if (saved === 'parent' || saved === 'child') return saved;
+    return isParent ? 'parent' : 'child';
+  });
+  useEffect(() => {
+    // 角色变化时纠正 mode（儿童始终 child）
+    if (!isParent && mode !== 'child') {
+      setMode('child');
+      localStorage.setItem('assistantMode', 'child');
+    }
+  }, [isParent, mode]);
+  const switchMode = (m: 'parent' | 'child') => {
+    if (!isParent && m === 'parent') return; // 儿童不能切家长
+    setMode(m);
+    localStorage.setItem('assistantMode', m);
+    // 切模式会改变 system prompt，重置会话避免上下文串味
+    setMessages([]);
+    setSessionId(0);
+    setActionStates({});
+  };
+
+  // 儿童模式（无论登录角色）：锁定为登录用户本人，不暴露家庭儿童切换
+  const selectedChildId = !isParent
+    ? (authUser?.id ?? null)
+    : (childStore.currentChildId || children[0]?.id || null);
+  const selectedChild = !isParent
+    ? (authUser ? { id: authUser.id, nickname: authUser.nickname } as Child : null)
+    : (children.find((c) => c.id === selectedChildId) || null);
 
   useEffect(() => {
     if (children.length === 0) {
@@ -582,7 +619,7 @@ export function AssistantPage() {
     setMessages((prev) => [...prev, tempUserMsg]);
 
     try {
-      const res = await chatService.sendMessage(content, selectedChildId, sessionId || undefined);
+      const res = await chatService.sendMessage(content, selectedChildId, sessionId || undefined, mode);
       setSessionId(res.session_id);
       const aiMsgId = Date.now() + 1;
       const aiMsg: ChatMessage = {
@@ -829,8 +866,15 @@ export function AssistantPage() {
       chatService
         .confirmAction(msg.id, suggestion.action, suggestion.params, 'success', apiResponse)
         .catch(() => {});
-      toast.success('已成功提交');
-      appendLocalAiMessage('好的，已经帮你提交啦，等家长审核哦~');
+      // 按 action 类型选择成功提示话术
+      const successMsg: Record<string, string> = {
+        create_task_template: '已成功创建任务模板',
+      };
+      const successReply: Record<string, string> = {
+        create_task_template: '好的，任务模板已经添加到你的家庭模板库啦，之后可以在「设置-任务模板」里查看或修改~',
+      };
+      toast.success(successMsg[suggestion.action] ?? '已成功提交');
+      appendLocalAiMessage(successReply[suggestion.action] ?? '好的，已经帮你提交啦，等家长审核哦~');
     } catch (e) {
       const message = e instanceof Error ? e.message : '操作失败，请稍后再试';
       setActionState(key, { status: 'failed', errorMessage: message });
@@ -917,6 +961,7 @@ export function AssistantPage() {
             className="relative active:scale-95 transition-transform"
             aria-label="切换孩子"
             data-dom-id="child-switch"
+            style={{ display: isParent ? undefined : 'none' }}
           >
             <div className="w-9 h-9 rounded-full bg-[#F59E6B]/15 flex items-center justify-center font-bold text-sm text-[#F59E6B]">
               {selectedChild?.nickname.charAt(0) || '?'}
@@ -927,6 +972,35 @@ export function AssistantPage() {
           </button>
         </div>
       </header>
+
+      {/* 对话模式切换（segmented control）：家长可切换家长/儿童模式；儿童角色只能儿童模式 */}
+      <div className="px-4 pt-1.5 pb-1">
+        <div className="max-w-[448px] mx-auto flex justify-center">
+          <div className="inline-flex p-0.5 rounded-full bg-[#FFF1E6] border border-[#F5E6D3]">
+            <button
+              onClick={() => switchMode('parent')}
+              disabled={!isParent && mode !== 'parent'}
+              className={`px-4 py-1 rounded-full text-xs font-medium transition-all ${
+                mode === 'parent'
+                  ? 'bg-[#F59E6B] text-white shadow-sm'
+                  : 'text-[#7A7168] hover:text-[#2D2A26]'
+              } ${!isParent ? 'cursor-not-allowed opacity-40' : ''}`}
+            >
+              家长模式
+            </button>
+            <button
+              onClick={() => switchMode('child')}
+              className={`px-4 py-1 rounded-full text-xs font-medium transition-all ${
+                mode === 'child'
+                  ? 'bg-[#F59E6B] text-white shadow-sm'
+                  : 'text-[#7A7168] hover:text-[#2D2A26]'
+              }`}
+            >
+              儿童模式
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* 消息区 / 空状态 */}
       <main className={`flex-1 overflow-y-auto px-4 py-4 ${voiceMode ? 'pb-64' : 'pb-28'}`}>
@@ -967,7 +1041,18 @@ export function AssistantPage() {
 
             {/* 工具栏：在空态和有消息态都显示 */}
             <div className={`${isEmpty ? 'space-y-2.5' : 'space-y-2'}`}>
-              {[READONLY_TOOL_SUGGESTIONS, WRITE_TOOL_SUGGESTIONS].map((group) => (
+              {[
+                READONLY_TOOL_SUGGESTIONS,
+                // 儿童模式过滤掉家长专属写工具（adjust_score/create_task_template/create_cycle/set_stage_goal）
+                {
+                  ...WRITE_TOOL_SUGGESTIONS,
+                  items: mode === 'child'
+                    ? WRITE_TOOL_SUGGESTIONS.items.filter(
+                        (it) => !['set_stage_goal', 'create_cycle', 'adjust_score', 'create_task_template'].includes(it.name),
+                      )
+                    : WRITE_TOOL_SUGGESTIONS.items,
+                },
+              ].map((group) => (
                 <AutoScrollRow
                   key={group.title}
                   group={group}
@@ -1010,7 +1095,11 @@ export function AssistantPage() {
                         }`}
                         aria-label={speakingMsgId === msg.id ? '点击停止朗读' : '点击再听一遍'}
                       >
-                        <span>{msg.content}</span>
+                        <div className="ai-md">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
                         {/* 朗读状态指示：三条竖线 + Volume 图标（右下角） */}
                         {speakingMsgId === msg.id && (
                           <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#F59E6B] text-white shadow-md">

@@ -92,8 +92,14 @@ type TaskTemplate struct {
 	Frequency     string    `gorm:"size:20;default:'once'" json:"frequency"`    // 频次：daily/weekly/monthly/once
 	EstimatedTime int       `gorm:"default:15" json:"estimated_time"`   // 预计完成时间（分钟）
 	Tags          string    `gorm:"size:200" json:"tags,omitempty"`     // 标签，逗号分隔
-	IsSystem      bool      `gorm:"default:false" json:"is_system"`     // 是否系统内置模板
-	AbilityDimensionID uint `gorm:"index" json:"ability_dimension_id,omitempty"`
+	IsSystem           bool   `gorm:"default:false" json:"is_system"`                          // 是否系统内置模板
+	AbilityDimensionID uint   `gorm:"index" json:"ability_dimension_id,omitempty"`             // 主能力维度ID 1-6
+	MasterTitle        string `gorm:"size:200;index" json:"master_title,omitempty"`           // 系统模板母版标题（用于恢复/同步）
+	IsCustomized       bool   `gorm:"default:false" json:"is_customized"`                     // 家庭是否自定义过该模板（同步时跳过）
+	ShareStatus        string `gorm:"size:20;default:'private'" json:"share_status"`          // private/shared/imported 广场分享状态
+	TemplateType       string `gorm:"size:20;default:'daily';index" json:"template_type"`       // 模板类型：daily(日常任务)/habit(习惯养成)/parent(主题任务)
+	EstimatedDays      int    `gorm:"default:0" json:"estimated_days,omitempty"`                // 主题任务预计天数（仅 parent）
+	KeyMilestones      string `gorm:"type:text" json:"key_milestones,omitempty"`               // 主题任务关键里程碑 JSON（仅 parent）
 }
 
 // TaskRecurringConfig 循环任务配置表
