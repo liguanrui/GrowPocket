@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Send, PanelLeft, SquarePen, ChevronDown, Search, X, Plus, MessageCircle,
   Check, Star, CheckSquare, TrendingUp, Gift, UserPlus, Volume2, VolumeX,
-  Mic, Keyboard, Volume1,
+  Mic, Keyboard, Volume1, Coins, BarChart3, ListTodo, FileText, ShoppingBag,
+  Receipt, Clock, Image, Target, Sparkles, Trophy, Heart, Calendar, Flag,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
@@ -11,6 +12,10 @@ import * as chatService from '../services/chat';
 import type { ChatMessage, ChatSession } from '../services/chat';
 // V3.1 思路 C：IP 不再按成长指数切形态，无需 getGrowthIndex import
 import { IPPAvatar } from '../components/IPPAvatar';
+import type { IPAnimationName } from '../components/IPPAvatar';
+import { ActionConfirmCard } from '../components/ActionConfirmCard';
+import type { ActionSuggestion } from '../components/ActionConfirmCard';
+import { request } from '../services/api';
 import { useToastStore } from '../stores/toastStore';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
@@ -76,12 +81,233 @@ const C = {
   card: '#FFFFFF', muted: '#FFF1E6', mutedFg: '#7A7168', border: '#F5E6D3',
 };
 
-const QUICK_PHRASES = [
-  { icon: Star, text: '我的积分是多少？' },
-  { icon: CheckSquare, text: '今日任务是什么？' },
-  { icon: TrendingUp, text: '帮我看看成长报告' },
-  { icon: Gift, text: '最近有什么奖励？' },
+type ToolIcon = typeof Coins;
+
+interface ToolSuggestion {
+  name: string;
+  label: string;
+  prompt: string;
+  icon: ToolIcon;
+}
+
+interface ToolSuggestionGroup {
+  title: string;
+  subtitle: string;
+  accent: string;
+  items: ToolSuggestion[];
+}
+
+// 13 个只读工具提示
+const READONLY_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
+  title: '查一查',
+  subtitle: '查询成长数据',
+  accent: '#F59E6B',
+  items: [
+    { name: 'query_child_balance', label: '积分余额', prompt: '我现在有多少积分？', icon: Coins },
+    { name: 'query_child_scores', label: '能力得分', prompt: '帮我看看各项能力得分', icon: BarChart3 },
+    { name: 'list_tasks', label: '今日任务', prompt: '今天有哪些待办任务？', icon: ListTodo },
+    { name: 'get_task_detail', label: '任务详情', prompt: '帮我看看任务 #1 的详情', icon: FileText },
+    { name: 'list_redeem_items', label: '积分商城', prompt: '积分商城有什么好东西？', icon: ShoppingBag },
+    { name: 'list_redeem_records', label: '兑换记录', prompt: '最近的积分兑换记录', icon: Receipt },
+    { name: 'get_growth_timeline', label: '成长时间线', prompt: '展示最近 30 天的成长时间线', icon: Clock },
+    { name: 'get_growth_album', label: '成果相册', prompt: '看看我的成果相册', icon: Image },
+    { name: 'get_current_cycle', label: '当前周期', prompt: '当前成长周期及阶段目标', icon: Target },
+    { name: 'get_cycle_progress', label: '周期进度', prompt: '帮我查一下周期 #1 的进度', icon: TrendingUp },
+    { name: 'list_growth_stories', label: '成长故事', prompt: '看看我的成长故事', icon: Sparkles },
+    { name: 'list_master_challenges', label: '大师挑战', prompt: '大师挑战进行得怎么样了？', icon: Trophy },
+    { name: 'list_activities', label: '公益活动', prompt: '有什么公益活动可以参加？', icon: Heart },
+  ],
+};
+
+// 5 个写操作建议工具提示
+const WRITE_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
+  title: '做一做',
+  subtitle: '发起操作',
+  accent: '#8B6CE3',
+  items: [
+    { name: 'submit_task', label: '提交任务', prompt: '我要提交任务 #1', icon: CheckSquare },
+    { name: 'redeem_item', label: '兑换商品', prompt: '我想用积分兑换商品 #1', icon: ShoppingBag },
+    { name: 'set_stage_goal', label: '设置阶段目标', prompt: '帮我为周期设置一个能力目标', icon: Target },
+    { name: 'create_cycle', label: '创建成长周期', prompt: '创建一个新的成长周期', icon: Calendar },
+    { name: 'adjust_score', label: '奖励积分', prompt: '给宝贝奖励 50 积分，标题：作业认真', icon: Flag },
+  ],
+};
+
+// ============ 工具卡横滑行（自动轮播 + 悬停暂停 + 无缝循环）============
+interface AutoScrollRowProps {
+  group: ToolSuggestionGroup;
+  onPick: (prompt: string) => void;
+  compact?: boolean;
+}
+function AutoScrollRow({ group, onPick, compact = false }: AutoScrollRowProps) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const pausedRef = useRef(false);
+  const animatingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+
+  // 通过复制 3 份内容实现无缝循环；复制一份 items 让 key 不冲突
+  const tripled = useMemo(() => {
+    const all: (ToolSuggestion & { _uniq: string })[] = [];
+    [0, 1, 2].forEach((k) => {
+      group.items.forEach((it, i) => {
+        all.push({ ...it, _uniq: `${it.name}-${k}-${i}` });
+      });
+    });
+    return all;
+  }, [group]);
+
+  // 启动后初始化滚动位置到中间段（避免开头滚动就见底）
+  useEffect(() => {
+    if (!scrollerRef.current) return;
+    const el = scrollerRef.current;
+    const segLen = el.scrollWidth / 3;
+    // 从中间段开始，这样既能左滑也能右滑
+    el.scrollLeft = segLen;
+
+    let lastTs = performance.now();
+    const PX_PER_SEC = 28; // 匀速速度：可根据喜好调
+
+    const tick = (ts: number) => {
+      if (!scrollerRef.current) return;
+      const dt = Math.min(100, ts - lastTs); // 防止切后台后大跳
+      lastTs = ts;
+      if (!pausedRef.current) {
+        const elNow = scrollerRef.current;
+        const seg = elNow.scrollWidth / 3;
+        let next = elNow.scrollLeft + (PX_PER_SEC * dt) / 1000;
+        // 超过右侧段则跳回中段对应位置（无缝）
+        if (next >= seg * 2) next -= seg;
+        // 如果被用户往左拉过了头，则补回中段
+        if (next < seg) next += seg;
+        elNow.scrollLeft = next;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    animatingRef.current = true;
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      animatingRef.current = false;
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [tripled.length]);
+
+  return (
+    <div>
+      {!compact ? (
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-[13px] font-semibold text-[#2D2A26] flex items-center gap-1.5">
+              <span
+                className="w-1 h-3.5 rounded-sm"
+                style={{ backgroundColor: group.accent }}
+              />
+              {group.title}
+            </h3>
+            <span className="text-[11px] text-[#7A7168]">{group.subtitle}</span>
+          </div>
+          <span className="text-[11px] text-[#B9B1A8]">{group.items.length} 项</span>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-xs font-semibold text-[#2D2A26] flex items-center gap-1.5">
+              <span
+                className="w-1 h-3 rounded-sm"
+                style={{ backgroundColor: group.accent }}
+              />
+              {group.title}
+            </h3>
+            <span className="text-[10px] text-[#7A7168]">{group.subtitle}</span>
+          </div>
+          <span className="text-[10px] text-[#B9B1A8]">{group.items.length}</span>
+        </div>
+      )}
+      <div
+        ref={scrollerRef}
+        onMouseEnter={() => { pausedRef.current = true; }}
+        onMouseLeave={() => { pausedRef.current = false; }}
+        onTouchStart={() => { pausedRef.current = true; }}
+        onTouchEnd={() => { setTimeout(() => { pausedRef.current = false; }, 600); }}
+        className={`flex overflow-x-auto scroll-auto -mx-4 px-4 ${compact ? 'gap-1.5' : 'gap-2'}`}
+        style={{
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          WebkitOverflowScrolling: 'touch',
+          scrollSnapType: 'none',
+          scrollBehavior: 'auto',
+        }}
+      >
+        <style>{`.autoscroll-row-hidesb::-webkit-scrollbar{display:none}`}</style>
+        {tripled.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item._uniq}
+              onClick={() => onPick(item.prompt)}
+              className={`autoscroll-row-hidesb flex-shrink-0 flex flex-col items-center rounded-2xl bg-white border border-[#F5E6D3] hover:border-[#F59E6B]/40 hover:shadow-sm active:scale-[0.98] transition-all ${
+                compact
+                  ? 'w-[72px] gap-1 py-1.5 px-1'
+                  : 'w-[88px] gap-1.5 py-2.5 px-1.5'
+              }`}
+            >
+              <div
+                className={`rounded-lg flex items-center justify-center ${compact ? 'w-7 h-7' : 'w-8 h-8'}`}
+                style={{
+                  backgroundColor: `${group.accent}22`,
+                  color: group.accent,
+                }}
+              >
+                <Icon size={compact ? 16 : 18} />
+              </div>
+              <span
+                className={`font-medium text-[#2D2A26] leading-tight text-center line-clamp-1 ${
+                  compact ? 'text-[10px]' : 'text-[11px]'
+                }`}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============ IP 随机表情轮播 APNG ============
+const ALL_IP_EXPRESSIONS: IPAnimationName[] = [
+  'happy', 'encourage', 'think', 'surprise', 'comfort', 'proud', 'welcome', 'loading',
 ];
+
+function RandomExpressionAvatar({ size = 96 }: { size?: number }) {
+  const [expr, setExpr] = useState<IPAnimationName>(() => {
+    // 首帧用 welcome 保持友好；之后随机轮播
+    return 'welcome';
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const pickNext = (cur: IPAnimationName): IPAnimationName => {
+      // 排除当前项，避免重复
+      const rest = ALL_IP_EXPRESSIONS.filter((e) => e !== cur);
+      return rest[Math.floor(Math.random() * rest.length)];
+    };
+    const run = () => {
+      if (cancelled) return;
+      setExpr((prev) => pickNext(prev));
+      // 每个表情播放 3.2s，大约跑完一遍 APNG 完整循环再切
+      timerId = window.setTimeout(run, 3200);
+    };
+    let timerId = window.setTimeout(run, 3200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, []);
+
+  return <IPPAvatar animationName={expr} size={size} />;
+}
 
 // ============ 历史抽屉 ============
 function HistoryDrawer({
@@ -256,6 +482,13 @@ function ChildSwitchPopover({
 }
 
 // ============ 主页面 ============
+// 动作确认卡片状态：pending 待确认 / executing 执行中 / success 成功 / failed 失败 / cancelled 已取消
+type ActionCardStatus = 'pending' | 'executing' | 'success' | 'failed' | 'cancelled';
+interface ActionCardState {
+  status: ActionCardStatus;
+  errorMessage?: string;
+}
+
 export function AssistantPage() {
   const navigate = useNavigate();
   const toast = useToastStore();
@@ -269,6 +502,12 @@ export function AssistantPage() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ===== 动作确认卡片状态 =====
+  // key = `${msgId}-${actionIdx}`，value = 该卡片的状态机
+  const [actionStates, setActionStates] = useState<Record<string, ActionCardState>>({});
+  // 本地追加的 AI 消息用负 id，避免与后端返回的正 id 及 Date.now() 临时 id 冲突
+  const localMsgIdRef = useRef<number>(0);
 
   // ===== 语音相关状态 =====
   const [voiceMode, setVoiceMode] = useState(false);          // 底部面板：文字 or 语音
@@ -353,6 +592,7 @@ export function AssistantPage() {
         content: res.reply,
         intent: res.intent,
         created_at: new Date().toISOString(),
+        suggested_actions: res.suggested_actions,
       };
       setMessages((prev) => [...prev, aiMsg]);
       // 刷新会话列表（更新 last_message）
@@ -506,6 +746,7 @@ export function AssistantPage() {
       await chatService.createSession(selectedChildId);
       setMessages([]);
       setSessionId(0);
+      setActionStates({});
       setShowDrawer(false);
       loadSessions(selectedChildId);
       toast.success('已开启新对话');
@@ -542,6 +783,73 @@ export function AssistantPage() {
     setShowSwitch(false);
     setMessages([]);
     setSessionId(0);
+    setActionStates({});
+  };
+
+  // ===== 动作确认卡片：本地追加一条 AI 文本消息（不消耗 LLM） =====
+  const appendLocalAiMessage = (content: string) => {
+    localMsgIdRef.current -= 1;
+    const aiMsg: ChatMessage = {
+      id: localMsgIdRef.current,
+      session_id: sessionId,
+      role: 'assistant',
+      content,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, aiMsg]);
+  };
+
+  // 设置某张卡片的状态（按 msgId + actionIdx 定位）
+  const setActionState = (key: string, patch: Partial<ActionCardState>) => {
+    setActionStates((prev) => ({
+      ...prev,
+      [key]: { status: 'pending', ...prev[key], ...patch },
+    }));
+  };
+
+  // 确认按钮：执行 suggestion 携带的 API → 成功后刷新数据 / 上报 / 追加 AI 消息
+  const handleConfirmAction = async (
+    msg: ChatMessage,
+    suggestion: ActionSuggestion,
+    idx: number,
+  ) => {
+    const key = `${msg.id}-${idx}`;
+    setActionState(key, { status: 'executing', errorMessage: undefined });
+    try {
+      // 复用通用 request 封装（JWT 自动注入），按 suggestion 携带的方法/路径/体发起请求
+      const apiResponse = await request<unknown>({
+        method: suggestion.api_method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+        url: suggestion.api_endpoint,
+        data: suggestion.api_body,
+      });
+      setActionState(key, { status: 'success', errorMessage: undefined });
+      // 刷新余额等 zustand 数据（fetchChildren 会拉取最新 balance）
+      childStore.fetchChildren().catch(() => {});
+      // 上报确认结果（审计用，失败不影响用户流程）
+      chatService
+        .confirmAction(msg.id, suggestion.action, suggestion.params, 'success', apiResponse)
+        .catch(() => {});
+      toast.success('已成功提交');
+      appendLocalAiMessage('好的，已经帮你提交啦，等家长审核哦~');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '操作失败，请稍后再试';
+      setActionState(key, { status: 'failed', errorMessage: message });
+      toast.error(message);
+    }
+  };
+
+  // 取消按钮：标记已取消并上报
+  const handleCancelAction = (
+    msg: ChatMessage,
+    suggestion: ActionSuggestion,
+    idx: number,
+  ) => {
+    const key = `${msg.id}-${idx}`;
+    setActionState(key, { status: 'cancelled', errorMessage: undefined });
+    chatService
+      .confirmAction(msg.id, suggestion.action, suggestion.params, 'cancelled')
+      .catch(() => {});
+    appendLocalAiMessage('好的，已取消，有需要再告诉我~');
   };
 
   if (!selectedChildId) {
@@ -623,37 +931,64 @@ export function AssistantPage() {
       {/* 消息区 / 空状态 */}
       <main className={`flex-1 overflow-y-auto px-4 py-4 ${voiceMode ? 'pb-64' : 'pb-28'}`}>
         <div className="max-w-[448px] mx-auto">
-          {isEmpty ? (
-            /* 空状态 */
-            <div className="flex flex-col items-center pt-8">
-              <div className="w-32 h-32 rounded-2xl shadow-md mb-6 flex items-center justify-center bg-[#FFF1E6]">
-                {/* 思路 C 专属场景：首屏欢迎挥手，不用 generic happy */}
-                <IPPAvatar animationName="welcome" size={96} />
+          {/* 非空态时 IP + 工具栏略收缩；空态时保持原样居中大号 */}
+          <div className={`flex flex-col items-stretch ${isEmpty ? 'pt-3 pb-2 gap-2.5' : 'pt-2 pb-2 gap-2'}`}>
+            {isEmpty ? (
+              /* 空状态：IP 居中放大 + 问候语居中 */
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-28 h-28 rounded-2xl shadow-md flex items-center justify-center bg-[#FFF1E6]">
+                  <RandomExpressionAvatar size={96} />
+                </div>
+                <div className="text-center">
+                  <h1 className="text-xl font-bold text-[#2D2A26] leading-none">
+                    {getGreeting()}，我是小萌芽
+                  </h1>
+                  <p className="text-xs text-[#7A7168] mt-1.5 leading-snug">
+                    有什么我可以帮你的吗？点下面卡片就能用啦
+                  </p>
+                </div>
               </div>
-              <h1 className="text-2xl font-bold text-[#2D2A26] mb-1">
-                {getGreeting()}，我是小萌芽
-              </h1>
-              <p className="text-sm text-[#7A7168] mb-8">有什么我可以帮你的吗？</p>
-              <div className="flex flex-col gap-3 w-full max-w-xs">
-                {QUICK_PHRASES.map((p, idx) => {
-                  const Icon = p.icon;
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => handleSend(p.text)}
-                      className="flex items-center gap-3 px-4 py-3 bg-white border border-[#F5E6D3] rounded-lg text-left hover:bg-[#FFF1E6]/50 transition-colors"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-[#F59E6B]/10 flex items-center justify-center text-[#F59E6B] flex-shrink-0">
-                        <Icon size={18} />
-                      </div>
-                      <span className="text-sm font-medium text-[#2D2A26]">{p.text}</span>
-                    </button>
-                  );
-                })}
+            ) : (
+              /* 有会话时：IP 迷你 + 问候语 左右紧凑，放在顶部当 sticky 头部（但在滚动容器内部，跟随滚动） */
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl shadow-sm flex items-center justify-center bg-[#FFF1E6] flex-shrink-0">
+                  <RandomExpressionAvatar size={40} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-bold text-[#2D2A26] leading-tight truncate">
+                    {getGreeting()}，我是小萌芽
+                  </div>
+                  <p className="text-[11px] text-[#7A7168] leading-tight mt-0.5 truncate">
+                    试试下面卡片，或直接对我说~
+                  </p>
+                </div>
               </div>
+            )}
+
+            {/* 工具栏：在空态和有消息态都显示 */}
+            <div className={`${isEmpty ? 'space-y-2.5' : 'space-y-2'}`}>
+              {[READONLY_TOOL_SUGGESTIONS, WRITE_TOOL_SUGGESTIONS].map((group) => (
+                <AutoScrollRow
+                  key={group.title}
+                  group={group}
+                  compact={!isEmpty}
+                  onPick={(prompt) => handleSend(prompt)}
+                />
+              ))}
             </div>
-          ) : (
-            /* 消息列表 */
+
+            {/* 会话分隔线：有消息时，工具栏下方和消息区之间加一条分隔 */}
+            {!isEmpty && (
+              <div className="flex items-center gap-2 mt-1 mb-1">
+                <div className="flex-1 h-px bg-[#F5E6D3]" />
+                <span className="text-[10px] text-[#B9B1A8] uppercase tracking-wider">对话</span>
+                <div className="flex-1 h-px bg-[#F5E6D3]" />
+              </div>
+            )}
+          </div>
+
+          {/* 消息列表（仅非空态渲染；仍然保留末尾自动滚动锚点） */}
+          {!isEmpty && (
             <div className="space-y-3">
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex items-start gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -663,35 +998,55 @@ export function AssistantPage() {
                     </div>
                   )}
                   {msg.role === 'assistant' ? (
-                    /* AI 气泡：正在朗读时加个橙色边框+波浪动画；点击可停/重播 */
-                    <button
-                      type="button"
-                      onClick={() => handleAssistantBubbleClick(msg)}
-                      className={`group relative max-w-[75%] px-4 py-2.5 text-left text-sm whitespace-pre-wrap break-words transition-all bg-white text-[#2D2A26] border rounded-lg rounded-tl-sm shadow-sm active:scale-[0.995] ${
-                        speakingMsgId === msg.id
-                          ? 'border-[#F59E6B] ring-2 ring-[#F59E6B]/20'
-                          : 'border-[#F5E6D3] hover:border-[#F59E6B]/25'
-                      }`}
-                      aria-label={speakingMsgId === msg.id ? '点击停止朗读' : '点击再听一遍'}
-                    >
-                      <span>{msg.content}</span>
-                      {/* 朗读状态指示：三条竖线 + Volume 图标（右下角） */}
-                      {speakingMsgId === msg.id && (
-                        <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#F59E6B] text-white shadow-md">
-                          <span className="flex items-end gap-[2px] h-3">
-                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '50%', animationDelay: '0s' }} />
-                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '100%', animationDelay: '0.15s' }} />
-                            <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '70%', animationDelay: '0.3s' }} />
+                    <div className="flex flex-col gap-2 max-w-[75%]">
+                      {/* AI 气泡：正在朗读时加个橙色边框+波浪动画；点击可停/重播 */}
+                      <button
+                        type="button"
+                        onClick={() => handleAssistantBubbleClick(msg)}
+                        className={`group relative self-start max-w-full px-4 py-2.5 text-left text-sm whitespace-pre-wrap break-words transition-all bg-white text-[#2D2A26] border rounded-lg rounded-tl-sm shadow-sm active:scale-[0.995] ${
+                          speakingMsgId === msg.id
+                            ? 'border-[#F59E6B] ring-2 ring-[#F59E6B]/20'
+                            : 'border-[#F5E6D3] hover:border-[#F59E6B]/25'
+                        }`}
+                        aria-label={speakingMsgId === msg.id ? '点击停止朗读' : '点击再听一遍'}
+                      >
+                        <span>{msg.content}</span>
+                        {/* 朗读状态指示：三条竖线 + Volume 图标（右下角） */}
+                        {speakingMsgId === msg.id && (
+                          <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#F59E6B] text-white shadow-md">
+                            <span className="flex items-end gap-[2px] h-3">
+                              <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '50%', animationDelay: '0s' }} />
+                              <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '100%', animationDelay: '0.15s' }} />
+                              <span className="w-[2px] bg-white rounded-full anim-voice-waveform" style={{ height: '70%', animationDelay: '0.3s' }} />
+                            </span>
                           </span>
-                        </span>
+                        )}
+                        {/* 未朗读时 hover 提示：右下角淡 Volume1 */}
+                        {speakingMsgId !== msg.id && (
+                          <span className="pointer-events-none absolute -right-2 -top-1 hidden items-center justify-center h-6 w-6 rounded-full bg-white border border-[#F5E6D3] text-[#F59E6B] group-hover:flex shadow-sm">
+                            <Volume1 size={13} />
+                          </span>
+                        )}
+                      </button>
+                      {/* 动作确认卡片：AI 回复携带 suggested_actions 时渲染（每条一张） */}
+                      {msg.suggested_actions && msg.suggested_actions.length > 0 && (
+                        msg.suggested_actions.map((suggestion, idx) => {
+                          const key = `${msg.id}-${idx}`;
+                          const cardState = actionStates[key];
+                          return (
+                            <ActionConfirmCard
+                              key={key}
+                              suggestion={suggestion}
+                              status={cardState?.status ?? 'pending'}
+                              errorMessage={cardState?.errorMessage}
+                              onConfirm={() => handleConfirmAction(msg, suggestion, idx)}
+                              onCancel={() => handleCancelAction(msg, suggestion, idx)}
+                              onRetry={() => handleConfirmAction(msg, suggestion, idx)}
+                            />
+                          );
+                        })
                       )}
-                      {/* 未朗读时 hover 提示：右下角淡 Volume1 */}
-                      {speakingMsgId !== msg.id && (
-                        <span className="pointer-events-none absolute -right-2 -top-1 hidden items-center justify-center h-6 w-6 rounded-full bg-white border border-[#F5E6D3] text-[#F59E6B] group-hover:flex shadow-sm">
-                          <Volume1 size={13} />
-                        </span>
-                      )}
-                    </button>
+                    </div>
                   ) : (
                     <div className={`max-w-[75%] px-4 py-2.5 text-sm whitespace-pre-wrap break-words bg-[#F59E6B] text-white rounded-lg rounded-tr-sm`}>
                       {msg.content}

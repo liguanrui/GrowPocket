@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Star, Calendar, CheckCircle2, XCircle, Trash2, Sparkles, Flame, TrendingUp, Target, AlertTriangle, ChevronRight, ListTree, ChevronDown, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
@@ -279,6 +279,66 @@ export function TaskDetailPage() {
   const [mediaUploading, setMediaUploading] = useState(false);
   // 主题任务（parent/child）当前选中的子任务阶段 id
   const [selectedStageId, setSelectedStageId] = useState<number | null>(null);
+  const timelineWrapRef = useRef<HTMLDivElement | null>(null);
+  const [, forceTimelineTick] = useState(0);
+
+  // 时间线竖线高度：在选中节点、子任务列表或父容器尺寸变化时重算
+  useEffect(() => {
+    const wrap = timelineWrapRef.current;
+    if (!wrap) return;
+    const line = wrap.querySelector<HTMLDivElement>('[data-tl-line]');
+    if (!line) return;
+    const compute = () => {
+      const markers = wrap.querySelectorAll<HTMLElement>('[data-tl-marker]');
+      if (markers.length === 0) return;
+      const first = markers[0];
+      const last = markers[markers.length - 1];
+      const wrapRect = wrap.getBoundingClientRect();
+      const firstRect = first.getBoundingClientRect();
+      const lastRect = last.getBoundingClientRect();
+      const topY = firstRect.top - wrapRect.top + firstRect.height / 2;
+      const bottomY = lastRect.top - wrapRect.top + lastRect.height / 2;
+      line.style.top = `${topY}px`;
+      line.style.height = `${Math.max(0, bottomY - topY)}px`;
+    };
+    compute();
+    const raf1 = requestAnimationFrame(compute);
+    const t1 = window.setTimeout(compute, 100);
+    const t2 = window.setTimeout(compute, 300);
+    const t3 = window.setTimeout(compute, 600);
+    const ro =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => compute())
+        : null;
+    ro?.observe(wrap);
+    // 再额外监测每个 marker 内部元素的尺寸变化（展开内容变化会影响子元素高度不一定传出来）
+    const innerRo =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => compute())
+        : null;
+    wrap.querySelectorAll<HTMLElement>('[data-tl-marker]').forEach((m) => {
+      const card = m.closest('.relative') as HTMLElement | null;
+      if (card) innerRo?.observe(card);
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+      ro?.disconnect();
+      innerRo?.disconnect();
+    };
+  }, [selectedStageId, childTasks.length, forceTimelineTick, id]);
+
+  // timeline 就绪后延迟再 tick 一次（兜底 MediaUploader / 懒加载图片延迟布局）
+  useEffect(() => {
+    const t1 = window.setTimeout(() => forceTimelineTick((x) => x + 1), 500);
+    const t2 = window.setTimeout(() => forceTimelineTick((x) => x + 1), 1200);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [id]);
 
   useEffect(() => {
     let mounted = true;
@@ -882,7 +942,15 @@ export function TaskDetailPage() {
 
             {/* 可点击切换的时间线 */}
             {themeTimeline.length > 0 && (
-              <div className="space-y-1">
+              <div className="relative" style={{ paddingLeft: 0 }} ref={timelineWrapRef}>
+                {/* 连续竖线：对齐到 marker 列中心 (w-5=20px, 一半=10px)；
+                    top/height 由 useEffect 根据首尾 marker 中心坐标计算，保证同轴线且不拖尾 */}
+                <div
+                  data-tl-line
+                  className="absolute w-0.5 bg-gray-200 pointer-events-none"
+                  style={{ left: 10 }}
+                  aria-hidden
+                />
                 {themeTimeline.map((item, idx) => {
                   const isLast = idx === themeTimeline.length - 1;
                   const completed = item.status === 3;
@@ -890,11 +958,12 @@ export function TaskDetailPage() {
                   const notStarted = item.id === 0;
                   const isSelected = selectedStageId === item.id;
                   return (
-                    <div key={`timeline-${idx}`}>
+                    <div key={`timeline-${idx}`} className="relative">
                       <div className="flex gap-3">
-                        {/* 左侧圆点 + 连线 */}
-                        <div className="flex flex-col items-center">
+                        {/* marker 列：固定 w-5（20px），竖线中心 x=10px，圆点在列内水平垂直居中到行首 */}
+                        <div className="relative z-10 w-5 flex-shrink-0 flex items-start justify-center pt-[2px]">
                           <div
+                            data-tl-marker
                             className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
                               completed
                                 ? 'bg-green-500'
@@ -905,10 +974,9 @@ export function TaskDetailPage() {
                           >
                             {completed && <CheckCircle2 size={12} className="text-white" />}
                           </div>
-                          {!isLast && <div className={`w-0.5 flex-1 min-h-[24px] ${isSelected && !isLast ? 'bg-primary/30' : 'bg-gray-200'}`} />}
                         </div>
                         {/* 右侧：可点击节点标题 */}
-                        <div className={`flex-1 ${isLast ? 'pb-0' : 'pb-4'}`}>
+                        <div className={`flex-1 min-w-0 ${isLast && !isSelected ? 'pb-0' : 'pb-4'}`}>
                           <button
                             type="button"
                             disabled={item.id === 0}
@@ -962,7 +1030,7 @@ export function TaskDetailPage() {
 
                       {/* 选中节点：展开详情（积分 / 成果 / 提交 / 验收 / 任务信息） */}
                       {isSelected && selectedStageTask && item.id > 0 && item.id === selectedStageTask.id && (
-                        <div className="ml-8 -mt-1 mb-3">
+                        <div className="ml-8 -mt-1 mb-4">
                           <div className="bg-warm-light rounded-xl p-3.5 space-y-3">
                             {/* 阶段积分 */}
                             <div className="flex items-center justify-between">

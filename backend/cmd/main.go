@@ -201,6 +201,7 @@ func main() {
 		// AI 助理对话（v3）
 		chatHandler := handler.NewChatHandler(service.NewChatService(aiService))
 		authorized.POST("/chat/message", chatHandler.SendMessage)
+		authorized.POST("/chat/message/confirm", chatHandler.ConfirmMessage)
 		authorized.GET("/chat/history/:child_id", chatHandler.GetHistory)
 		authorized.GET("/chat/sessions", chatHandler.ListSessions)
 		authorized.POST("/chat/sessions", chatHandler.CreateSession)
