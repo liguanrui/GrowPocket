@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
-import { Settings, User, Users, ListTodo, LogOut, ChevronRight, Clock, FastForward, RotateCcw, FlaskConical } from 'lucide-react';
+import { Settings, User, Users, ListTodo, LogOut, ChevronRight, Clock, FastForward, RotateCcw, FlaskConical, Bell } from 'lucide-react';
 import { getDebugTime, advanceTime, resetTime } from '../services/debug';
 import type { DebugTimeInfo } from '../services/debug';
+import { fetchUnreadCount } from '../services/messages';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -17,6 +18,13 @@ export function SettingsPage() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugTime, setDebugTime] = useState<DebugTimeInfo | null>(null);
   const [debugLoading, setDebugLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    fetchUnreadCount()
+      .then(setUnreadCount)
+      .catch(() => setUnreadCount(0));
+  }, []);
 
   const handleLogout = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -76,6 +84,14 @@ export function SettingsPage() {
   };
 
   const menuItems = [
+    {
+      id: 'messages',
+      label: '系统消息',
+      icon: Bell,
+      description: '报名通知、活动动态提醒',
+      path: '/settings/messages',
+      badge: unreadCount,
+    },
     {
       id: 'account',
       label: '登录信息',
@@ -141,17 +157,30 @@ export function SettingsPage() {
         <div className="space-y-3">
           {menuItems.map((item) => {
             const Icon = item.icon;
+            const badge = 'badge' in item ? Number(item.badge || 0) : 0;
             return (
               <button
                 key={item.id}
                 onClick={() => navigate(item.path)}
                 className="w-full bg-card rounded-2xl p-4 shadow-sm flex items-center gap-4 hover:bg-gray-50 transition-colors"
               >
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                <div className="relative w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
                   <Icon size={22} className="text-primary" />
+                  {badge > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="font-semibold text-text-primary">{item.label}</div>
+                  <div className="font-semibold text-text-primary flex items-center gap-2">
+                    {item.label}
+                    {badge > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-500 font-medium">
+                        {badge} 条未读
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm text-text-tertiary">{item.description}</div>
                 </div>
                 <ChevronRight size={20} className="text-text-tertiary" />
@@ -160,8 +189,8 @@ export function SettingsPage() {
           })}
         </div>
 
-        {/* 调试工具：仅开发环境显示 */}
-        {import.meta.env.DEV && (
+        {/* 调试工具：临时对生产开放（测完记得关掉） */}
+        {true && (
           <div className="mt-6 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-100 rounded-2xl overflow-hidden">
             <button
               onClick={toggleDebugPanel}
@@ -173,7 +202,7 @@ export function SettingsPage() {
               <div className="flex-1 text-left">
                 <div className="font-semibold text-purple-900 flex items-center gap-2">
                   调试工具
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-200 text-purple-700">DEV</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-200 text-amber-800">临时开放</span>
                 </div>
                 <div className="text-xs text-purple-600">时间穿越测试：快进天数模拟阶段推进</div>
               </div>

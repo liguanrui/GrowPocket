@@ -7,7 +7,7 @@ import type {
 } from '@/types'
 
 export async function getOverview(): Promise<OverviewStats> {
-  const res = await api.get<ApiResponse<OverviewStats>>('/dashboard/overview')
+  const res = await api.get<ApiResponse<OverviewStats>>('/dashboard/stats')
   return res.data.data
 }
 

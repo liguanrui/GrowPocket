@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Calendar, MapPin, Users, Trophy, Tag, FileText } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Users, Trophy, Tag, FileText, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import * as communityService from '../services/community';
 import { MobileDatePicker } from '../components/MobileDatePicker';
@@ -18,6 +18,7 @@ export default function CreateActivityPage() {
   const [type, setType] = useState(1);
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [eventTime, setEventTime] = useState('');
   const [maxParticipants, setMaxParticipants] = useState(10);
   const [points, setPoints] = useState(80);
@@ -26,6 +27,10 @@ export default function CreateActivityPage() {
   async function submit() {
     if (!title.trim()) {
       alert('请填写活动标题');
+      return;
+    }
+    if (!contactPhone.trim()) {
+      alert('请填写联系电话');
       return;
     }
     if (!eventTime) {
@@ -39,6 +44,7 @@ export default function CreateActivityPage() {
         activity_type: type,
         description: description.trim(),
         location: location.trim(),
+        contact_phone: contactPhone.trim(),
         event_time: new Date(eventTime).toISOString(),
         max_participants: maxParticipants,
         points,
@@ -66,7 +72,7 @@ export default function CreateActivityPage() {
             <h1 className="text-lg font-bold text-white">发起公益活动</h1>
             <button
               onClick={submit}
-              disabled={submitting || !title.trim() || !eventTime}
+              disabled={submitting || !title.trim() || !contactPhone.trim() || !eventTime}
               className="px-4 py-2 bg-white text-blue-600 rounded-xl text-sm font-medium disabled:opacity-50"
             >
               {submitting ? '发布中...' : '发布'}
@@ -140,6 +146,19 @@ export default function CreateActivityPage() {
 
           <div>
             <label className="text-sm font-medium text-text-primary block mb-2 flex items-center gap-1">
+              <Phone size={14} className="text-primary" /> 联系电话 *
+            </label>
+            <input
+              type="tel"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              placeholder="请输入联系电话"
+              className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-primary"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-text-primary block mb-2 flex items-center gap-1">
               <Calendar size={14} className="text-primary" /> 活动时间 *
             </label>
             <MobileDatePicker
@@ -192,7 +211,7 @@ export default function CreateActivityPage() {
 
         <button
           onClick={submit}
-          disabled={submitting || !title.trim() || !eventTime}
+          disabled={submitting || !title.trim() || !contactPhone.trim() || !eventTime}
           className="w-full py-3.5 bg-primary text-white rounded-2xl font-medium disabled:opacity-50 shadow-lg shadow-primary/20"
         >
           {submitting ? '发布中...' : '发布活动'}

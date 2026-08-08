@@ -337,27 +337,31 @@ func (s *CommunityService) CreateDonation(in CreateDonationInput) (*model.Charit
 		return nil, err
 	}
 
+	NewSystemMessageService().NotifyDonationSubmitted(donation)
 	return donation, nil
 }
 
-func (s *CommunityService) ConfirmDonationReceived(donationID, familyID uint) error {
+// ConfirmDonationReceived 机构/管理端确认收件（待取件 → 已收件）
+func (s *CommunityService) ConfirmDonationReceived(donationID uint) error {
 	var donation model.CharityDonation
 	if err := database.DB.First(&donation, donationID).Error; err != nil {
 		return errors.New("捐赠记录不存在")
 	}
-	if donation.FamilyID != familyID {
-		return errors.New("无权限操作")
-	}
 	if donation.Status != model.DonationStatusPending {
-		return errors.New("当前状态不支持此操作")
+		return errors.New("当前状态不支持确认收件（需为待取件）")
 	}
 
 	now := time.Now()
 	donation.Status = model.DonationStatusReceived
 	donation.ReceivedAt = &now
-	return database.DB.Save(&donation).Error
+	if err := database.DB.Save(&donation).Error; err != nil {
+		return err
+	}
+	NewSystemMessageService().NotifyDonationReceived(&donation)
+	return nil
 }
 
+// CompleteDonation 发放积分并完结（已收件 → 已完成）
 func (s *CommunityService) CompleteDonation(donationID uint) error {
 	var donation model.CharityDonation
 	if err := database.DB.First(&donation, donationID).Error; err != nil {
@@ -410,7 +414,42 @@ func (s *CommunityService) CompleteDonation(donationID uint) error {
 	achievementService.IncrementCounter(donation.ChildID, model.CounterTypeTotalPoints, 0, donation.Points)
 	achievementService.CheckAchievements(donation.ChildID, model.CounterTypeTotalPoints, 0)
 
+	NewSystemMessageService().NotifyDonationCompleted(&donation)
 	return nil
+}
+
+type ListDonationsParams struct {
+	Status   int // 0=全部
+	Page     int
+	PageSize int
+	Keyword  string
+}
+
+func (s *CommunityService) ListDonations(p ListDonationsParams) ([]model.CharityDonation, int64, error) {
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.PageSize < 1 || p.PageSize > 100 {
+		p.PageSize = 20
+	}
+	q := database.DB.Model(&model.CharityDonation{})
+	if p.Status > 0 {
+		q = q.Where("status = ?", p.Status)
+	}
+	if kw := strings.TrimSpace(p.Keyword); kw != "" {
+		like := "%" + kw + "%"
+		q = q.Where("child_name LIKE ? OR project_title LIKE ? OR contact_phone LIKE ? OR address LIKE ?", like, like, like, like)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []model.CharityDonation
+	err := q.Order("created_at DESC").
+		Limit(p.PageSize).
+		Offset((p.Page - 1) * p.PageSize).
+		Find(&items).Error
+	return items, total, err
 }
 
 func (s *CommunityService) GetChildByID(childID uint) (*model.User, error) {

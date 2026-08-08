@@ -48,6 +48,12 @@ func (s *QuestionnaireService) GetByStage(stage, level string) (*model.Questionn
 
 // SubmitAnswers 提交答案，计算维度分值，发放积分奖励
 func (s *QuestionnaireService) SubmitAnswers(familyID, childID uint, questionnaireID uint, stage string, answers []AnswerInput) (int, error) {
+	// 校验孩子归属当前家庭，避免跨家庭写分/生成脏数据
+	var child model.User
+	if err := database.DB.Where("id = ? AND family_id = ? AND role = ?", childID, familyID, model.RoleChild).First(&child).Error; err != nil {
+		return 0, errors.New("孩子档案不存在")
+	}
+
 	// 查问卷
 	var q model.Questionnaire
 	if err := database.DB.First(&q, questionnaireID).Error; err != nil {

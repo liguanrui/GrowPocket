@@ -85,6 +85,7 @@ export type MenuKey =
   | 'parents'
   | 'tasks'
   | 'redeem-items'
+  | 'donations'
   | 'achievements'
   | 'logs'
   | 'admin-users'

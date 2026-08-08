@@ -24,6 +24,7 @@ import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { FamilySettingsPage } from './pages/FamilySettingsPage';
 import { TemplateSettingsPage } from './pages/TemplateSettingsPage';
 import { TemplateEditPage } from './pages/TemplateEditPage';
+import { MessagesPage } from './pages/MessagesPage';
 import { QuestionnairePage } from './pages/QuestionnairePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="settings/templates" element={<TemplateSettingsPage />} />
         <Route path="settings/templates/new" element={<TemplateEditPage />} />
         <Route path="settings/templates/:id/edit" element={<TemplateEditPage />} />
+        <Route path="settings/messages" element={<MessagesPage />} />
         <Route path="questionnaire" element={<QuestionnairePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

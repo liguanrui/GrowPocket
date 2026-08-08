@@ -13,6 +13,15 @@ func NewGrowthCycleService() *GrowthCycleService {
 	return &GrowthCycleService{}
 }
 
+// assertChildInFamily 校验 child_id 属于当前家庭且角色为孩子
+func assertChildInFamily(familyID, childID uint) error {
+	var child model.User
+	if err := database.DB.Where("id = ? AND family_id = ? AND role = ?", childID, familyID, model.RoleChild).First(&child).Error; err != nil {
+		return errors.New("孩子档案不存在")
+	}
+	return nil
+}
+
 // CreateCycle 创建成长周期
 func (s *GrowthCycleService) CreateCycle(familyID, childID uint, name string, startDate, endDate time.Time) (*model.GrowthCycle, error) {
 	if endDate.Before(startDate) {
@@ -21,6 +30,9 @@ func (s *GrowthCycleService) CreateCycle(familyID, childID uint, name string, st
 	// 周期长度校验：必须在 1-4 周（7-28 天，含边界）之间
 	if duration := endDate.Sub(startDate); duration < 7*24*time.Hour || duration > 28*24*time.Hour {
 		return nil, errors.New("周期长度需在 1-4 周之间")
+	}
+	if err := assertChildInFamily(familyID, childID); err != nil {
+		return nil, err
 	}
 	// 如果该儿童有 active 周期，先完成旧周期
 	var activeCycle model.GrowthCycle
@@ -82,6 +94,9 @@ type GoalInput struct {
 func (s *GrowthCycleService) SetGoalsBatch(cycleID, familyID, childID uint, goals []GoalInput) ([]model.Goal, error) {
 	if len(goals) == 0 {
 		return nil, errors.New("目标列表不能为空")
+	}
+	if err := assertChildInFamily(familyID, childID); err != nil {
+		return nil, err
 	}
 	result := make([]model.Goal, 0, len(goals))
 	for _, g := range goals {

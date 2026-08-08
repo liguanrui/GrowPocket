@@ -261,38 +261,64 @@ export function OnboardingPage() {
   // 预设列表是否已加载（避免重复请求）
   const [presetLoaded, setPresetLoaded] = useState(false);
 
-  // Step 6 初始化：加载能力分数、维度、年级
+  // Step 6 初始化：校验孩子归属、加载能力分数、维度、年级
   useEffect(() => {
-    if (step === 6 && urlChildId) {
-      getChildScores(urlChildId).then(setScores).catch(() => {});
-      getAbilities().then(setDimensions).catch(() => {});
-      // 默认今天起，2 周
-      const start = formatDateISO(new Date());
-      setSetupStartDate(start);
-      // 从孩子档案取年级和年龄（问卷返回后本地 birthday 状态可能已丢失）
-      childStore.fetchChildren().then(() => {
-        const child = useChildStore.getState().children.find((c) => c.id === urlChildId);
-        const g = child?.derived_grade ?? child?.grade ?? derivedGrade ?? 1;
-        setStep6Grade(g && g > 0 ? g : 1);
-        // 根据孩子年龄加载预设习惯和主题模板
-        const childAge = child?.derived_age ?? child?.age ?? derivedAge ?? 6;
-        if (!presetLoaded) {
-          setPresetLoaded(true);
-          setPresetHabitsLoading(true);
-          getPresetHabits(childAge)
-            .then((list) => setPresetHabits(list || []))
-            .catch(() => setPresetHabits([]))
-            .finally(() => setPresetHabitsLoading(false));
-          setPresetThemesLoading(true);
-          getPresetTemplates(childAge)
-            .then((list) => setPresetThemeTemplates(list || []))
-            .catch(() => setPresetThemeTemplates([]))
-            .finally(() => setPresetThemesLoading(false));
+    if (step !== 6 || !urlChildId) return;
+
+    let cancelled = false;
+    // 默认今天起，2 周
+    const start = formatDateISO(new Date());
+    setSetupStartDate(start);
+    getAbilities().then(setDimensions).catch(() => {});
+
+    childStore.fetchChildren().then(() => {
+      if (cancelled) return;
+      const children = useChildStore.getState().children;
+      const child = children.find((c) => c.id === urlChildId);
+      // URL 中的 child_id 可能来自其他账号/历史链接，不属于当前家庭 → 纠正后重进 Step 6
+      if (!child) {
+        const fallback =
+          children.find((c) => c.id === useChildStore.getState().currentChildId) || children[0];
+        if (fallback) {
+          toast.error('孩子档案不匹配，已切换到当前家庭的孩子');
+          navigate(
+            `/onboarding?step=6&child_id=${fallback.id}&mode=${encodeURIComponent(onboardingMode)}`,
+            { replace: true },
+          );
+        } else {
+          toast.error('未找到孩子档案，请重新创建');
+          navigate(`/onboarding?mode=${encodeURIComponent(onboardingMode)}`, { replace: true });
         }
-      }).catch(() => {
-        setStep6Grade(derivedGrade > 0 ? derivedGrade : 1);
-      });
-    }
+        return;
+      }
+
+      getChildScores(urlChildId).then((s) => {
+        if (!cancelled) setScores(s);
+      }).catch(() => {});
+
+      const g = child.derived_grade || child.grade || derivedGrade || 1;
+      setStep6Grade(g > 0 ? g : 1);
+      // 年龄为 0 时不能用 ??（0 是有效数字），需用 || 回退
+      const childAge = child.derived_age || child.age || derivedAge || 6;
+      if (!presetLoaded) {
+        setPresetLoaded(true);
+        setPresetHabitsLoading(true);
+        getPresetHabits(childAge)
+          .then((list) => { if (!cancelled) setPresetHabits(list || []); })
+          .catch(() => { if (!cancelled) setPresetHabits([]); })
+          .finally(() => { if (!cancelled) setPresetHabitsLoading(false); });
+        setPresetThemesLoading(true);
+        getPresetTemplates(childAge)
+          .then((list) => { if (!cancelled) setPresetThemeTemplates(list || []); })
+          .catch(() => { if (!cancelled) setPresetThemeTemplates([]); })
+          .finally(() => { if (!cancelled) setPresetThemesLoading(false); });
+      }
+    }).catch(() => {
+      if (!cancelled) setStep6Grade(derivedGrade > 0 ? derivedGrade : 1);
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, urlChildId]);
 
   // 按年级预勾选主轴维度（仅首次）
