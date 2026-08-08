@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, MessageCircle, Plus, X, Image as ImageIcon, MapPin, Users, Calendar, Gift, BookOpen, Trophy, Trash2, CheckCircle } from 'lucide-react';
+import { Heart, MessageCircle, Plus, X, Image as ImageIcon, MapPin, Users, Calendar, Gift, BookOpen, Trophy, Trash2, CheckCircle, ClipboardList, Phone } from 'lucide-react';
 import { useChildStore } from '../stores/childStore';
+import { useAuthStore } from '../stores/authStore';
+import { useToastStore } from '../stores/toastStore';
 import * as communityService from '../services/community';
 import type { CommunityShare, CommunityComment, CharityProject, CharityActivity, CharityDonation } from '../services/community';
 import { parseAbilitySummary } from '../services/growthStory';
@@ -495,6 +497,7 @@ function getDonationStatus(status: number): { text: string; color: string; bg: s
 
 function DonationModal({ project, onClose, onSuccess }: { project: CharityProject; onClose: () => void; onSuccess: () => void }) {
   const { children } = useChildStore();
+  const toast = useToastStore();
   const [selectedChildId, setSelectedChildId] = useState<number>(children[0]?.id || 0);
   const [weight, setWeight] = useState<string>('');
   const [details, setDetails] = useState('');
@@ -508,23 +511,23 @@ function DonationModal({ project, onClose, onSuccess }: { project: CharityProjec
 
   const handleSubmit = async () => {
     if (!selectedChildId) {
-      alert('请选择捐赠人（孩子）');
+      toast.error('请选择捐赠人（孩子）');
       return;
     }
     if (weightNum <= 0) {
-      alert('请输入捐赠重量');
+      toast.error('请输入捐赠重量');
       return;
     }
     if (!contactName.trim()) {
-      alert('请填写联系人姓名');
+      toast.error('请填写联系人姓名');
       return;
     }
     if (!contactPhone.trim()) {
-      alert('请填写联系电话');
+      toast.error('请填写联系电话');
       return;
     }
     if (!address.trim()) {
-      alert('请填写上门回收地址');
+      toast.error('请填写上门回收地址');
       return;
     }
     setSubmitting(true);
@@ -537,11 +540,11 @@ function DonationModal({ project, onClose, onSuccess }: { project: CharityProjec
         contact_phone: contactPhone.trim(),
         address: address.trim(),
       });
-      alert('捐赠申请已提交，等待上门取件');
+      toast.success('捐赠申请已提交，可在「设置-系统消息」查看进度');
       onClose();
       onSuccess();
     } catch (e: any) {
-      alert(e?.message || '提交失败');
+      toast.error(e?.message || '提交失败');
     } finally {
       setSubmitting(false);
     }
@@ -639,11 +642,11 @@ function DonationModal({ project, onClose, onSuccess }: { project: CharityProjec
             </div>
           </div>
           <div className="bg-primary/5 rounded-xl p-3 text-sm">
-            <p className="font-medium text-primary mb-1">📋 捐赠流程</p>
+            <p className="font-medium text-primary mb-1">捐赠流程</p>
             <ol className="text-xs text-text-secondary space-y-0.5 list-decimal list-inside">
-              <li>提交申请后等待机构上门取件</li>
-              <li>机构收到捐赠后确认收件</li>
-              <li>积分将发放到选中孩子的账户</li>
+              <li>提交申请后等待机构上门取件（系统消息会通知你）</li>
+              <li>机构确认收件后，消息中心会提醒进度</li>
+              <li>积分发放到选中孩子账户后，你会收到到账通知</li>
             </ol>
           </div>
         </div>
@@ -786,13 +789,22 @@ function CharityProjects() {
 function Activities() {
   const navigate = useNavigate();
   const childStore = useChildStore();
+  const { family } = useAuthStore();
+  const myFamilyId = family?.id || 0;
+  const { children, currentChildId, fetchChildren } = childStore;
   const [activities, setActivities] = useState<CharityActivity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listScope, setListScope] = useState<'all' | 'mine'>('all');
   const [filterType, setFilterType] = useState(0);
   const [selectedActivity, setSelectedActivity] = useState<CharityActivity | null>(null);
-  const [participants, setParticipants] = useState<any[]>([]);
-  const [activityDetails, setActivityDetails] = useState<any>(null);
+  const [participants, setParticipants] = useState<communityService.ActivityParticipant[]>([]);
   const [completeStep, setCompleteStep] = useState<1 | 2 | null>(null);
+  // 报名：先选孩子
+  const [joinActivityId, setJoinActivityId] = useState<number | null>(null);
+  const [joinChildId, setJoinChildId] = useState<number | null>(null);
+  const [joining, setJoining] = useState(false);
+  // 完成：先选孩子
+  const [completeChildId, setCompleteChildId] = useState<number | null>(null);
 
   const types = [
     { id: 0, label: '全部' },
@@ -802,19 +814,36 @@ function Activities() {
     { id: 4, label: '博弈游戏' },
   ];
 
+  const isMyActivity = (activity: CharityActivity) =>
+    !!myFamilyId && activity.family_id === myFamilyId;
+
   useEffect(() => {
     loadActivities();
-  }, [filterType]);
+  }, [filterType, listScope]);
+
+  useEffect(() => {
+    if (children.length === 0) {
+      void fetchChildren();
+    }
+  }, [children.length, fetchChildren]);
 
   async function loadActivities() {
     try {
       setLoading(true);
-      const result = await communityService.fetchActivities({
-        page: 1,
-        page_size: 30,
-        type: filterType,
-      });
-      setActivities(result.items);
+      if (listScope === 'mine') {
+        const result = await communityService.fetchMyActivities();
+        const items = result.items || [];
+        setActivities(
+          filterType === 0 ? items : items.filter((a) => a.activity_type === filterType),
+        );
+      } else {
+        const result = await communityService.fetchActivities({
+          page: 1,
+          page_size: 30,
+          type: filterType,
+        });
+        setActivities(result.items || []);
+      }
     } catch (e: any) {
       console.log('加载失败:', e.message);
     } finally {
@@ -825,35 +854,51 @@ function Activities() {
   async function openActivity(activity: CharityActivity) {
     try {
       const result = await communityService.fetchActivity(activity.id);
-      setSelectedActivity(activity);
-      setParticipants(result.participants);
-      setActivityDetails(result);
+      setSelectedActivity(result.activity || activity);
+      setParticipants(result.participants || []);
     } catch (e: any) {
-      console.log('加载失败:', e.message);
+      alert(e?.message || '加载活动详情失败');
     }
   }
 
-  async function joinActivity(activityId: number) {
-    const childId = childStore.currentChildId;
-    if (!childId) {
-      alert('请先选择一个孩子');
+  function openJoinPicker(activityId: number) {
+    if (children.length === 0) {
+      alert('请先在家庭里添加孩子，再来报名');
+      void fetchChildren();
       return;
     }
+    setJoinActivityId(activityId);
+    setJoinChildId(currentChildId || children[0]?.id || null);
+  }
+
+  async function confirmJoin() {
+    if (!joinActivityId || !joinChildId) {
+      alert('请选择孩子');
+      return;
+    }
+    setJoining(true);
     try {
-      await communityService.joinActivity(activityId, childId);
-      loadActivities();
+      await communityService.joinActivity(joinActivityId, joinChildId);
+      const joinedName = children.find((c) => c.id === joinChildId)?.nickname || '孩子';
+      alert(`${joinedName} 报名成功`);
+      const activityId = joinActivityId;
+      setJoinActivityId(null);
+      await loadActivities();
       if (selectedActivity?.id === activityId) {
-        openActivity(selectedActivity);
+        const result = await communityService.fetchActivity(activityId);
+        setSelectedActivity(result.activity || selectedActivity);
+        setParticipants(result.participants || []);
       }
     } catch (e: any) {
-      console.log('报名失败:', e.message);
+      alert(e?.message || '报名失败');
+    } finally {
+      setJoining(false);
     }
   }
 
-  async function completeActivity(activityId: number) {
-    const childId = childStore.currentChildId;
+  async function completeActivity(activityId: number, childId: number) {
     if (!childId) {
-      alert('请先选择一个孩子');
+      alert('请选择孩子');
       return;
     }
     try {
@@ -861,7 +906,7 @@ function Activities() {
       setCompleteStep(2);
       loadActivities();
     } catch (e: any) {
-      console.log('完成失败:', e.message);
+      alert(e?.message || '完成失败');
     }
   }
 
@@ -875,18 +920,39 @@ function Activities() {
     }
   }
 
+  const isOrganizerView = selectedActivity ? isMyActivity(selectedActivity) : false;
+
   if (loading) return <div className="text-center text-text-tertiary py-10">加载中...</div>;
 
   return (
     <>
-      {/* 发起按钮 */}
-      <button
-        onClick={() => navigate('/community/activities/new')}
-        className="w-full py-3 bg-blue-500 text-white rounded-2xl font-medium shadow-sm hover:bg-blue-600 transition-all flex items-center justify-center gap-2"
-      >
-        <Plus size={18} />
-        发起新活动
-      </button>
+      {/* 发起 + 我发起的入口 */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => navigate('/community/activities/new')}
+          className="flex-1 py-3 bg-blue-500 text-white rounded-2xl font-medium shadow-sm hover:bg-blue-600 transition-all flex items-center justify-center gap-2"
+        >
+          <Plus size={18} />
+          发起新活动
+        </button>
+        <button
+          onClick={() => setListScope((s) => (s === 'mine' ? 'all' : 'mine'))}
+          className={`px-4 py-3 rounded-2xl font-medium shadow-sm transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            listScope === 'mine'
+              ? 'bg-primary text-white'
+              : 'bg-card text-text-secondary border border-gray-100'
+          }`}
+        >
+          <ClipboardList size={18} />
+          我发起的
+        </button>
+      </div>
+
+      {listScope === 'mine' && (
+        <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800">
+          这里是你发起的活动，点击可查看报名用户名单
+        </div>
+      )}
 
       {/* 筛选栏 */}
       <div className="flex gap-2 overflow-x-auto pb-2">
@@ -909,11 +975,17 @@ function Activities() {
       {activities.length === 0 ? (
         <div className="bg-card rounded-2xl p-10 text-center shadow-sm">
           <Calendar size={48} className="mx-auto text-text-tertiary mb-3" />
-          <p className="text-text-primary font-medium">暂无活动</p>
-          <p className="text-sm text-text-tertiary mt-1">点击上方按钮发起第一个活动</p>
+          <p className="text-text-primary font-medium">
+            {listScope === 'mine' ? '还没有发起活动' : '暂无活动'}
+          </p>
+          <p className="text-sm text-text-tertiary mt-1">
+            {listScope === 'mine' ? '点击上方按钮发起第一个活动' : '点击上方按钮发起第一个活动'}
+          </p>
         </div>
       ) : (
-        activities.map((activity) => (
+        activities.map((activity) => {
+          const mine = isMyActivity(activity);
+          return (
           <div
             key={activity.id}
             onClick={() => openActivity(activity)}
@@ -921,15 +993,22 @@ function Activities() {
           >
             <div className="aspect-video bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center relative">
               {getActivityIcon(activity.activity_type)}
-              <span
-                className={`absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-medium ${
-                  activity.status === 1
-                    ? 'bg-success text-white'
-                    : 'bg-gray-200 text-text-secondary'
-                }`}
-              >
-                {activity.status === 1 ? '招募中' : '已结束'}
-              </span>
+              <div className="absolute top-3 right-3 flex gap-1.5">
+                {mine && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500 text-white">
+                    我发起的
+                  </span>
+                )}
+                <span
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                    activity.status === 1
+                      ? 'bg-success text-white'
+                      : 'bg-gray-200 text-text-secondary'
+                  }`}
+                >
+                  {activity.status === 1 ? '招募中' : '已结束'}
+                </span>
+              </div>
             </div>
             <div className="p-4">
               <h3 className="text-text-primary font-bold">{activity.title}</h3>
@@ -954,20 +1033,34 @@ function Activities() {
               </div>
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                 <span className="text-primary font-bold">+{activity.points} 积分</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    joinActivity(activity.id);
-                  }}
-                  disabled={activity.participants_count >= activity.max_participants || activity.status !== 1}
-                  className="px-4 py-1.5 bg-primary text-white text-sm rounded-xl disabled:bg-gray-300"
-                >
-                  {activity.participants_count >= activity.max_participants ? '已满员' : '立即报名'}
-                </button>
+                {mine ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openActivity(activity);
+                    }}
+                    className="px-4 py-1.5 bg-amber-500 text-white text-sm rounded-xl flex items-center gap-1"
+                  >
+                    <ClipboardList size={14} />
+                    查看报名 ({activity.participants_count})
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openJoinPicker(activity.id);
+                    }}
+                    disabled={activity.participants_count >= activity.max_participants || activity.status !== 1}
+                    className="px-4 py-1.5 bg-primary text-white text-sm rounded-xl disabled:bg-gray-300"
+                  >
+                    {activity.participants_count >= activity.max_participants ? '已满员' : '立即报名'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
-        ))
+          );
+        })
       )}
 
       {/* 活动详情 Modal */}
@@ -986,6 +1079,12 @@ function Activities() {
               </div>
 
               <div className="space-y-3 text-sm">
+                {isOrganizerView && (
+                  <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
+                    <ClipboardList size={12} />
+                    我发起的活动
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <span className="text-text-tertiary">类型：</span>
                   <span className="text-text-primary font-medium">{activityTypeLabels[selectedActivity.activity_type] || '其他'}</span>
@@ -998,6 +1097,14 @@ function Activities() {
                   <div className="flex items-center gap-2">
                     <MapPin size={16} className="text-text-tertiary" />
                     <span className="text-text-primary">{selectedActivity.location}</span>
+                  </div>
+                )}
+                {selectedActivity.contact_phone && (
+                  <div className="flex items-center gap-2">
+                    <Phone size={16} className="text-text-tertiary" />
+                    <a href={`tel:${selectedActivity.contact_phone}`} className="text-primary font-medium">
+                      {selectedActivity.contact_phone}
+                    </a>
                   </div>
                 )}
                 <div className="flex items-center gap-2">
@@ -1014,21 +1121,48 @@ function Activities() {
                 )}
               </div>
 
-              {/* 参与者列表 */}
-              {participants.length > 0 && (
+              {/* 报名名单：发起者始终展示；其他人有报名时也展示 */}
+              {(isOrganizerView || participants.length > 0) && (
                 <div className="mt-5">
-                  <h3 className="font-bold text-text-primary mb-2">参与者 ({participants.length})</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {participants.map((p) => (
-                      <div key={p.id} className="flex items-center gap-1.5 bg-gray-50 rounded-full px-3 py-1.5">
-                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-xs text-primary font-medium">
-                          {p.nickname?.charAt(0) || 'U'}
+                  <h3 className="font-bold text-text-primary mb-2 flex items-center gap-2">
+                    <ClipboardList size={16} className="text-amber-600" />
+                    {isOrganizerView ? '报名名单' : '参与者'}
+                    <span className="text-sm font-normal text-text-tertiary">({participants.length})</span>
+                  </h3>
+                  {participants.length === 0 ? (
+                    <div className="rounded-xl bg-gray-50 px-4 py-6 text-center text-sm text-text-tertiary">
+                      还没有人报名，分享活动给其他家庭吧
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {participants.map((p, idx) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2.5"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-sm text-primary font-semibold">
+                            {(p.child_name || '?').charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-text-primary truncate">
+                              {idx + 1}. {p.child_name || '未命名'}
+                            </div>
+                            <div className="text-xs text-text-tertiary mt-0.5">
+                              报名于 {p.created_at ? new Date(p.created_at).toLocaleString('zh-CN') : '-'}
+                            </div>
+                          </div>
+                          {p.completed ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-success font-medium">
+                              <CheckCircle size={12} />
+                              已完成
+                            </span>
+                          ) : (
+                            <span className="text-xs text-amber-600 font-medium">已报名</span>
+                          )}
                         </div>
-                        <span className="text-xs text-text-secondary">{p.nickname}</span>
-                        {p.completed && <CheckCircle size={12} className="text-success" />}
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1040,10 +1174,10 @@ function Activities() {
                 >
                   关闭
                 </button>
-                {selectedActivity.status === 1 && (
+                {selectedActivity.status === 1 && !isOrganizerView && (
                   <>
                     <button
-                      onClick={() => joinActivity(selectedActivity.id)}
+                      onClick={() => openJoinPicker(selectedActivity.id)}
                       disabled={selectedActivity.participants_count >= selectedActivity.max_participants}
                       className="flex-1 py-3 bg-primary text-white rounded-xl font-medium disabled:bg-gray-300"
                     >
@@ -1051,6 +1185,7 @@ function Activities() {
                     </button>
                     <button
                       onClick={() => {
+                        setCompleteChildId(currentChildId || children[0]?.id || null);
                         setCompleteStep(1);
                       }}
                       className="flex-1 py-3 bg-success text-white rounded-xl font-medium"
@@ -1059,15 +1194,46 @@ function Activities() {
                     </button>
                   </>
                 )}
+                {isOrganizerView && (
+                  <button
+                    onClick={() => {
+                      void openActivity(selectedActivity);
+                    }}
+                    className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-medium"
+                  >
+                    刷新名单
+                  </button>
+                )}
               </div>
             </div>
 
             {/* 完成活动模态框 */}
             {completeStep === 1 && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
                 <div className="bg-card rounded-2xl p-6 max-w-sm w-full">
                   <h3 className="text-lg font-bold text-text-primary text-center">确认完成</h3>
-                  <p className="text-sm text-text-tertiary text-center mt-2">确认您已完成此活动？完成后将获得积分奖励。</p>
+                  <p className="text-sm text-text-tertiary text-center mt-2">请选择完成活动的孩子，完成后将获得积分奖励。</p>
+                  <div className="flex flex-wrap gap-2 justify-center mt-4">
+                    {(participants.length > 0
+                      ? participants.map((p) => ({ id: p.child_id, nickname: p.child_name, done: p.completed }))
+                      : children.map((c) => ({ id: c.id, nickname: c.nickname, done: false }))
+                    ).map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => !c.done && setCompleteChildId(c.id)}
+                        disabled={c.done}
+                        className={`px-4 py-2 rounded-full border text-sm font-medium transition ${
+                          c.done
+                            ? 'bg-gray-100 text-gray-400 border-gray-100'
+                            : completeChildId === c.id
+                              ? 'bg-success text-white border-success'
+                              : 'bg-white text-text-secondary border-gray-200'
+                        }`}
+                      >
+                        {c.nickname}{c.done ? '（已完成）' : ''}
+                      </button>
+                    ))}
+                  </div>
                   <div className="flex gap-3 mt-5">
                     <button
                       onClick={() => setCompleteStep(null)}
@@ -1076,8 +1242,9 @@ function Activities() {
                       取消
                     </button>
                     <button
-                      onClick={() => completeActivity(selectedActivity.id)}
-                      className="flex-1 py-2.5 bg-success text-white rounded-xl text-sm font-medium"
+                      onClick={() => completeChildId && completeActivity(selectedActivity.id, completeChildId)}
+                      disabled={!completeChildId}
+                      className="flex-1 py-2.5 bg-success text-white rounded-xl text-sm font-medium disabled:opacity-50"
                     >
                       确认完成
                     </button>
@@ -1087,7 +1254,7 @@ function Activities() {
             )}
 
             {completeStep === 2 && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
                 <div className="bg-card rounded-2xl p-6 max-w-sm w-full">
                   <div className="flex justify-center mb-4">
                     <div className="w-20 h-20 rounded-full bg-success flex items-center justify-center">
@@ -1111,6 +1278,51 @@ function Activities() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 报名选孩子 */}
+      {joinActivityId !== null && (
+        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-bold text-text-primary text-center">选择报名的孩子</h3>
+            <p className="text-sm text-text-tertiary text-center mt-2">请选择要参加本次公益活动的孩子</p>
+            {children.length === 0 ? (
+              <p className="text-sm text-center text-red-500 mt-4">还没有孩子档案，请先去添加</p>
+            ) : (
+              <div className="flex flex-wrap gap-2 justify-center mt-4">
+                {children.map((child) => (
+                  <button
+                    key={child.id}
+                    onClick={() => setJoinChildId(child.id)}
+                    className={`px-4 py-2 rounded-full border text-sm font-medium transition ${
+                      joinChildId === child.id
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-white text-text-secondary border-gray-200'
+                    }`}
+                  >
+                    {child.nickname}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setJoinActivityId(null)}
+                disabled={joining}
+                className="flex-1 py-2.5 bg-gray-100 text-text-secondary rounded-xl text-sm font-medium"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void confirmJoin()}
+                disabled={joining || !joinChildId}
+                className="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-medium disabled:opacity-50"
+              >
+                {joining ? '报名中...' : '确认报名'}
+              </button>
+            </div>
           </div>
         </div>
       )}

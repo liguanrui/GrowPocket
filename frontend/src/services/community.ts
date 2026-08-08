@@ -74,6 +74,7 @@ export interface CharityActivity {
   activity_type: number;
   description?: string;
   location?: string;
+  contact_phone?: string;
   event_time: string;
   max_participants: number;
   participants_count: number;
@@ -209,6 +210,7 @@ export async function createActivity(data: {
   activity_type: number;
   description?: string;
   location?: string;
+  contact_phone: string;
   event_time: string;
   max_participants?: number;
   points?: number;

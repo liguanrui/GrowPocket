@@ -27,6 +27,7 @@ type CharityActivity struct {
 	ActivityType   int       `gorm:"not null;default:5;index" json:"activity_type"`
 	Description    string    `gorm:"type:text" json:"description,omitempty"`
 	Location       string    `gorm:"size:200" json:"location,omitempty"`
+	ContactPhone   string    `gorm:"size:20" json:"contact_phone,omitempty"`
 	EventTime      time.Time `gorm:"not null" json:"event_time"`
 	MaxParticipants int      `gorm:"not null;default:10" json:"max_participants"`
 	ParticipantsCount int    `gorm:"default:0" json:"participants_count"`

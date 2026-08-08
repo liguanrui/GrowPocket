@@ -9,7 +9,6 @@ import (
 	"growpocket/internal/service"
 	"growpocket/pkg/envloader"
 	"log"
-	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -228,6 +227,13 @@ func main() {
 		authorized.DELETE("/community/activities/:id", activityHandler.DeleteActivity)
 		authorized.GET("/community/activities/my", activityHandler.ListMyActivities)
 
+		// 系统消息（站内信）
+		msgHandler := handler.NewSystemMessageHandler()
+		authorized.GET("/messages", msgHandler.List)
+		authorized.GET("/messages/unread-count", msgHandler.UnreadCount)
+		authorized.POST("/messages/read-all", msgHandler.MarkAllRead)
+		authorized.POST("/messages/:id/read", msgHandler.MarkRead)
+
 		// AI 助理对话（v3）
 		chatHandler := handler.NewChatHandler(service.NewChatService(aiService))
 		authorized.POST("/chat/message", chatHandler.SendMessage)
@@ -284,13 +290,11 @@ func main() {
 		parentTaskTemplatesGroup.GET("/preset", handler.GetPresetParentTaskTemplates)
 		parentTaskTemplatesGroup.POST("/custom", handler.CreateCustomParentTaskTemplate)
 
-		// 调试接口（仅开发环境，用于时间穿越测试）
-		if os.Getenv("APP_ENV") == "development" {
-			debugHandler := handler.NewDebugHandler(taskGenService)
-			authorized.POST("/debug/advance-time", debugHandler.AdvanceTime)
-			authorized.POST("/debug/reset-time", debugHandler.ResetTime)
-			authorized.GET("/debug/time", debugHandler.GetTime)
-		}
+		// 调试接口：临时对生产开放（测完记得加回 APP_ENV=development 门禁）
+		debugHandler := handler.NewDebugHandler(taskGenService)
+		authorized.POST("/debug/advance-time", debugHandler.AdvanceTime)
+		authorized.POST("/debug/reset-time", debugHandler.ResetTime)
+		authorized.GET("/debug/time", debugHandler.GetTime)
 	}
 
 	// === 管理后台 Admin 路由 ===
@@ -341,6 +345,12 @@ func main() {
 		adminAuthorized.GET("/children", familyAdminHandler.ListChildren)
 		adminAuthorized.GET("/children/:id", familyAdminHandler.GetChildDetail)
 		adminAuthorized.GET("/parents", familyAdminHandler.ListParents)
+
+		// 公益捐赠管理（取件确认 → 发放积分）
+		donationAdminHandler := handler.NewAdminDonationHandler()
+		adminAuthorized.GET("/donations", donationAdminHandler.List)
+		adminAuthorized.POST("/donations/:id/confirm-received", donationAdminHandler.ConfirmReceived)
+		adminAuthorized.POST("/donations/:id/complete", donationAdminHandler.Complete)
 	}
 
 	// 初始化超级管理员（空库时自动创建）
