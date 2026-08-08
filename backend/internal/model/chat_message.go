@@ -1,6 +1,26 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
+
+// SuggestedActionsField 存储为 text(JSON 字符串)，序列化时输出为数组
+// 空字符串或非法 JSON 输出 []，避免前端 .map 崩溃
+type SuggestedActionsField string
+
+func (s SuggestedActionsField) MarshalJSON() ([]byte, error) {
+	if strings.TrimSpace(string(s)) == "" {
+		return []byte("[]"), nil
+	}
+	// 校验是否为合法 JSON 数组，合法则原样输出，非法则输出 []
+	var arr []json.RawMessage
+	if err := json.Unmarshal([]byte(s), &arr); err != nil {
+		return []byte("[]"), nil
+	}
+	return []byte(s), nil
+}
 
 // ChatMessage 对话消息
 type ChatMessage struct {
@@ -14,6 +34,6 @@ type ChatMessage struct {
 	// ToolCallID 关联 tool 执行结果消息，对应 OpenAI 协议中的 tool_call_id
 	ToolCallID string `gorm:"size:100" json:"tool_call_id"`
 	// SuggestedActions 存建议动作 JSON，供前端渲染确认卡片
-	SuggestedActions string    `gorm:"type:text" json:"suggested_actions"`
-	CreatedAt        time.Time `json:"created_at"`
+	SuggestedActions SuggestedActionsField `gorm:"type:text" json:"suggested_actions"`
+	CreatedAt        time.Time             `json:"created_at"`
 }

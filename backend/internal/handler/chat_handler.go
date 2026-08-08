@@ -7,6 +7,7 @@ import (
 	"growpocket/internal/model"
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
+	"log"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -59,6 +60,8 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 
 	reply, intent, suggestedActions, err := h.chatService.SendMessage(sessionID, role, req.ChildID, familyID, req.Message)
 	if err != nil {
+		log.Printf("[Chat] SendMessage 失败 session=%d child=%d family=%d role=%s msg=%q err=%v",
+			sessionID, req.ChildID, familyID, role, req.Message, err)
 		util.FailInternal(c, "AI 回复失败: "+err.Error())
 		return
 	}

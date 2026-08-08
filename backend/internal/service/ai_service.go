@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -47,7 +48,7 @@ type ToolCallFunction struct {
 // toolChatMessage 支持 function calling 协议的请求消息
 type toolChatMessage struct {
 	Role       string     `json:"role"`
-	Content    string     `json:"content,omitempty"`
+	Content    string     `json:"content"`                // 不用 omitempty：DeepSeek 要求 content 字段必须存在，assistant 携带 tool_calls 时 content 为空串
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // assistant 消息携带的工具调用请求
 	ToolCallID string     `json:"tool_call_id,omitempty"` // role=tool 消息携带的关联 ID
 }
@@ -198,23 +199,32 @@ func (s *AIService) ChatWithTools(systemPrompt string, history []model.ChatMessa
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		log.Printf("[AI] HTTP 请求失败 model=%s msgs=%d tools=%d payload=%d err=%v",
+			s.model, len(messages), len(tools), len(bodyBytes), err)
 		return "", nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[AI] 非 200 响应 status=%s model=%s msgs=%d tools=%d payload=%d body=%s",
+			resp.Status, s.model, len(messages), len(tools), len(bodyBytes), string(body))
 		return "", nil, errors.New("AI 请求失败: " + resp.Status + " " + string(body))
 	}
 
 	// 解析响应：同时支持普通回复(content)与工具调用(tool_calls)
 	// finish_reason=tool_calls 时 toolCalls 非空、reply 可能为空，调用方执行后循环
 	// finish_reason=stop 时 toolCalls 为空、reply 为最终回复
+	rawResp, _ := io.ReadAll(resp.Body)
 	var result chatCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(rawResp, &result); err != nil {
+		log.Printf("[AI] 响应解析失败 model=%s msgs=%d tools=%d err=%v raw=%s",
+			s.model, len(messages), len(tools), err, string(rawResp))
 		return "", nil, err
 	}
 	if len(result.Choices) == 0 {
+		log.Printf("[AI] 返回空 choices model=%s msgs=%d tools=%d raw=%s",
+			s.model, len(messages), len(tools), string(rawResp))
 		return "", nil, errors.New("AI 返回空结果")
 	}
 	choice := result.Choices[0]

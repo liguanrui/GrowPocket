@@ -203,7 +203,7 @@ func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, fami
 		Role:             "assistant",
 		Content:          reply,
 		Intent:           intent,
-		SuggestedActions: suggestedActionsJSON,
+		SuggestedActions: model.SuggestedActionsField(suggestedActionsJSON),
 	}
 	database.DB.Create(aiMsg)
 
