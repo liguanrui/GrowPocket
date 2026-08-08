@@ -18,6 +18,7 @@ import type { ChildAbilityScore, AbilityDimension, FocusLevel } from '../service
 import { MobileDatePicker } from '../components/MobileDatePicker';
 import { DayStepper } from '../components/DayStepper';
 import { SoftSelect } from '../components/SoftSelect';
+import { MediaUploader } from '../components/MediaUploader';
 import { AcademicMilestoneModal } from '../components/AcademicMilestoneModal';
 import { getCurrentCycle, setGoalsBatch, createCycle, updateCycle } from '../services/growthCycle';
 import type { DimensionProgress } from '../services/growthCycle';
@@ -266,15 +267,19 @@ function ShareModal({
   tasks: Task[];
   photos: string[];
 }) {
+  const toast = useToastStore();
   const [shareType, setShareType] = useState<'text' | 'text_image' | 'text_task'>('text');
   const [content, setContent] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const MAX_IMAGES = 9;
 
   const completedTasks = tasks.filter((t) => t.status === 3);
+  // 去重后的任务照片，供图文模式快捷勾选
+  const taskPhotoPool = Array.from(new Set(photos.filter(Boolean)));
 
   useEffect(() => {
     if (shareType === 'text_task' && selectedTaskId) {
@@ -301,6 +306,10 @@ function ShareModal({
 
   const handleSubmit = async () => {
     if (!content.trim()) return;
+    if (shareType === 'text_image' && selectedImages.length === 0) {
+      toast.error('请至少选择或上传一张图片');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -316,9 +325,10 @@ function ShareModal({
         child_name: child.nickname,
       });
 
+      toast.success('分享已发布');
       onClose();
     } catch (e: any) {
-      console.error('分享失败:', e);
+      toast.error(e?.message || '分享失败');
     } finally {
       setSubmitting(false);
     }
@@ -379,34 +389,47 @@ function ShareModal({
         />
 
         {shareType === 'text_image' && (
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-text-primary mb-2">
-              选择图片 <span className="text-text-tertiary">({selectedImages.length}/{MAX_IMAGES})</span>
+          <div className="mt-4 space-y-3">
+            <label className="block text-sm font-medium text-text-primary">
+              添加图片 <span className="text-text-tertiary">({selectedImages.length}/{MAX_IMAGES})</span>
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {photos.map((url, idx) => {
-                const isSelected = selectedImages.includes(url);
-                const selectedIndex = selectedImages.indexOf(url);
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => toggleImage(url)}
-                    className={`aspect-square rounded-xl overflow-hidden border-2 transition-all relative ${
-                      isSelected ? 'border-primary' : 'border-transparent'
-                    }`}
-                  >
-                    <img src={url} alt="" className="w-full h-full object-cover" />
-                    {isSelected && (
-                      <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
-                        <span className="text-white text-xs font-bold">{selectedIndex + 1}</span>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {photos.length === 0 && (
-              <p className="text-sm text-text-tertiary text-center py-4">暂无图片，请先完成任务并上传照片</p>
+            <MediaUploader
+              mediaUrls={selectedImages}
+              onChange={setSelectedImages}
+              maxCount={MAX_IMAGES}
+              size="compact"
+              label="上传图片"
+              emptyHint="从相册选择或拍照"
+              onUploadingChange={setUploading}
+            />
+
+            {taskPhotoPool.length > 0 && (
+              <div>
+                <p className="text-xs text-text-tertiary mb-2">或从任务照片中选择</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {taskPhotoPool.map((url, idx) => {
+                    const isSelected = selectedImages.includes(url);
+                    const selectedIndex = selectedImages.indexOf(url);
+                    return (
+                      <button
+                        key={`${url}-${idx}`}
+                        type="button"
+                        onClick={() => toggleImage(url)}
+                        className={`aspect-square rounded-xl overflow-hidden border-2 transition-all relative ${
+                          isSelected ? 'border-primary' : 'border-transparent'
+                        }`}
+                      >
+                        <img src={url} alt="" className="w-full h-full object-cover" />
+                        {isSelected && (
+                          <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                            <span className="text-white text-xs font-bold">{selectedIndex + 1}</span>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -453,11 +476,17 @@ function ShareModal({
 
         <button
           onClick={handleSubmit}
-          disabled={!content.trim() || submitting || (shareType === 'text_task' && !selectedTaskId)}
+          disabled={
+            !content.trim() ||
+            submitting ||
+            uploading ||
+            (shareType === 'text_task' && !selectedTaskId) ||
+            (shareType === 'text_image' && selectedImages.length === 0)
+          }
           className="w-full mt-6 py-3 bg-gradient-to-r from-primary to-amber-500 text-white rounded-xl font-medium shadow-lg shadow-primary/20 hover:shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
         >
           <Send size={16} />
-          {submitting ? '发布中...' : '发布分享'}
+          {uploading ? '上传中...' : submitting ? '发布中...' : '发布分享'}
         </button>
       </div>
     </div>

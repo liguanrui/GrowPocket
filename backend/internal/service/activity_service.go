@@ -21,6 +21,7 @@ type CreateActivityInput struct {
 	ActivityType int
 	Description string
 	Location    string
+	ContactPhone string
 	EventTime   time.Time
 	MaxParticipants int
 	Points      int
@@ -32,6 +33,9 @@ func (s *ActivityService) CreateActivity(in CreateActivityInput) (*model.Charity
 	}
 	if len(in.Title) > 200 {
 		return nil, errors.New("标题不能超过200字")
+	}
+	if in.ContactPhone == "" {
+		return nil, errors.New("请填写联系电话")
 	}
 	if in.EventTime.IsZero() {
 		return nil, errors.New("请选择活动时间")
@@ -51,6 +55,7 @@ func (s *ActivityService) CreateActivity(in CreateActivityInput) (*model.Charity
 		ActivityType: in.ActivityType,
 		Description:  in.Description,
 		Location:     in.Location,
+		ContactPhone: in.ContactPhone,
 		EventTime:    in.EventTime,
 		MaxParticipants: in.MaxParticipants,
 		ParticipantsCount: 0,
@@ -62,6 +67,7 @@ func (s *ActivityService) CreateActivity(in CreateActivityInput) (*model.Charity
 	if err := database.DB.Create(activity).Error; err != nil {
 		return nil, err
 	}
+	NewSystemMessageService().NotifyActivityPublished(activity)
 	return activity, nil
 }
 
@@ -124,10 +130,10 @@ func (s *ActivityService) JoinActivity(activityID, familyID, childID uint) (*mod
 		return nil, errors.New("该孩子已报名此活动")
 	}
 
-	// 获取孩子信息
+	// 获取孩子信息（必须属于当前家庭）
 	var child model.User
-	if err := database.DB.Where("id = ? AND role = ?", childID, "child").First(&child).Error; err != nil {
-		return nil, errors.New("孩子不存在")
+	if err := database.DB.Where("id = ? AND family_id = ? AND role = ?", childID, familyID, model.RoleChild).First(&child).Error; err != nil {
+		return nil, errors.New("请选择本家庭的孩子报名")
 	}
 
 	// 检查人数
@@ -147,6 +153,9 @@ func (s *ActivityService) JoinActivity(activityID, familyID, childID uint) (*mod
 
 	// 更新参与者数量
 	database.DB.Model(activity).Update("participants_count", activity.ParticipantsCount+1)
+
+	// 系统消息：报名成功 + 通知发起者（及满员提示）
+	NewSystemMessageService().NotifyActivityJoined(activity, familyID, child.Nickname)
 
 	return participant, nil
 }
@@ -203,6 +212,9 @@ func (s *ActivityService) CompleteActivity(activityID, familyID, childID uint, p
 	if err := database.DB.Create(tx).Error; err != nil {
 		return 0, err
 	}
+
+	// 系统消息：完成方积分到账 + 通知发起者
+	NewSystemMessageService().NotifyActivityCompletedForFamilies(activity, familyID, participant.ChildName, points)
 
 	return points, nil
 }

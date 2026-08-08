@@ -72,6 +72,7 @@ func Init(dbPath string) {
 		&model.CharityDonation{},
 		&model.CharityActivity{},
 		&model.ActivityParticipant{},
+		&model.SystemMessage{},
 		&model.TaskTemplate{},
 		&model.TaskRecurringConfig{},
 		&model.AbilityDimension{},

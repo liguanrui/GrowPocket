@@ -8,6 +8,7 @@ import {
   Trophy,
   FileText,
   Shield,
+  HeartHandshake,
   type LucideIcon,
 } from 'lucide-react'
 import type { AdminRole, MenuItem } from '@/types'
@@ -19,6 +20,7 @@ export const iconMap: Record<string, LucideIcon> = {
   parents: UserCircle,
   tasks: ListTodo,
   'redeem-items': Gift,
+  donations: HeartHandshake,
   achievements: Trophy,
   logs: FileText,
   'admin-users': Shield,
@@ -65,6 +67,13 @@ export const menuItems: MenuItem[] = [
     label: '兑换物品',
     icon: 'redeem-items',
     path: '/redeem/items',
+    roles: ['super_admin', 'admin', 'operator'],
+  },
+  {
+    key: 'donations',
+    label: '公益捐赠',
+    icon: 'donations',
+    path: '/donations',
     roles: ['super_admin', 'admin', 'operator'],
   },
   {

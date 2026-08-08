@@ -25,6 +25,7 @@ type createActivityReq struct {
 	ActivityType    int    `json:"activity_type"`
 	Description     string `json:"description"`
 	Location        string `json:"location"`
+	ContactPhone    string `json:"contact_phone"`
 	EventTime       string `json:"event_time"` // ISO 格式
 	MaxParticipants int    `json:"max_participants"`
 	Points          int    `json:"points"`
@@ -57,6 +58,7 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 		ActivityType:     req.ActivityType,
 		Description:      req.Description,
 		Location:         req.Location,
+		ContactPhone:     req.ContactPhone,
 		EventTime:        eventTime,
 		MaxParticipants:  req.MaxParticipants,
 		Points:           req.Points,

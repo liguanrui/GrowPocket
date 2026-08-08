@@ -18,6 +18,7 @@ import { ItemListPage } from '@/pages/ItemListPage'
 import { AchievementPage } from '@/pages/AchievementPage'
 import { OperationLogPage } from '@/pages/OperationLogPage'
 import { AdminListPage } from '@/pages/AdminListPage'
+import { DonationListPage } from '@/pages/DonationListPage'
 
 const NotFoundPage = () => (
   <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
@@ -61,6 +62,7 @@ const routes: RouteObject[] = [
       { path: 'parents', element: <ParentListPage /> },
       { path: 'tasks', element: <TaskListPage /> },
       { path: 'redeem/items', element: <ItemListPage /> },
+      { path: 'donations', element: <DonationListPage /> },
       { path: 'achievements/system', element: <AchievementPage /> },
       { path: 'system/logs', element: <OperationLogPage /> },
       { path: 'admin/users', element: <AdminListPage /> },
@@ -72,7 +74,7 @@ const routes: RouteObject[] = [
   },
 ]
 
-const router = createBrowserRouter(routes)
+const router = createBrowserRouter(routes, { basename: '/admin' })
 
 export function Router() {
   return <RouterProvider router={router} />
