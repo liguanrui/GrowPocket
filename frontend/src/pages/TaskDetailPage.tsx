@@ -848,63 +848,7 @@ export function TaskDetailPage() {
           </div>
         )}
 
-        {isDailyTask && cycleStats && (
-          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-2xl p-4 shadow-sm space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📊</span>
-              <div className="flex-1">
-                <h3 className="font-semibold text-text-primary">本周期累计</h3>
-                {cycleStats.cycle_name && (
-                  <p className="text-xs text-text-tertiary mt-0.5">{cycleStats.cycle_name}</p>
-                )}
-              </div>
-            </div>
-
-            {/* 累计统计行 */}
-            <div className="flex items-center gap-2 text-sm bg-white/60 rounded-xl py-2.5 px-3">
-              <TrendingUp size={14} className="text-amber-500 flex-shrink-0" />
-              <span className="text-text-secondary">
-                累计完成 <span className="font-bold text-amber-600">{cycleStats.completed_task_count}</span> 个任务
-              </span>
-              <span className="text-text-tertiary">·</span>
-              <span className="text-text-secondary">
-                <span className="font-bold text-amber-600">{cycleStats.total_points_earned}</span> 积分
-              </span>
-            </div>
-
-            {/* 能力维度 */}
-            {task.ability_dimension_id && abilityScore && (
-              <div className="flex items-center justify-between py-2 px-3 bg-white/60 rounded-xl">
-                <span className="text-sm text-text-tertiary flex items-center gap-1.5">
-                  <Sparkles size={14} className="text-primary" />
-                  能力维度
-                </span>
-                <span className="text-sm font-medium text-text-primary">
-                  {abilityScore.dimension_name} · <span className="text-primary font-bold">{abilityScore.score}</span> 分
-                </span>
-              </div>
-            )}
-
-            {/* 周期目标提示 */}
-            {cycleStats.focus_dim_names && cycleStats.focus_dim_names.length > 0 && (
-              <div className="flex items-start gap-2 text-sm text-text-secondary bg-white/60 rounded-xl py-2 px-3">
-                <Target size={14} className="text-primary mt-0.5 flex-shrink-0" />
-                <span>本周期重点关注：{cycleStats.focus_dim_names.join('、')}</span>
-              </div>
-            )}
-
-            {/* 剩余天数 */}
-            {cycleStats.days_remaining > 0 && (
-              <div className="flex items-center justify-between text-sm bg-white/60 rounded-xl py-2 px-3">
-                <span className="text-text-tertiary flex items-center gap-1.5">
-                  <Calendar size={14} className="text-orange-500" />
-                  剩余天数
-                </span>
-                <span className="font-medium text-orange-600">{cycleStats.days_remaining} 天</span>
-              </div>
-            )}
-          </div>
-        )}
+        
 
         {/* ==================== 主题任务：阶段时间线卡 + 选中阶段详情卡 ==================== */}
         {isThemeTask && themeParentTask && (

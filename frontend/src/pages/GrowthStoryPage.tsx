@@ -1,12 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Share2, Sparkles, RefreshCw, Image as ImageIcon, Target, Calendar, Star, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { ChevronLeft, Share2, Sparkles, RefreshCw, Image as ImageIcon, Calendar, Star, Trophy, CheckCircle2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useChildStore } from '../stores/childStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { IPPAvatar } from '../components/IPPAvatar';
-import { generateStory, getStory, getCurrentCycle, getCycleTasks, parseAbilitySummary, parsePhotoUrls } from '../services/growthStory';
-import type { GrowthStory } from '../services/growthStory';
+import {
+  generateStory,
+  getStory,
+  getStoryById,
+  getCurrentCycle,
+  getCycleTasks,
+  parseAbilitySummary,
+  parseAbilitySummaryAny,
+  parsePhotoUrls,
+} from '../services/growthStory';
+import type { GrowthStory, ProjectAbilitySummary } from '../services/growthStory';
 import type { Task } from '../services/tasks';
 import * as communityService from '../services/community';
 // V3.1 思路 C：IP 不再按成长指数切形态，无需 getGrowthIndex import
@@ -29,6 +38,7 @@ export function GrowthStoryPage() {
 
   const childId = Number(searchParams.get('child_id')) || 0;
   const cycleIdParam = searchParams.get('cycle_id');
+  const storyIdParam = searchParams.get('story_id'); // 新增：按故事主键 ID 查询（project 类型必须用）
 
   const child = childStore.children.find((c) => c.id === childId) || null;
   const childName = child?.nickname || '宝宝';
@@ -44,7 +54,7 @@ export function GrowthStoryPage() {
   // 每一轮 effect 的唯一请求 key：StrictMode 下 cleanup 会在同一轮 mount 后快速触发，
   // 用 key 来区分「本轮到没轮到我执行」，避免旧轮次的 finally 把新轮次 generatingRef 给误清
   // 也避免 StrictMode 的第二次 effect 因为 generatingRef=true 直接 return（死锁）
-  // 额外加 effectRunId：即使 [cycleIdParam, childId, reloadKey] 全都一样，
+  // 额外加 effectRunId：即使 [storyIdParam, cycleIdParam, childId, reloadKey] 全都一样，
   // 每一次 useEffect 运行（包括 StrictMode 的模拟重挂载）都会有独有的 runId，
   // 保证第一轮的 finally 不会误把第二轮的 generatingRef 给清掉（否则第二轮 setStory 条件会失败）
   const generatingRef = useRef<string | null>(null);
@@ -75,7 +85,7 @@ export function GrowthStoryPage() {
     effectRunIdRef.current += 1;
     const effectRunId = effectRunIdRef.current;
     // 生成唯一请求 ID：effectRunId 保证 StrictMode 两轮也不会撞，避免第一轮 finally 误清第二轮锁
-    const reqKey = `${cycleIdParam ?? 'g'}-${childId}-${reloadKey}-r${effectRunId}`;
+    const reqKey = `s${storyIdParam ?? 'x'}-c${cycleIdParam ?? 'g'}-${childId}-${reloadKey}-r${effectRunId}`;
     async function load() {
       if (!childId) {
         setError('缺少孩子信息');
@@ -102,43 +112,64 @@ export function GrowthStoryPage() {
       setLoading(true);
       setError(null);
       try {
-        let cycleId: number | null = cycleIdParam ? Number(cycleIdParam) : null;
-        const isHistorical = !!cycleIdParam;
-        if (!cycleId || isNaN(cycleId)) {
-          const current = await getCurrentCycle(childId);
-          cycleId = current.cycle?.id;
-          if (!cycleId) {
-            throw new Error('未找到当前成长周期');
-          }
-        }
-
         let result: GrowthStory;
-        if (isHistorical) {
-          // 【修复点 2】历史回看模式：只读已有故事，绝不回落触发生成。
-          // 因为历史故事对应的 cycle 一般已经 status=completed，如果再调用 generateStory
-          // 后端会返回「该周期已完成阶段回顾」错误，导致本页进入错误态。
-          // 如果用户确实想为未生成故事的历史周期生成故事，应在「成长主页」点“生成回顾”按钮进入非历史模式。
+        let cycleIdForTasks: number | null = null;
+
+        if (storyIdParam) {
+          // ===== 分支 A：URL 带 story_id（精确查询模式）—— cycle / project 通用
+          const storyId = Number(storyIdParam);
+          if (!storyId || isNaN(storyId)) {
+            throw new Error('无效的故事 ID');
+          }
           try {
-            result = await getStory(cycleId);
+            result = await getStoryById(storyId);
           } catch (histErr: any) {
             const msg = histErr?.message || '';
-            if (
-              msg.includes('不存在') ||
-              msg.includes('未找到') ||
-              msg.includes('NotFound') ||
-              msg.includes('404')
-            ) {
+            if (msg.includes('不存在') || msg.includes('未找到') || msg.includes('NotFound') || msg.includes('404')) {
               throw new Error(
                 isParent
-                  ? '这个阶段还没有生成成长故事，请到「成长」主页点击该阶段的“生成回顾”来生成。'
-                  : '这个阶段的成长故事还没有生成，请让家长点击“生成回顾”。',
+                  ? '这条成长故事记录不存在，可能已被删除或 ID 有误。'
+                  : '这条成长故事不存在哦。',
               );
             }
-            // 其他错误：权限/网络 -> 原样抛出
             throw histErr;
           }
+          // project 类型 cycle_id=0，不要去调 getCycleTasks
+          if ((result.type || 'cycle') === 'cycle' && result.cycle_id > 0) {
+            cycleIdForTasks = result.cycle_id;
+          }
         } else {
-          result = await generateStory(cycleId, childId, childName);
+          // ===== 分支 B：无 story_id → 沿用 cycle 模式（原逻辑）
+          let cycleId: number | null = cycleIdParam ? Number(cycleIdParam) : null;
+          const isHistorical = !!cycleIdParam;
+          if (!cycleId || isNaN(cycleId)) {
+            const current = await getCurrentCycle(childId);
+            cycleId = current.cycle?.id ?? null;
+            if (!cycleId) {
+              throw new Error('未找到当前成长周期');
+            }
+          }
+
+          if (isHistorical) {
+            // 历史回看模式：只读已有故事，绝不回落触发生成。
+            try {
+              result = await getStory(cycleId);
+            } catch (histErr: any) {
+              const msg = histErr?.message || '';
+              if (msg.includes('不存在') || msg.includes('未找到') || msg.includes('NotFound') || msg.includes('404')) {
+                throw new Error(
+                  isParent
+                    ? '这个阶段还没有生成成长故事，请到「成长」主页点击该阶段的“生成回顾”来生成。'
+                    : '这个阶段的成长故事还没有生成，请让家长点击“生成回顾”。',
+                );
+              }
+              throw histErr;
+            }
+          } else {
+            // 生成模式：触发生成（仅家长权限）
+            result = await generateStory(cycleId, childId, childName);
+          }
+          cycleIdForTasks = cycleId;
         }
 
         // 【修复点 3】拿到故事后做归属/有效性校验：
@@ -156,17 +187,18 @@ export function GrowthStoryPage() {
           );
         }
 
-        // 拉取周期内任务时间线（失败不阻塞故事展示，内部已单独 try-catch 兜底）
+        // 拉取周期内任务时间线（仅 cycle 类型且有 cycle_id）
+        // project 类型故事没有"周期任务"概念，跳过以免 404
         let tasks: Task[] = [];
-        try {
-          tasks = await getCycleTasks(cycleId);
-          // 防御性兜底：接口异常返回空对象 {} 时，强制退化为空数组，避免后续 map 报错
-          if (!Array.isArray(tasks)) tasks = [];
-        } catch (tasksErr) {
-          // 任务时间线加载失败不阻塞故事展示，仅开发模式下打印
-          if (import.meta.env.DEV) {
-            // eslint-disable-next-line no-console
-            console.warn('[GrowthStoryPage] 任务时间线加载失败，已跳过：', tasksErr);
+        if (cycleIdForTasks != null && cycleIdForTasks > 0) {
+          try {
+            tasks = await getCycleTasks(cycleIdForTasks);
+            if (!Array.isArray(tasks)) tasks = [];
+          } catch (tasksErr) {
+            if (import.meta.env.DEV) {
+              // eslint-disable-next-line no-console
+              console.warn('[GrowthStoryPage] 任务时间线加载失败，已跳过：', tasksErr);
+            }
           }
         }
         // 注意：1) 组件必须仍然挂载；2) 当前 effect 没有被 cleanup（没被取消）；3) 同一轮 reqKey 没被后来的轮次覆盖
@@ -206,7 +238,7 @@ export function GrowthStoryPage() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [childId, cycleIdParam, reloadKey]);
+  }, [childId, cycleIdParam, storyIdParam, reloadKey]);
 
   // 分享到社区
   async function handleShare() {
@@ -254,9 +286,9 @@ export function GrowthStoryPage() {
         {/* 开发模式下把所有关键诊断信息钉在 Loading 底部，方便排查为什么迟迟不显示 */}
         {import.meta.env.DEV && (
           <div className="mt-8 w-full max-w-md text-[10px] text-text-tertiary bg-gray-50 rounded-lg p-3 text-left space-y-1">
-            <div>[dev] URL  child_id={childId} cycle_id={cycleIdParam ?? '(generate mode)'}</div>
+            <div>[dev] URL  child_id={childId} cycle_id={cycleIdParam ?? '(generate mode)'} story_id={storyIdParam ?? '(none)'}</div>
             <div>[dev] childStore.children.length={childStore.children.length} loading={childStore.loading} selected={child?.id ?? '-'}</div>
-            <div>[dev] story.id={story?.id ?? '-'} story.child_id={story?.child_id ?? '-'} cycle_tasks={cycleTasks.length}</div>
+            <div>[dev] story.id={story?.id ?? '-'} story.child_id={story?.child_id ?? '-'} story.type={story?.type ?? 'cycle'} cycle_tasks={cycleTasks.length}</div>
             <div>[dev] err={error ?? 'none'}</div>
           </div>
         )}
@@ -295,14 +327,14 @@ export function GrowthStoryPage() {
           {import.meta.env.DEV && (
             <div className="mt-4 text-[10px] text-text-tertiary bg-amber-50 border border-amber-100 rounded-lg p-3 text-left space-y-1">
               <div className="font-medium text-amber-700">[dev 诊断] 为什么显示错误？</div>
-              <div>· URL child_id={childId} cycle_id={cycleIdParam ?? '(generate mode)'}</div>
+              <div>· URL child_id={childId} cycle_id={cycleIdParam ?? '(generate mode)'} story_id={storyIdParam ?? '(none)'}</div>
               <div>· auth.role={authStore.user?.role ?? '-'} isParent={isParent}</div>
               <div>· childStore  children.len={childStore.children.length}  loading={childStore.loading}</div>
               <div>· child={child ? `id=${child.id} name=${child.nickname}` : 'NULL'}</div>
-              <div>· story={story ? `id=${story.id} child_id=${story.child_id} cycle_id=${story.cycle_id} title=${story.title?.slice(0, 20) || '""'}` : 'NULL'}</div>
+              <div>· story={story ? `id=${story.id} child_id=${story.child_id} cycle_id=${story.cycle_id} type=${story.type || 'cycle'} title=${story.title?.slice(0, 20) || '""'}` : 'NULL'}</div>
               <div>· cycleTasks.len={cycleTasks.length} {Array.isArray(cycleTasks) ? '' : 'NOT AN ARRAY!!'}</div>
               <div>· current error = {error || '(无 error，但 story 为 null，说明是 !story 分支进来的)'}</div>
-              <div className="pt-1 text-[10px] text-amber-600">提示：请查看 Console 搜 [GrowthStoryPage]，或打开 Network 看 /api/growth-stories/{cycleIdParam ?? childId} 实际返回。</div>
+              <div className="pt-1 text-[10px] text-amber-600">提示：请查看 Console 搜 [GrowthStoryPage]，或打开 Network 看 /api/growth-stories 实际返回。</div>
             </div>
           )}
           <div className="mt-5 flex flex-col gap-2">
@@ -324,8 +356,10 @@ export function GrowthStoryPage() {
     );
   }
 
-  const abilityList = parseAbilitySummary(story.ability_summary);
+  const parsedAbility = parseAbilitySummaryAny(story.ability_summary, story.type || 'cycle');
   const photoList = parsePhotoUrls(story.photo_urls);
+  const storyType = story.type || 'cycle';
+  const isProjectStory = storyType === 'project';
 
   return (
     <div className="min-h-screen bg-bg pb-28">
@@ -358,74 +392,57 @@ export function GrowthStoryPage() {
           </div>
         </div>
 
-        {/* 阶段目标达成情况 */}
-        {abilityList.length > 0 && abilityList.some((d) => d.target_score > 0) && (
+        {/* 能力提升摘要 / 大师挑战验收评分 */}
+        {parsedAbility.kind !== 'empty' && (
           <div className="bg-card rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-3">
-              <Target size={14} className="text-purple-500" />
-              <span className="text-sm font-medium text-text-primary">阶段目标达成</span>
+              {isProjectStory ? (
+                <>
+                  <Trophy size={14} className="text-amber-500" />
+                  <span className="text-sm font-medium text-text-primary">大师挑战验收</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={14} className="text-emerald-500" />
+                  <span className="text-sm font-medium text-text-primary">能力提升</span>
+                </>
+              )}
             </div>
-            <div className="space-y-3">
-              {abilityList.filter((d) => d.target_score > 0).map((item, idx) => {
-                const progress = item.target_score > 0
-                  ? Math.min(100, Math.round((item.new_score / item.target_score) * 100))
-                  : 0;
-                return (
-                  <div key={idx}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm text-text-primary">{item.dimension_name}</span>
-                      <span className="text-xs text-text-tertiary">
-                        {item.new_score} / {item.target_score}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          progress >= 100 ? 'bg-green-500' : progress >= 60 ? 'bg-primary' : 'bg-amber-400'
-                        }`}
-                        style={{ width: `${Math.min(100, progress)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+
+            {/* cycle 类型：六维 delta 胶囊 */}
+            {parsedAbility.kind === 'cycle' && parsedAbility.deltas.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {parsedAbility.deltas.map((item, idx) => {
+                  const isUp = item.delta > 0;
+                  const isDown = item.delta < 0;
+                  const Icon = isUp ? TrendingUp : isDown ? TrendingDown : Minus;
+                  const colorClass = isUp
+                    ? 'bg-green-50 text-green-700'
+                    : isDown
+                    ? 'bg-red-50 text-red-700'
+                    : 'bg-gray-100 text-text-tertiary';
+                  return (
+                    <span
+                      key={idx}
+                      className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 ${colorClass}`}
+                    >
+                      <Icon size={12} />
+                      {item.dimension_name} {isUp ? '+' : ''}{item.delta}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* project 类型：三维评分 + 通过状态 + 积分 */}
+            {parsedAbility.kind === 'project' && (
+              <ProjectAbilityCard summary={parsedAbility.summary} />
+            )}
           </div>
         )}
 
-        {/* 能力提升摘要 */}
-        {abilityList.length > 0 && (
-          <div className="bg-card rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Sparkles size={14} className="text-emerald-500" />
-              <span className="text-sm font-medium text-text-primary">能力提升</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {abilityList.map((item, idx) => {
-                const isUp = item.delta > 0;
-                const isDown = item.delta < 0;
-                const Icon = isUp ? TrendingUp : isDown ? TrendingDown : Minus;
-                const colorClass = isUp
-                  ? 'bg-green-50 text-green-700'
-                  : isDown
-                  ? 'bg-red-50 text-red-700'
-                  : 'bg-gray-100 text-text-tertiary';
-                return (
-                  <span
-                    key={idx}
-                    className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 ${colorClass}`}
-                  >
-                    <Icon size={12} />
-                    {item.dimension_name} {isUp ? '+' : ''}{item.delta}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* 子任务时间线 */}
-        {cycleTasks.length > 0 && (
+        {/* 子任务时间线（仅 cycle 类型：project 类型无周期任务概念）*/}
+        {!isProjectStory && cycleTasks.length > 0 && (
           <div className="bg-card rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-3">
               <Calendar size={14} className="text-emerald-500" />
@@ -498,6 +515,68 @@ export function GrowthStoryPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 大师挑战验收评分卡（project 类型故事能力区专用）
+ * 三维 1-5 星评分 + 通过徽章 + 稀有积分奖励
+ */
+function ProjectAbilityCard({ summary }: { summary: ProjectAbilitySummary }) {
+  const dims: { key: keyof Pick<ProjectAbilitySummary, 'participation_score' | 'application_score' | 'quality_score'>; label: string; desc: string }[] = [
+    { key: 'participation_score', label: '参与度', desc: '孩子是否全程主动投入' },
+    { key: 'application_score', label: '能力应用', desc: '解决问题时是否灵活运用知识' },
+    { key: 'quality_score', label: '成果质量', desc: '最终成品的完成度与惊喜感' },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {/* 三维评分 */}
+      <div className="space-y-2">
+        {dims.map((d) => {
+          const score = summary[d.key] || 0;
+          return (
+            <div key={d.key} className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-text-primary">{d.label}</div>
+                <div className="text-[10px] text-text-tertiary mt-0.5">{d.desc}</div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0 pt-0.5">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Star
+                    key={i}
+                    size={14}
+                    className={i <= score ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-100'}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 分割线 */}
+      <div className="border-t border-dashed border-gray-100" />
+
+      {/* 结果 + 积分 */}
+      <div className="flex items-center justify-between">
+        <div
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+            summary.passed
+              ? 'bg-emerald-50 text-emerald-700'
+              : 'bg-amber-50 text-amber-700'
+          }`}
+        >
+          <CheckCircle2 size={12} />
+          {summary.passed ? '挑战通过' : '继续努力'}
+        </div>
+        {summary.points_awarded > 0 && (
+          <div className="text-xs text-text-secondary">
+            获得稀有积分 <span className="text-primary font-semibold">+{summary.points_awarded}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

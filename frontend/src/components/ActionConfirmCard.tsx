@@ -22,6 +22,10 @@ export interface ActionConfirmCardProps {
   suggestion: ActionSuggestion;
   status: 'pending' | 'executing' | 'success' | 'failed' | 'cancelled';
   errorMessage?: string;
+  // 当前对话模式是否为「家长模式」（允许执行家长专属操作）。
+  // 注：本系统登录身份永远是家长，mode 只是"模拟孩子视角聊天"或"家长本人操作"的体验切换；
+  //     当 mode==='child' 时，即使真实身份是家长，家长专属操作也要显示"请家长帮忙"。
+  allowParentActions?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   onRetry?: () => void;
@@ -52,6 +56,7 @@ export function ActionConfirmCard({
   suggestion,
   status,
   errorMessage,
+  allowParentActions = false,
   onConfirm,
   onCancel,
   onRetry,
@@ -71,13 +76,15 @@ export function ActionConfirmCard({
     return Date.now() - createdTime > TWENTY_FOUR_HOURS_MS;
   }, [suggestion.created_at]);
 
-  // 儿童权限降级：requires_parent 为 true 时确认按钮置灰不可点
-  const requiresParent = suggestion.requires_parent === true;
-  // 待确认态下被「过期 / 需家长」阻断时，整卡片置灰
-  const isBlocked = status === 'pending' && (isExpired || requiresParent);
-  // 确认按钮是否禁用：执行中 / 待确认态下过期或需家长
+  // 权限体验降级（本系统登录者恒为家长，此处按对话模式区分）：
+  // requires_parent=true 且 当前不是家长模式（allowParentActions=false）→ 确认按钮置灰不可点
+  // 即使你就是那个家长，只要切到了"模拟孩子聊天"的儿童模式，也要温柔地提示"需要请家长帮忙操作"
+  const blockedByParentGate = suggestion.requires_parent === true && !allowParentActions;
+  // 待确认态下被「过期 / 需家长权限但当前是儿童模式」阻断时，整卡片置灰
+  const isBlocked = status === 'pending' && (isExpired || blockedByParentGate);
+  // 确认按钮是否禁用：执行中 / 待确认态下过期或被家长权限门阻断
   const confirmDisabled =
-    status === 'executing' || (status === 'pending' && (isExpired || requiresParent));
+    status === 'executing' || (status === 'pending' && (isExpired || blockedByParentGate));
 
   // 容器配色：成功/失败/取消为终态色，其余用默认卡片色
   const containerTone =
@@ -173,8 +180,8 @@ export function ActionConfirmCard({
         </div>
       )}
 
-      {/* 儿童权限降级提示 */}
-      {requiresParent && status === 'pending' && (
+      {/* 儿童模式下的家长权限体验提示（仅当需要家长权限且当前不是家长模式时显示） */}
+      {blockedByParentGate && status === 'pending' && (
         <p className="text-xs text-text-secondary mt-2">需要请家长帮忙操作</p>
       )}
 

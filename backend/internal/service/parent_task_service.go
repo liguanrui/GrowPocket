@@ -38,6 +38,7 @@ type CreateParentTaskInput struct {
 	ChildID       uint
 	ChildName     string
 	CreatedBy     uint
+	CycleID       uint   // 所属成长周期 ID（用于关联 goal，0 时不写 goal）
 	TemplateID    uint   // 从模板创建时传入（与 Title 二选一）
 	Title         string // 自定义创建时传入
 	Description   string
@@ -119,7 +120,51 @@ func (s *ParentTaskService) CreateParentTask(input CreateParentTaskInput) (*mode
 	if err := database.DB.First(parent, parent.ID).Error; err != nil {
 		return nil, errors.New("加载主题任务失败")
 	}
+
+	// 关联到成长周期 goal（goal_type=parent_task，同周期同 parent_task_id 去重）
+	if input.CycleID != 0 {
+		var existingGoal model.Goal
+		if err := database.DB.Where("cycle_id = ? AND goal_type = ? AND parent_task_id = ?",
+			input.CycleID, "parent_task", parent.ID).First(&existingGoal).Error; err != nil {
+			// 不存在则创建
+			goal := &model.Goal{
+				CycleID:      input.CycleID,
+				FamilyID:     input.FamilyID,
+				ChildID:      input.ChildID,
+				GoalType:     "parent_task",
+				ParentTaskID: &parent.ID,
+			}
+			if err := database.DB.Create(goal).Error; err != nil {
+				log.Printf("[ParentTask] 关联 goal 失败 parent=%d cycle=%d: %v", parent.ID, input.CycleID, err)
+				// 关联失败不阻断主流程，仅记录日志
+			}
+		}
+	}
+
 	return parent, nil
+}
+
+// DeleteParentTask 删除主题任务（父任务）及其关联数据
+// 删除范围：parent 任务本身 + 所有子任务（task_kind=child AND parent_id）+ goals 表关联记录
+// 注意：不删除模板（TaskTemplate）
+func (s *ParentTaskService) DeleteParentTask(parentTaskID uint) error {
+	if parentTaskID == 0 {
+		return errors.New("parent_task_id 不能为空")
+	}
+	// 删除所有子任务（task_kind=child AND parent_id）
+	if err := database.DB.Where("parent_id = ? AND task_kind = ?", parentTaskID, "child").Delete(&model.Task{}).Error; err != nil {
+		return fmt.Errorf("删除子任务失败: %w", err)
+	}
+	// 删除 goals 表关联记录
+	if err := database.DB.Where("goal_type = ? AND parent_task_id = ?", "parent_task", parentTaskID).Delete(&model.Goal{}).Error; err != nil {
+		log.Printf("[ParentTask] 删除 goal 关联失败 parent=%d: %v", parentTaskID, err)
+		// 不阻断
+	}
+	// 删除 parent 任务本身
+	if err := database.DB.Delete(&model.Task{}, parentTaskID).Error; err != nil {
+		return fmt.Errorf("删除主题任务失败: %w", err)
+	}
+	return nil
 }
 
 // GenerateSubTaskOutline 为父任务生成子任务大纲（3-8 个），并实例化第 1 个子任务

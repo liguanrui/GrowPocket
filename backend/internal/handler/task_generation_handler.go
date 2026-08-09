@@ -7,6 +7,7 @@ import (
 	"growpocket/internal/service"
 	"growpocket/internal/util/timeutil"
 	"growpocket/pkg/util"
+	"log"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -88,7 +89,7 @@ func (h *TaskGenerationHandler) ReviewAITask(c *gin.Context) {
 }
 
 // GenerateToday POST /api/tasks/ai-generate
-// 家长手动触发：为指定儿童立即生成今日 AI 任务（仅 daily，跳过习惯和主题任务）
+// 家长手动触发：为指定儿童立即生成今日 AI 任务 + 确保习惯每日子任务就绪
 func (h *TaskGenerationHandler) GenerateToday(c *gin.Context) {
 	if middleware.GetRole(c) != "parent" {
 		util.FailForbidden(c, "仅家长可生成 AI 任务")
@@ -115,6 +116,13 @@ func (h *TaskGenerationHandler) GenerateToday(c *gin.Context) {
 		return
 	}
 
+	// Step 1: 先确保习惯每日子任务就绪（设置目标后可能尚未到定时任务时间）
+	if err := h.service.EnsureHabitDailyReady(req.ChildID); err != nil {
+		log.Printf("[TaskGenHandler] 手动触发习惯任务就绪失败 child=%d: %v", req.ChildID, err)
+		// 不返回错误，继续 daily 生成
+	}
+
+	// Step 2: 生成 daily AI 任务
 	if err := h.service.GenerateDailyTasksOnly(req.ChildID, familyID, userID, child.Nickname); err != nil {
 		util.FailInternal(c, "生成失败: "+err.Error())
 		return

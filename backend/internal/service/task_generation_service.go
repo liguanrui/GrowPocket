@@ -76,6 +76,15 @@ func (s *TaskGenerationService) GenerateDailyTasksOnly(childID, familyID, create
 	return s.generateDailyTasks(childID, familyID, createdBy, childName)
 }
 
+// EnsureHabitDailyReady 手动触发：仅确保习惯每日子任务就绪（不生成 daily AI 任务）
+// 供家长设置习惯目标后立即生成今日习惯打卡任务
+func (s *TaskGenerationService) EnsureHabitDailyReady(childID uint) error {
+	if s.habitService == nil {
+		return nil
+	}
+	return s.habitService.EnsureHabitDailyReady(childID)
+}
+
 // generateDailyTasks daily 任务生成核心逻辑（召回→LLM→守门员→写库）
 func (s *TaskGenerationService) generateDailyTasks(childID, familyID, createdBy uint, childName string) error {
 	// Step 1: 收集上下文
@@ -782,13 +791,28 @@ func cleanJSONResponse(s string) string {
 
 // GenerateForAllChildren 为所有儿童生成任务（定时任务调用）
 // 同一天内已生成过 AI 任务的儿童会被跳过，避免重复
+// 未设置 active 成长周期的儿童跳过 daily 生成（避免在目标未定义时盲目生成任务）
 func (s *TaskGenerationService) GenerateForAllChildren() {
 	var children []model.User
 	database.DB.Where("role = ?", model.RoleChild).Find(&children)
 	for _, child := range children {
-		// 检查今日是否已生成过 AI 任务
+		// 习惯任务就绪检查独立于 daily 幂等：
+		// 即使今日已生成过 AI daily 任务，也要确保 habit_daily 就绪（habit goal 可能晚于 daily 设置）
+		if s.habitService != nil {
+			if err := s.habitService.EnsureHabitDailyReady(child.ID); err != nil {
+				log.Printf("[TaskGen] 习惯每日任务就绪检查失败 child=%d: %v", child.ID, err)
+			}
+		}
+		// 前置检查：未设置 active 成长周期的儿童跳过 daily 生成
+		// （避免目标未定义时盲目生成 AI 任务，需家长先完成周期目标设置）
+		cycle, _, _ := s.cycleService.GetCurrentCycle(child.ID, child.FamilyID)
+		if cycle == nil {
+			log.Printf("[TaskGen] 儿童 %d 无 active 周期，跳过 daily 生成", child.ID)
+			continue
+		}
+		// 检查今日是否已生成过 AI daily 任务（仅控制 daily 生成，不影响 habit）
 		if hasTodayAITask(child.ID, child.FamilyID) {
-			log.Printf("[TaskGen] 儿童 %d 今日已生成过 AI 任务，跳过", child.ID)
+			log.Printf("[TaskGen] 儿童 %d 今日已生成过 AI 任务，跳过 daily 生成", child.ID)
 			continue
 		}
 		// 找家长 ID
@@ -827,6 +851,12 @@ func (s *TaskGenerationService) GenerateAIForFamily(familyID uint) {
 	var parent model.User
 	database.DB.Where("family_id = ? AND role = ?", familyID, model.RoleParent).First(&parent)
 	for _, child := range children {
+		// 习惯任务就绪检查独立于 daily 幂等
+		if s.habitService != nil {
+			if err := s.habitService.EnsureHabitDailyReady(child.ID); err != nil {
+				log.Printf("[TaskGen] 习惯每日任务就绪检查失败 child=%d: %v", child.ID, err)
+			}
+		}
 		if hasTodayAITask(child.ID, child.FamilyID) {
 			continue
 		}

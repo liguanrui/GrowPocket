@@ -258,7 +258,6 @@ type AbilityDelta struct {
 	OldScore      int    `json:"old_score"`
 	NewScore      int    `json:"new_score"`
 	Delta         int    `json:"delta"`
-	TargetScore   int    `json:"target_score"` // 阶段目标分（0 表示未设置目标）
 }
 
 // ReassessScores 阶段回顾时由 AI 重新评定六维能力得分
@@ -599,4 +598,71 @@ func (s *AbilityService) AwardMasteryStar(childID, dimID uint) error {
 	}
 	log.Printf("[Ability] AwardMasteryStar 成功 child=%d dim=%d stars=%d", childID, dimID, score.MasteryStars)
 	return nil
+}
+
+// SetQuestionnaireBaseline 问卷建档/重评时：将问卷原始分映射为"符合年级发展阶段"的能力基线分，覆盖写入。
+// 与 AddScoreForDimension（任务奖励累加）的区别：
+//   - 问卷是"评估当前水平"，不是"获得成长奖励"，所以先归一化 → 再映射到年级×维度的能力区间 → 覆盖 setScore
+//   - rawScore: 用户该维度答题实际得分（累加值，如 3 题 × 5 = 15）
+//   - rawMin:   该维度的理论最低分（每题选最低选项，如 3 题 × 1 = 3）
+//   - rawMax:   该维度的理论最高分（每题选最高选项，如 3 题 × 5 = 15）
+func (s *AbilityService) SetQuestionnaireBaseline(childID, familyID, dimID uint, rawScore, rawMin, rawMax int) error {
+	grade := s.resolveChildGrade(childID)
+	guide, _ := s.GetGradeGuide(grade, dimID)
+
+	// 1. 归一化答题位置 ratio ∈ [0, 1]：0 = 全选最差，1 = 全选最好
+	rawRange := rawMax - rawMin
+	if rawRange <= 0 {
+		rawRange = 1
+	}
+	ratio := float64(rawScore-rawMin) / float64(rawRange)
+	if ratio < 0 {
+		ratio = 0
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+
+	// 2. 计算本年级本维度的能力基线区间 [floor, ceiling]
+	//    设计逻辑：问卷全答对 ≠ 能力满分，需留出后续任务成长空间
+	//    - 低年级（1-2）：全答最好也不能太高（1 年级 primary 维 ≈ 60 分，体现刚入学）
+	//    - 高年级（5-6）：基础习惯应该不错，但 primary 维仍留 8-15 分成长空间（六年级 primary ≈ 88 分）
+	//    - latent 维：整体上限压在 Cap*0.85 附近，且 ceiling 不超过 Cap*0.55
+	gradeNorm := float64(grade-1) / 5.0 // 1年级→0.0, 6年级→1.0
+	var floor, ceiling float64
+	switch guide.FocusLevel {
+	case "primary":
+		// 主轴：1年级 [35% Cap, 60% Cap]，6年级 [60% Cap, 88% Cap]
+		// 例：一年级 full mark = 60；六年级 full mark = 88
+		floor = float64(guide.Cap) * (0.35 + 0.25*gradeNorm)
+		ceiling = float64(guide.Cap) * (0.60 + 0.28*gradeNorm)
+	case "secondary":
+		// 次轴：1年级 [25% Cap, 50% Cap]，6年级 [50% Cap, 80% Cap]
+		// 例：一年级 full mark = 50；六年级 secondary(full mark) = 80
+		floor = float64(guide.Cap) * (0.25 + 0.25*gradeNorm)
+		ceiling = float64(guide.Cap) * (0.50 + 0.30*gradeNorm)
+	case "latent":
+		// 蓄势：latentCap = Cap * 0.85（同发展硬上限）
+		// 1年级 [3% latentCap, 20% latentCap] ≈ [2,14]；6年级 [25% latentCap, 55% latentCap] ≈ [21,46]
+		latentCap := float64(guide.Cap) * 0.85
+		floor = latentCap * (0.03 + 0.22*gradeNorm)
+		ceiling = latentCap * (0.20 + 0.35*gradeNorm)
+	default:
+		floor = float64(guide.Cap) * 0.30
+		ceiling = float64(guide.Cap) * 0.65
+	}
+
+	// 3. 按 ratio 在区间内线性插值得到基线分
+	baseline := int(floor + ratio*(ceiling-floor) + 0.5)
+	if baseline < 0 {
+		baseline = 0
+	}
+	if baseline > 100 {
+		baseline = 100
+	}
+
+	log.Printf("[Ability] 问卷基线建档 child=%d dim=%d grade=%d level=%s raw=%d/%d~%d → ratio=%.2f cap=%d → baseline=%d (区间%.0f~%.0f)",
+		childID, dimID, grade, guide.FocusLevel, rawScore, rawMin, rawMax, ratio, guide.Cap, baseline, floor, ceiling)
+
+	return s.setScore(childID, familyID, dimID, baseline)
 }

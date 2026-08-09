@@ -332,7 +332,6 @@ func (s *ChatService) toolGetCurrentCycle(ctx context.Context, args map[string]a
 		goalList = append(goalList, map[string]any{
 			"dimension_id":   g.DimensionID,
 			"dimension_name": dimNameMap[g.DimensionID],
-			"target_score":   g.TargetScore,
 		})
 	}
 
@@ -371,7 +370,6 @@ func (s *ChatService) toolGetCycleProgress(ctx context.Context, args map[string]
 	for _, p := range progress {
 		resultList = append(resultList, map[string]any{
 			"dimension_name":   p["dimension_name"],
-			"target_score":     p["target_score"],
 			"current_score":    p["current_score"],
 			"progress_percent": p["progress"],
 		})
@@ -856,48 +854,6 @@ func (s *ChatService) toolRedeemItem(ctx context.Context, args map[string]any, f
 	return marshalResult(sug)
 }
 
-// W3. set_stage_goal 提议设置阶段目标（需家长权限）
-func (s *ChatService) toolSetStageGoal(ctx context.Context, args map[string]any, familyID, childID uint, userRole string) (string, error) {
-	if userRole != "parent" {
-		return "", fmt.Errorf("此操作仅家长可执行")
-	}
-	cycleID := getIntArg(args, "cycle_id", 0)
-	dimensionID := getIntArg(args, "dimension_id", 0)
-	targetScore := getIntArg(args, "target_score", 0)
-	if cycleID <= 0 || dimensionID <= 0 || targetScore <= 0 {
-		return "", fmt.Errorf("cycle_id / dimension_id / target_score 参数均必填且必须为正整数")
-	}
-
-	// 查周期名（含 familyID 鉴权）
-	var cycle model.GrowthCycle
-	if err := database.DB.Where("id = ? AND family_id = ?", cycleID, familyID).First(&cycle).Error; err != nil {
-		return "", fmt.Errorf("周期不存在或无权访问")
-	}
-	// 查维度名
-	dimName := ""
-	if dim, err := s.ability.GetDimensionByID(uint(dimensionID)); err == nil {
-		dimName = dim.Name
-	}
-
-	sug := ActionSuggestion{
-		Action:      "set_stage_goal",
-		Params:      map[string]any{"cycle_id": cycleID, "dimension_id": dimensionID, "target_score": targetScore},
-		Summary:     fmt.Sprintf("为周期「%s」的「%s」维度设置目标 %d 分", cycle.Name, dimName, targetScore),
-		ConfirmText: "确认设置",
-		CancelText:  "取消",
-		// 实际路由: POST /api/growth-cycles/:id/goals (main.go L130)；cycle_id 走 path，handler 需要 child_id/dimension_id/target_score（从 body 取）
-		APIEndpoint: fmt.Sprintf("/growth-cycles/%d/goals", cycleID),
-		APIMethod:   "POST",
-		APIBody: map[string]any{
-			"child_id":      childID,
-			"dimension_id":  dimensionID,
-			"target_score":  targetScore,
-		},
-		RequiresParent: true,
-	}
-	return marshalResult(sug)
-}
-
 // W4. create_cycle 提议创建成长周期（需家长权限）
 func (s *ChatService) toolCreateCycle(ctx context.Context, args map[string]any, familyID, childID uint, userRole string) (string, error) {
 	if userRole != "parent" {
@@ -1142,36 +1098,6 @@ func (s *ChatService) registerWriteTools() {
 				},
 			},
 			Execute: s.toolRedeemItem,
-			IsWrite: true,
-		},
-		// W3. set_stage_goal
-		{
-			Definition: ToolDefinition{
-				Type: "function",
-				Function: ToolFunctionDef{
-					Name:        "set_stage_goal",
-					Description: "提议为指定成长周期的某个能力维度设置阶段目标（家长权限，向用户展示确认卡片）",
-					Parameters: map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"cycle_id": map[string]any{
-								"type":        "integer",
-								"description": "成长周期 ID（必填）",
-							},
-							"dimension_id": map[string]any{
-								"type":        "integer",
-								"description": "能力维度 ID（必填）",
-							},
-							"target_score": map[string]any{
-								"type":        "integer",
-								"description": "目标分值（必填，正整数）",
-							},
-						},
-						"required": []string{"cycle_id", "dimension_id", "target_score"},
-					},
-				},
-			},
-			Execute: s.toolSetStageGoal,
 			IsWrite: true,
 		},
 		// W4. create_cycle

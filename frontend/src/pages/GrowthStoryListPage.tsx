@@ -122,7 +122,14 @@ export function GrowthStoryListPage() {
   };
 
   const handleStoryClick = (story: GrowthStory) => {
-    navigate(`/growth/story?cycle_id=${story.cycle_id}&child_id=${childId}`);
+    const storyType = story.type || 'cycle';
+    if (storyType === 'project') {
+      // project 类型 cycle_id=0，必须传 story_id 才能正确查到
+      navigate(`/growth/story?story_id=${story.id}&child_id=${childId}`);
+    } else {
+      // cycle 类型保留原参数形式（兼容历史 URL 书签）
+      navigate(`/growth/story?cycle_id=${story.cycle_id}&child_id=${childId}`);
+    }
   };
 
   const hasMore = total > stories.length;

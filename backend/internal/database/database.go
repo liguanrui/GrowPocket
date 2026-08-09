@@ -248,46 +248,46 @@ func seedGradeDimensionGuides(db *gorm.DB) error {
 	}
 
 	guides := []model.GradeDimensionGuide{
-		// 年级 1
+		// 年级 1：主轴=生活自理、独立自主、身心健康；次轴=动手实践；蓄势=学习认知、社交情感
 		{Grade: 1, DimensionID: 1, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
-		{Grade: 1, DimensionID: 2, Weight: 0.3, Cap: 40, FocusLevel: "latent"},
+		{Grade: 1, DimensionID: 2, Weight: 1.5, Cap: 95, FocusLevel: "primary"},
 		{Grade: 1, DimensionID: 3, Weight: 1.0, Cap: 80, FocusLevel: "secondary"},
-		{Grade: 1, DimensionID: 4, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
+		{Grade: 1, DimensionID: 4, Weight: 0.3, Cap: 40, FocusLevel: "latent"},
 		{Grade: 1, DimensionID: 5, Weight: 0.3, Cap: 35, FocusLevel: "latent"},
 		{Grade: 1, DimensionID: 6, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
-		// 年级 2
-		{Grade: 2, DimensionID: 1, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
-		{Grade: 2, DimensionID: 2, Weight: 0.4, Cap: 50, FocusLevel: "latent"},
-		{Grade: 2, DimensionID: 3, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
-		{Grade: 2, DimensionID: 4, Weight: 1.2, Cap: 100, FocusLevel: "secondary"},
-		{Grade: 2, DimensionID: 5, Weight: 1.0, Cap: 70, FocusLevel: "secondary"},
-		{Grade: 2, DimensionID: 6, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
-		// 年级 3
+		// 年级 2：主轴=生活自理、独立自主、身心健康；次轴=动手实践、学习认知；蓄势=社交情感
+		{Grade: 2, DimensionID: 1, Weight: 1.6, Cap: 100, FocusLevel: "primary"},
+		{Grade: 2, DimensionID: 2, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 2, DimensionID: 3, Weight: 1.2, Cap: 85, FocusLevel: "secondary"},
+		{Grade: 2, DimensionID: 4, Weight: 1.0, Cap: 80, FocusLevel: "secondary"},
+		{Grade: 2, DimensionID: 5, Weight: 0.4, Cap: 45, FocusLevel: "latent"},
+		{Grade: 2, DimensionID: 6, Weight: 1.6, Cap: 100, FocusLevel: "primary"},
+		// 年级 3：主轴=动手实践、学习认知；次轴=生活自理、独立自主、社交情感、身心健康
 		{Grade: 3, DimensionID: 1, Weight: 1.0, Cap: 85, FocusLevel: "secondary"},
-		{Grade: 3, DimensionID: 2, Weight: 1.2, Cap: 75, FocusLevel: "secondary"},
+		{Grade: 3, DimensionID: 2, Weight: 1.0, Cap: 80, FocusLevel: "secondary"},
 		{Grade: 3, DimensionID: 3, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
 		{Grade: 3, DimensionID: 4, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
 		{Grade: 3, DimensionID: 5, Weight: 1.0, Cap: 85, FocusLevel: "secondary"},
-		{Grade: 3, DimensionID: 6, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
-		// 年级 4
-		{Grade: 4, DimensionID: 1, Weight: 0.4, Cap: 90, FocusLevel: "latent"},
+		{Grade: 3, DimensionID: 6, Weight: 1.0, Cap: 90, FocusLevel: "secondary"},
+		// 年级 4：主轴=动手实践、学习认知、社交情感；次轴=生活自理、独立自主、身心健康
+		{Grade: 4, DimensionID: 1, Weight: 1.0, Cap: 90, FocusLevel: "secondary"},
 		{Grade: 4, DimensionID: 2, Weight: 1.2, Cap: 90, FocusLevel: "secondary"},
-		{Grade: 4, DimensionID: 3, Weight: 1.2, Cap: 100, FocusLevel: "secondary"},
+		{Grade: 4, DimensionID: 3, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
 		{Grade: 4, DimensionID: 4, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
 		{Grade: 4, DimensionID: 5, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
-		{Grade: 4, DimensionID: 6, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
-		// 年级 5
-		{Grade: 5, DimensionID: 1, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
-		{Grade: 5, DimensionID: 2, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
-		{Grade: 5, DimensionID: 3, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
-		{Grade: 5, DimensionID: 4, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 4, DimensionID: 6, Weight: 1.0, Cap: 95, FocusLevel: "secondary"},
+		// 年级 5：主轴=学习认知、社交情感、动手实践、身心健康；次轴=生活自理、独立自主
+		{Grade: 5, DimensionID: 1, Weight: 1.0, Cap: 95, FocusLevel: "secondary"},
+		{Grade: 5, DimensionID: 2, Weight: 1.2, Cap: 95, FocusLevel: "secondary"},
+		{Grade: 5, DimensionID: 3, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		{Grade: 5, DimensionID: 4, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
 		{Grade: 5, DimensionID: 5, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
-		{Grade: 5, DimensionID: 6, Weight: 1.0, Cap: 100, FocusLevel: "secondary"},
-		// 年级 6
+		{Grade: 5, DimensionID: 6, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
+		// 年级 6：全部维度 primary
 		{Grade: 6, DimensionID: 1, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
 		{Grade: 6, DimensionID: 2, Weight: 2.0, Cap: 100, FocusLevel: "primary"},
 		{Grade: 6, DimensionID: 3, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
-		{Grade: 6, DimensionID: 4, Weight: 1.2, Cap: 100, FocusLevel: "secondary"},
+		{Grade: 6, DimensionID: 4, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
 		{Grade: 6, DimensionID: 5, Weight: 1.8, Cap: 100, FocusLevel: "primary"},
 		{Grade: 6, DimensionID: 6, Weight: 1.5, Cap: 100, FocusLevel: "primary"},
 	}

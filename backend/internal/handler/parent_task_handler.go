@@ -94,6 +94,7 @@ func CreateCustomParentTaskTemplate(c *gin.Context) {
 
 type createParentTaskReq struct {
 	ChildID       uint   `json:"child_id" binding:"required"`
+	CycleID       uint   `json:"cycle_id"`       // 所属成长周期 ID（用于关联 goal，0 时不写 goal）
 	TemplateID    uint   `json:"template_id"`    // 从模板创建时传入（与 Title 二选一）
 	Title         string `json:"title"`          // 自定义创建时传入
 	Description   string `json:"description"`    // 自定义创建时传入
@@ -103,6 +104,7 @@ type createParentTaskReq struct {
 
 // CreateParentTask POST /api/tasks/parent
 // 创建主题任务（父任务）：支持从模板创建或自定义创建，创建后自动生成子任务大纲并实例化第 1 个
+// 若传入 cycle_id，会自动在 goals 表建立 goal_type=parent_task 关联记录
 func (h *ParentTaskHandler) CreateParentTask(c *gin.Context) {
 	var req createParentTaskReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -128,6 +130,7 @@ func (h *ParentTaskHandler) CreateParentTask(c *gin.Context) {
 		ChildID:       req.ChildID,
 		ChildName:     child.Nickname,
 		CreatedBy:     middleware.GetUserID(c),
+		CycleID:       req.CycleID,
 		TemplateID:    req.TemplateID,
 		Title:         req.Title,
 		Description:   req.Description,
@@ -139,6 +142,32 @@ func (h *ParentTaskHandler) CreateParentTask(c *gin.Context) {
 		return
 	}
 	util.OK(c, parent)
+}
+
+// DeleteParentTask DELETE /api/tasks/parent/:id
+// 删除主题任务（父任务）及其子任务和 goal 关联
+func (h *ParentTaskHandler) DeleteParentTask(c *gin.Context) {
+	if middleware.GetRole(c) != "parent" {
+		util.FailForbidden(c, "仅家长可删除主题任务")
+		return
+	}
+	parentTaskID, err := parseUintID(c.Param("id"))
+	if err != nil || parentTaskID == 0 {
+		util.FailBadRequest(c, "无效的主题任务 ID")
+		return
+	}
+	// 权限校验：确保该主题任务属于当前家庭
+	familyID := middleware.GetFamilyID(c)
+	var parent model.Task
+	if err := database.DB.Where("id = ? AND family_id = ? AND task_kind = ?", parentTaskID, familyID, "parent").First(&parent).Error; err != nil {
+		util.FailForbidden(c, "主题任务不存在或不属于当前家庭")
+		return
+	}
+	if err := h.service.DeleteParentTask(parentTaskID); err != nil {
+		util.FailInternal(c, err.Error())
+		return
+	}
+	util.OK(c, gin.H{"deleted": true})
 }
 
 // GenerateChildren POST /api/tasks/parent/:id/generate-children

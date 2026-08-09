@@ -6,7 +6,7 @@ import {
   Check, Star, CheckSquare, TrendingUp, Gift, UserPlus, Volume2, VolumeX,
   Mic, Keyboard, Volume1, Coins, BarChart3, ListTodo, FileText, ShoppingBag,
   Receipt, Clock, Image, Target, Sparkles, Trophy, Heart, Calendar, Flag,
-  LayoutTemplate,
+  LayoutTemplate, RefreshCw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChildStore } from '../stores/childStore';
@@ -506,6 +506,8 @@ export function AssistantPage() {
   const [actionStates, setActionStates] = useState<Record<string, ActionCardState>>({});
   // 本地追加的 AI 消息用负 id，避免与后端返回的正 id 及 Date.now() 临时 id 冲突
   const localMsgIdRef = useRef<number>(0);
+  // actionStates 持久化保存防抖定时器
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ===== 语音相关状态 =====
   const [voiceMode, setVoiceMode] = useState(false);          // 底部面板：文字 or 语音
@@ -537,14 +539,48 @@ export function AssistantPage() {
       localStorage.setItem('assistantMode', 'child');
     }
   }, [isParent, mode]);
-  const switchMode = (m: 'parent' | 'child') => {
+
+  // 模式切换前的确认弹窗：当前会话有聊天记录时弹二次确认
+  const [modeSwitchPrompt, setModeSwitchPrompt] = useState<{
+    open: boolean;
+    target: 'parent' | 'child';
+  }>({ open: false, target: mode });
+
+  const openModeSwitchPrompt = (target: 'parent' | 'child') => {
+    if (!isParent && target === 'parent') return;
+    setModeSwitchPrompt({ open: true, target });
+  };
+  const closeModeSwitchPrompt = () =>
+    setModeSwitchPrompt((p) => ({ ...p, open: false }));
+
+  // 真正执行模式切换（清上下文、持久化）。有聊天记录时不应直接调用，需先经 requestSwitchMode 弹确认
+  const switchModeInternal = (m: 'parent' | 'child') => {
     if (!isParent && m === 'parent') return; // 儿童不能切家长
+    // 切换前先暂存 storageKey（setSessionId 后 actionStatesStorageKey 会变，就删不到老 key 了）
+    const oldStorageKey = actionStatesStorageKey;
     setMode(m);
     localStorage.setItem('assistantMode', m);
     // 切模式会改变 system prompt，重置会话避免上下文串味
     setMessages([]);
     setSessionId(0);
     setActionStates({});
+    // 清掉原会话的 actionStates 持久化（会话已重置、sessionId 归零）
+    if (oldStorageKey) {
+      try { localStorage.removeItem(oldStorageKey); } catch { /* ignore */ }
+    }
+    closeModeSwitchPrompt();
+  };
+
+  // 切换模式入口：空会话直接切；有记录弹确认
+  const requestSwitchMode = (target: 'parent' | 'child') => {
+    if (!isParent && target === 'parent') return;
+    if (target === mode) return; // 已经是目标模式，忽略
+    const hasChat = messages.length > 0;
+    if (!hasChat) {
+      switchModeInternal(target);
+    } else {
+      openModeSwitchPrompt(target);
+    }
   };
 
   // 儿童模式（无论登录角色）：锁定为登录用户本人，不暴露家庭儿童切换
@@ -554,6 +590,60 @@ export function AssistantPage() {
   const selectedChild = !isParent
     ? (authUser ? { id: authUser.id, nickname: authUser.nickname } as Child : null)
     : (children.find((c) => c.id === selectedChildId) || null);
+
+  // ===== 动作确认卡片状态持久化 =====
+  // localStorage key 按 childId + sessionId 隔离，避免跨孩子/跨会话互相污染
+  const actionStatesStorageKey = useMemo(() => {
+    if (!selectedChildId || !sessionId) return '';
+    return `gp_action_states_${selectedChildId}_${sessionId}`;
+  }, [selectedChildId, sessionId]);
+
+  // 1) 加载：进入某会话时从 localStorage 恢复 actionStates
+  useEffect(() => {
+    if (!actionStatesStorageKey) {
+      setActionStates({});
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(actionStatesStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, ActionCardState>;
+        if (parsed && typeof parsed === 'object') {
+          setActionStates(parsed);
+          return;
+        }
+      }
+    } catch {
+      // JSON 解析失败兜底
+    }
+    setActionStates({});
+  }, [actionStatesStorageKey]);
+
+  // 2) 保存：actionStates 变化时写入 localStorage（防抖 150ms 降低频率）
+  useEffect(() => {
+    if (!actionStatesStorageKey) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      try {
+        // 只保存非 pending 的终态（executing/success/failed/cancelled）
+        // pending 是默认态，刷新后回到 pending 也合理，还能减少存储垃圾
+        const filtered: Record<string, ActionCardState> = {};
+        for (const [k, v] of Object.entries(actionStates)) {
+          if (v.status !== 'pending') filtered[k] = v;
+        }
+        if (Object.keys(filtered).length === 0) {
+          localStorage.removeItem(actionStatesStorageKey);
+        } else {
+          localStorage.setItem(actionStatesStorageKey, JSON.stringify(filtered));
+        }
+      } catch {
+        // localStorage 写入失败（隐身模式/配额满）静默忽略
+      }
+    }, 150);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [actionStates, actionStatesStorageKey]);
 
   useEffect(() => {
     if (children.length === 0) {
@@ -974,7 +1064,7 @@ export function AssistantPage() {
         <div className="max-w-[448px] mx-auto flex justify-center">
           <div className="inline-flex p-0.5 rounded-full bg-[#FFF1E6] border border-[#F5E6D3]">
             <button
-              onClick={() => switchMode('parent')}
+              onClick={() => requestSwitchMode('parent')}
               disabled={!isParent && mode !== 'parent'}
               className={`px-4 py-1 rounded-full text-xs font-medium transition-all ${
                 mode === 'parent'
@@ -985,7 +1075,7 @@ export function AssistantPage() {
               家长模式
             </button>
             <button
-              onClick={() => switchMode('child')}
+              onClick={() => requestSwitchMode('child')}
               className={`px-4 py-1 rounded-full text-xs font-medium transition-all ${
                 mode === 'child'
                   ? 'bg-[#F59E6B] text-white shadow-sm'
@@ -1131,6 +1221,7 @@ export function AssistantPage() {
                               suggestion={suggestion}
                               status={cardState?.status ?? 'pending'}
                               errorMessage={cardState?.errorMessage}
+                              allowParentActions={mode === 'parent'}
                               onConfirm={() => handleConfirmAction(msg, suggestion, idx)}
                               onCancel={() => handleCancelAction(msg, suggestion, idx)}
                               onRetry={() => handleConfirmAction(msg, suggestion, idx)}
@@ -1323,6 +1414,61 @@ export function AssistantPage() {
           onClose={() => setShowSwitch(false)}
           onAddChild={() => { setShowSwitch(false); navigate('/settings/family'); }}
         />
+      )}
+
+      {/* 模式切换二次确认弹窗：有聊天记录时，点击切换 seg 才弹 */}
+      {modeSwitchPrompt.open && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center px-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mode-switch-title"
+        >
+          {/* 遮罩：点击取消 */}
+          <div
+            className="absolute inset-0 bg-[#2D2A26]/30 backdrop-blur-[2px]"
+            onClick={closeModeSwitchPrompt}
+          />
+          {/* 紧凑卡片：高~180px，主要按钮在首屏可见区（不用滚动） */}
+          <div className="relative w-full max-w-[320px] rounded-2xl bg-white border border-[#F5E6D3] shadow-xl overflow-hidden">
+            <div className="px-5 pt-5 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-[#FFF1E6] flex items-center justify-center flex-shrink-0">
+                  <RefreshCw size={16} className="text-[#F59E6B]" />
+                </div>
+                <h3
+                  id="mode-switch-title"
+                  className="text-sm font-bold text-[#2D2A26]"
+                >
+                  切换对话模式？
+                </h3>
+              </div>
+              <p className="text-xs leading-relaxed text-[#7A7168] pl-10">
+                当前会话已有 {messages.length} 条聊天记录。
+                <br />
+                切换到「{modeSwitchPrompt.target === 'parent' ? '家长模式' : '儿童模式'}」
+                会 <span className="text-[#E87461] font-medium">清空当前上下文</span>
+                并开始一段新的对话。
+              </p>
+            </div>
+            {/* 按钮区：固定在卡片底部，无需滚动即可点 */}
+            <div className="flex gap-2 px-5 pb-5 pt-2">
+              <button
+                onClick={closeModeSwitchPrompt}
+                className="flex-1 px-3 py-2 rounded-xl text-sm font-medium text-[#7A7168] bg-[#F7F3EE] hover:bg-[#EFE7DA] active:scale-[0.98] transition-all"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => switchModeInternal(modeSwitchPrompt.target)}
+                className="flex-1 px-3 py-2 rounded-xl text-sm font-medium text-white bg-[#F59E6B] hover:bg-[#ED8F59] active:scale-[0.98] transition-all shadow-sm"
+                autoFocus
+              >
+                确认切换
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

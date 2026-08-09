@@ -7,6 +7,7 @@ import (
 	"growpocket/internal/model"
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -15,14 +16,16 @@ import (
 )
 
 type TaskHandler struct {
-	cfg     *config.Config
-	service *service.TaskService
+	cfg          *config.Config
+	service      *service.TaskService
+	habitService *service.HabitService
 }
 
 func NewTaskHandler(cfg *config.Config) *TaskHandler {
 	return &TaskHandler{
-		cfg:     cfg,
-		service: service.NewTaskService(),
+		cfg:          cfg,
+		service:      service.NewTaskService(),
+		habitService: service.NewHabitService(nil), // 仅用于确保习惯任务就绪，AI鼓励语降级
 	}
 }
 
@@ -121,6 +124,25 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 	}
 	if len(kinds) == 0 {
 		kinds = []string{"daily", "habit_daily", "child"}
+	}
+
+	// 兜底：当请求包含 habit_daily 且指定了 child_id 时，先确保习惯每日子任务就绪
+	// 避免定时任务(08:00)未跑或用户刚设置完习惯目标时，列表页看不到今日习惯任务
+	if childID > 0 && h.habitService != nil {
+		needHabit := false
+		for _, k := range kinds {
+			if k == "habit_daily" || k == "habit_master" {
+				needHabit = true
+				break
+			}
+		}
+		if needHabit {
+			// 使用 Lite 版本跳过 AI 鼓励语，避免阻塞列表查询（AI鼓励语在创建时降级为固定文案）
+			if err := h.habitService.EnsureHabitDailyReadyLite(childID); err != nil {
+				// 仅记录日志，不影响主流程返回
+				log.Printf("[TaskHandler][ListTasks] 习惯任务就绪检查失败 child=%d: %v", childID, err)
+			}
+		}
 	}
 
 	page := util.ParseInt(c.Query("page"), 1)

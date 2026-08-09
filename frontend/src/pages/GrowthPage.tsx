@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChevronRight, Share2, Sparkles, Image, FileText, Send, X, Target, Check, Sliders, History, BookOpen, ArrowRight, Gift, HelpCircle, ChevronDown, Star } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -28,9 +28,11 @@ import {
   getPresetTemplates,
   createCustomTemplate,
   createParentTask,
+  deleteParentTask,
   generateChildren,
 } from '../services/parentTasks';
 import type { ParentTaskTemplate } from '../services/parentTasks';
+import { getTask } from '../services/tasks';
 import { listStories, parseAbilitySummary } from '../services/growthStory';
 import type { GrowthStory } from '../services/growthStory';
 import { useToastStore } from '../stores/toastStore';
@@ -56,11 +58,6 @@ const THEME_CATEGORIES = [
   { value: 'community', label: '社区公益' },
   { value: 'other', label: '其他' },
 ];
-const THEME_CATEGORY_LABEL: Record<string, string> = THEME_CATEGORIES.reduce(
-  (acc, c) => ({ ...acc, [c.value]: c.label }),
-  {} as Record<string, string>,
-);
-
 // 解析 sub_task_outline（JSON 字符串）为数组长度，用于提示生成子任务数
 function countSubTaskOutline(outline?: string): number {
   if (!outline) return 0;
@@ -100,12 +97,12 @@ function computeChildAge(child: { derived_age?: number; age?: number | null; bir
 // 数据源：V3.1 PRD「年级 × 维度权重矩阵」
 // key: grade(1-6)，value: { dimension_code: focus_level }
 const FOCUS_LEVEL_FALLBACK: Record<number, Record<string, FocusLevel>> = {
-  1: { self_care: 'primary', independence: 'latent', hands_on: 'secondary', learning: 'primary', social_emotional: 'latent', health: 'primary' },
-  2: { self_care: 'primary', independence: 'latent', hands_on: 'primary', learning: 'secondary', social_emotional: 'secondary', health: 'primary' },
+  1: { self_care: 'primary', independence: 'primary', hands_on: 'secondary', learning: 'latent', social_emotional: 'latent', health: 'primary' },
+  2: { self_care: 'primary', independence: 'primary', hands_on: 'secondary', learning: 'secondary', social_emotional: 'latent', health: 'primary' },
   3: { self_care: 'secondary', independence: 'secondary', hands_on: 'primary', learning: 'primary', social_emotional: 'secondary', health: 'secondary' },
-  4: { self_care: 'latent', independence: 'secondary', hands_on: 'secondary', learning: 'primary', social_emotional: 'primary', health: 'secondary' },
-  5: { self_care: 'secondary', independence: 'primary', hands_on: 'secondary', learning: 'primary', social_emotional: 'primary', health: 'secondary' },
-  6: { self_care: 'primary', independence: 'primary', hands_on: 'primary', learning: 'secondary', social_emotional: 'primary', health: 'primary' },
+  4: { self_care: 'secondary', independence: 'secondary', hands_on: 'primary', learning: 'primary', social_emotional: 'primary', health: 'secondary' },
+  5: { self_care: 'secondary', independence: 'secondary', hands_on: 'primary', learning: 'primary', social_emotional: 'primary', health: 'primary' },
+  6: { self_care: 'primary', independence: 'primary', hands_on: 'primary', learning: 'primary', social_emotional: 'primary', health: 'primary' },
 };
 
 // 蓄势维儿童发展小贴士（按 dimension_code 动态切换）
@@ -277,9 +274,9 @@ function ShareModal({
 
   const MAX_IMAGES = 9;
 
-  const completedTasks = tasks.filter((t) => t.status === 3);
+  const completedTasks = useMemo(() => tasks.filter((t) => t.status === 3), [tasks]);
   // 去重后的任务照片，供图文模式快捷勾选
-  const taskPhotoPool = Array.from(new Set(photos.filter(Boolean)));
+  const taskPhotoPool = useMemo(() => Array.from(new Set(photos.filter(Boolean))), [photos]);
 
   useEffect(() => {
     if (shareType === 'text_task' && selectedTaskId) {
@@ -836,13 +833,8 @@ export function GrowthPage() {
   const [customHabitDesc, setCustomHabitDesc] = useState('');
   const [habitSubmitting, setHabitSubmitting] = useState(false);
   // 主题任务（在习惯目标区之后展示，单选，最多 1 个）
+  const [setupExistingParentTask, setSetupExistingParentTask] = useState<{ id: number; title: string } | null>(null); // 当前周期已存在的主题任务（切换时先删后建）
   const [setupThemeTemplateId, setSetupThemeTemplateId] = useState<number | null>(null); // 选中的主题模板 ID
-  const [setupThemeCustom, setSetupThemeCustom] = useState<{
-    title: string;
-    description: string;
-    estimated_days: number;
-    category: string;
-  } | null>(null); // 自定义主题数据（不走模板时的兜底路径）
   const [presetThemeTemplates, setPresetThemeTemplates] = useState<ParentTaskTemplate[]>([]); // 预设主题模板列表
   const [presetThemesLoading, setPresetThemesLoading] = useState(false);
   const [showCustomThemeForm, setShowCustomThemeForm] = useState(false); // 自定义主题表单显示开关
@@ -955,11 +947,15 @@ export function GrowthPage() {
     if (isNaN(start.getTime())) return '';
     const end = new Date(start);
     end.setDate(end.getDate() + weeks * 7);
-    return end.toISOString().slice(0, 10);
+    // 用本地日期拼接，避免 toISOString() 的本地→UTC 转换导致日期偏移一天
+    const y = end.getFullYear();
+    const m = String(end.getMonth() + 1).padStart(2, '0');
+    const d = String(end.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   // 打开阶段目标设置面板
-  const openGoalSetup = () => {
+  const openGoalSetup = async () => {
     if (cycleId) {
       setSetupStartDate(cycleStartDate.slice(0, 10));
       // 从现有周期时间反推周数（限制在 1-4 周）
@@ -974,9 +970,11 @@ export function GrowthPage() {
         .map((g) => g.dimension_id);
       const dimIdsFromProgress = progressList.map((p) => p.dimension_id);
       // 去重，优先按 cycleGoals（更准确的设置历史），不足再补 progressList 里的维度
+      // 过滤掉 falsy 值（0/undefined），避免提交时 dimension_id 缺失导致后端 400
       const dedup: number[] = [];
       const seen = new Set<number>();
       for (const d of [...dimIdsFromGoals, ...dimIdsFromProgress]) {
+        if (!d) continue;
         if (seen.has(d)) continue;
         seen.add(d);
         dedup.push(d);
@@ -1000,8 +998,22 @@ export function GrowthPage() {
     setCustomHabitDesc('');
     setPresetHabits([]);
     // 重置主题任务相关状态（parent_task goal 没有保存 template_id，无法可靠回填；避免错填所以保持未选）
+    // 回填已选主题任务：通过 cycleGoals 里 goal_type=parent_task 反查 parent_task_id，再查 task 详情
+    // 只读展示标题，不回填到选择状态（避免模板/自定义混淆）；切换时走"删旧建新"
+    setSetupExistingParentTask(null);
+    const parentTaskGoal = cycleGoals.find((g) => g.goal_type === 'parent_task' && g.parent_task_id);
+    if (parentTaskGoal && parentTaskGoal.parent_task_id) {
+      try {
+        const existingParent = await getTask(Number(parentTaskGoal.parent_task_id));
+        if (existingParent && existingParent.id) {
+          setSetupExistingParentTask({ id: existingParent.id, title: existingParent.title });
+        }
+      } catch {
+        // parent task 可能已被删除，忽略错误
+      }
+    }
+    // 重置主题任务选择状态（回填只展示已存在标题，不预选模板）
     setSetupThemeTemplateId(null);
-    setSetupThemeCustom(null);
     setShowCustomThemeForm(false);
     setCustomThemeTitle('');
     setCustomThemeDesc('');
@@ -1074,8 +1086,6 @@ export function GrowthPage() {
   // 主题任务单选 toggle：再次点击同一个取消选中，点击其他切换选中
   const toggleSetupTheme = (templateId: number) => {
     setSetupThemeTemplateId((prev) => (prev === templateId ? null : templateId));
-    // 切换到模板时清空自定义兜底数据（自定义主题通过 createCustomTemplate 转为模板后走 template_id 路径）
-    setSetupThemeCustom(null);
   };
 
   // 创建自定义主题模板：成功后加入预设列表并自动选中
@@ -1100,7 +1110,6 @@ export function GrowthPage() {
       });
       setPresetThemeTemplates((prev) => [...prev, template]);
       setSetupThemeTemplateId(template.id);
-      setSetupThemeCustom(null);
       setCustomThemeTitle('');
       setCustomThemeDesc('');
       setCustomThemeDays(14);
@@ -1126,13 +1135,13 @@ export function GrowthPage() {
       return;
     }
     setGoalSubmitting(true);
+    let finalCycleId = cycleId; // 提到 try 外，供主题任务创建部分使用
     try {
       const endDate = computeEndDate(setupStartDate, setupWeeks);
       const startISO = new Date(setupStartDate + 'T00:00:00').toISOString();
       const endISO = new Date(endDate + 'T23:59:59').toISOString();
       const name = `${setupStartDate.slice(5)}-${endDate.slice(5)} 成长阶段`;
 
-      let finalCycleId = cycleId;
       if (!finalCycleId) {
         const cycle = await createCycle(selectedChildId, name, startISO, endISO);
         finalCycleId = cycle.id;
@@ -1140,11 +1149,14 @@ export function GrowthPage() {
         await updateCycle(finalCycleId, name, startISO, endISO);
       }
       // 批量设置阶段目标（合并 dimension 和 habit 目标，不传 target_score）
+      // 过滤掉无效的 dimension_id（0/undefined），避免后端 400
       const goals = [
-        ...setupGoals.map((dimId) => ({
-          goal_type: 'dimension',
-          dimension_id: dimId,
-        })),
+        ...setupGoals
+          .filter((dimId) => dimId > 0)
+          .map((dimId) => ({
+            goal_type: 'dimension',
+            dimension_id: dimId,
+          })),
         ...setupHabits.map((habitId) => ({
           goal_type: 'habit',
           habit_id: habitId,
@@ -1174,38 +1186,31 @@ export function GrowthPage() {
     }
 
     // 主题任务创建：独立 try/catch，失败不阻断维度/习惯目标的保存
+    // 切换逻辑：若已存在主题任务且用户选了新模板，先删除旧的再创建新的
     // 路径 1：选中了主题模板（预设或自定义创建）→ 走 template_id
-    // 路径 2：仅有自定义主题数据（兜底）→ 走 title/description/estimated_days/category
-    if (setupThemeTemplateId !== null) {
-      try {
-        const parentTask = await createParentTask({
-          child_id: selectedChildId,
-          template_id: setupThemeTemplateId,
-        });
-        // 后端 CreateParentTask 已自动生成子任务大纲；若返回为空则兜底触发一次生成
-        if (!parentTask.sub_task_outline) {
-          await generateChildren(parentTask.id);
-          toast.success('主题任务已创建，子任务大纲生成中');
-        } else {
-          const count = countSubTaskOutline(parentTask.sub_task_outline);
-          toast.success(
-            count > 0
-              ? `主题任务已创建，已生成 ${count} 个子任务大纲`
-              : '主题任务已创建，已生成子任务大纲',
-          );
+    // 路径 2：用户未选新主题且已有存在主题任务 → 保留旧的，不操作
+    const hasNewThemeSelection = setupThemeTemplateId !== null;
+    if (hasNewThemeSelection) {
+      // 切换：先删除旧的主题任务（含子任务和 goal 关联）
+      if (setupExistingParentTask) {
+        try {
+          await deleteParentTask(setupExistingParentTask.id);
+        } catch (e: any) {
+          toast.error(e.message || '旧主题任务删除失败，已中止新主题创建以避免重复');
+          return; // 删除失败时中断，避免同一周期出现重复 parent_task
         }
-      } catch (e: any) {
-        toast.error(e.message || '主题任务创建失败');
       }
-    } else if (setupThemeCustom) {
+      // 创建新主题任务并关联到当前周期
       try {
-        const parentTask = await createParentTask({
+        const createData: Parameters<typeof createParentTask>[0] = {
           child_id: selectedChildId,
-          title: setupThemeCustom.title,
-          description: setupThemeCustom.description,
-          estimated_days: setupThemeCustom.estimated_days,
-          category: setupThemeCustom.category,
-        });
+          cycle_id: finalCycleId || undefined,
+        };
+        if (setupThemeTemplateId !== null) {
+          createData.template_id = setupThemeTemplateId;
+        }
+        const parentTask = await createParentTask(createData);
+        // 后端 CreateParentTask 已自动生成子任务大纲；若返回为空则兜底触发一次生成
         if (!parentTask.sub_task_outline) {
           await generateChildren(parentTask.id);
           toast.success('主题任务已创建，子任务大纲生成中');
@@ -1239,13 +1244,8 @@ export function GrowthPage() {
     ? `提升${dimensionGoalNames.join('、')}能力`
     : '为孩子的成长设定阶段性目标';
 
-  // 是否已设置目标（有周期且至少勾选了一个维度；批量接口不再写 target_score）
-  const hasGoals = !!cycleId && dimensionGoalIds.length > 0;
-  // 是否存在未达标的目标（仍用旧 progress 结构兜底；无分维进度时只要有目标即允许回顾）
-  const hasUncompletedGoals = dimensionGoalIds.length > 0 && (
-    progressList.some(p => p.target_score > 0 && p.progress < 100) ||
-    !progressList.some(p => p.target_score > 0)
-  );
+  // 是否存在未达标的目标（按任务完成进度判断）
+  const hasUncompletedGoals = progressList.some(p => p.progress < 100);
   // 阶段时间区间内是否有已完成任务
   const hasCompletedTasksInCycle = (() => {
     if (!cycleStartDate || !cycleEndDate) return false;
@@ -1268,14 +1268,7 @@ export function GrowthPage() {
   const primaryCount = enrichedScores.filter((s) => s.focus_level === 'primary').length;
 
   // V3.1 模块 B：精通统计
-  const masteredDims = enrichedScores.filter(s => isMastered(s));
-  const masteryCount = masteredDims.length; // 精通维度数（score≥95）
-  const allMastered = enrichedScores.length > 0 && enrichedScores.every(s => isMastered(s));
-  // 小萌芽成长大师：6 维全精通 + 每维≥2 星
-  const isGrandMaster =
-    allMastered &&
-    enrichedScores.length > 0 &&
-    enrichedScores.every(s => s.mastery_stars >= 2);
+  const masteryCount = enrichedScores.filter(s => isMastered(s)).length; // 精通维度数（score≥95）
 
   // V3.1 模块 B：当孩子 ≥1 项精通时，拉取大师挑战摘要（进行中 / 可挑战）用于顶部横幅
   // 注意：放在 masteryCount 计算之后、早退 return 之前，保证 hooks 调用顺序稳定
@@ -1436,6 +1429,10 @@ export function GrowthPage() {
                   </button>
                   <button
                     onClick={() => {
+                      if (progressList.length === 0) {
+                        toast.error('当前阶段尚无维度进度数据，无法回顾');
+                        return;
+                      }
                       if (!hasUncompletedGoals) {
                         toast.error('当前所有目标已达标，无需触发回顾');
                         return;
@@ -1505,7 +1502,7 @@ export function GrowthPage() {
               {(showDimList || expandedDimId !== null) && (
                 <div className="mt-3 space-y-2">
                   {enrichedScores.map((s, i) => {
-                    const isLearning = s.dimension_code === 'learning' || s.dimension_id === 4;
+                    const isLearning = s.dimension_code === 'learning';
                     const isExpanded = expandedDimId === s.dimension_id;
                     return (
                       <div key={s.dimension_id}>
@@ -1887,6 +1884,17 @@ export function GrowthPage() {
               <p className="text-xs text-text-tertiary mb-3">
                 本周期最多开展 1 个主题任务，AI 将自动拆解为分阶段子任务
               </p>
+              {setupExistingParentTask && (
+                <div className="mb-3 px-3 py-2 bg-indigo-50 rounded-lg flex items-center justify-between">
+                  <div className="text-xs text-indigo-700 min-w-0">
+                    <span className="text-text-tertiary">当前主题：</span>
+                    <span className="font-medium truncate">{setupExistingParentTask.title}</span>
+                  </div>
+                  <span className="text-[10px] text-indigo-400 flex-shrink-0 ml-2">
+                    {setupThemeTemplateId !== null ? '将替换' : '保留'}
+                  </span>
+                </div>
+              )}
               {presetThemesLoading ? (
                 <div className="py-3 text-center text-xs text-text-tertiary">加载预设主题中...</div>
               ) : presetThemeTemplates.length > 0 ? (

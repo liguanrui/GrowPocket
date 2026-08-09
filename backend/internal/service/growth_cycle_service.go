@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"growpocket/internal/database"
 	"growpocket/internal/model"
 	"time"
@@ -21,6 +22,9 @@ func assertChildInFamily(familyID, childID uint) error {
 	}
 	return nil
 }
+
+// ErrInvalidGoalInput 目标参数校验错误（handler 应返回 400 而非 500）
+var ErrInvalidGoalInput = errors.New("invalid goal input")
 
 // CreateCycle 创建成长周期
 func (s *GrowthCycleService) CreateCycle(familyID, childID uint, name string, startDate, endDate time.Time) (*model.GrowthCycle, error) {
@@ -55,31 +59,6 @@ func (s *GrowthCycleService) CreateCycle(familyID, childID uint, name string, st
 	return cycle, nil
 }
 
-// SetGoal 设置阶段目标
-func (s *GrowthCycleService) SetGoal(cycleID, familyID, childID, dimensionID uint, targetScore int) (*model.Goal, error) {
-	if targetScore <= 0 {
-		return nil, errors.New("目标分值必须大于 0")
-	}
-	// 检查是否已有该维度的目标
-	var existing model.Goal
-	if err := database.DB.Where("cycle_id = ? AND dimension_id = ?", cycleID, dimensionID).First(&existing).Error; err == nil {
-		existing.TargetScore = targetScore
-		database.DB.Save(&existing)
-		return &existing, nil
-	}
-	goal := &model.Goal{
-		CycleID:     cycleID,
-		FamilyID:    familyID,
-		ChildID:     childID,
-		DimensionID: dimensionID,
-		TargetScore: targetScore,
-	}
-	if err := database.DB.Create(goal).Error; err != nil {
-		return nil, errors.New("设置目标失败")
-	}
-	return goal, nil
-}
-
 // GoalInput 批量设置目标的输入项
 type GoalInput struct {
 	GoalType     string `json:"goal_type"`      // dimension/habit/parent_task
@@ -91,9 +70,10 @@ type GoalInput struct {
 // SetGoalsBatch 批量设置阶段目标（支持 dimension/habit/parent_task 三种类型）
 // - 同周期同类型同目标不重复创建：dimension 按 dimension_id 去重，habit 按 habit_id 去重，parent_task 按 parent_task_id 去重
 // - 已存在的目标会被跳过（不更新），未存在的会新建
+// - 参数校验错误返回 ErrInvalidGoalInput（handler 应返回 400），其他错误返回普通 error（500）
 func (s *GrowthCycleService) SetGoalsBatch(cycleID, familyID, childID uint, goals []GoalInput) ([]model.Goal, error) {
 	if len(goals) == 0 {
-		return nil, errors.New("目标列表不能为空")
+		return nil, fmt.Errorf("%w: 目标列表不能为空", ErrInvalidGoalInput)
 	}
 	if err := assertChildInFamily(familyID, childID); err != nil {
 		return nil, err
@@ -111,27 +91,33 @@ func (s *GrowthCycleService) SetGoalsBatch(cycleID, familyID, childID uint, goal
 		switch goalType {
 		case "dimension":
 			if g.DimensionID == 0 {
-				return nil, errors.New("dimension 类型目标必须提供 dimension_id")
+				return nil, fmt.Errorf("%w: dimension 类型目标必须提供 dimension_id", ErrInvalidGoalInput)
 			}
 			if err := database.DB.Where("cycle_id = ? AND goal_type = ? AND dimension_id = ?", cycleID, "dimension", g.DimensionID).First(&existing).Error; err == nil {
 				found = true
 			}
 		case "habit":
 			if g.HabitID == nil || *g.HabitID == 0 {
-				return nil, errors.New("habit 类型目标必须提供 habit_id")
+				return nil, fmt.Errorf("%w: habit 类型目标必须提供 habit_id", ErrInvalidGoalInput)
+			}
+			// 校验 habit_id 在当前家庭的 task_templates 中存在且为 habit 类型
+			// 防止前端传入旧表遗留 ID 或其他家庭的 ID 导致 habit_daily 永远不生成
+			var habitTpl model.TaskTemplate
+			if err := database.DB.Where("id = ? AND family_id = ? AND template_type = ?", *g.HabitID, familyID, "habit").First(&habitTpl).Error; err != nil {
+				return nil, fmt.Errorf("%w: habit_id=%d 在当前家庭不存在或非 habit 类型模板", ErrInvalidGoalInput, *g.HabitID)
 			}
 			if err := database.DB.Where("cycle_id = ? AND goal_type = ? AND habit_id = ?", cycleID, "habit", *g.HabitID).First(&existing).Error; err == nil {
 				found = true
 			}
 		case "parent_task":
 			if g.ParentTaskID == nil || *g.ParentTaskID == 0 {
-				return nil, errors.New("parent_task 类型目标必须提供 parent_task_id")
+				return nil, fmt.Errorf("%w: parent_task 类型目标必须提供 parent_task_id", ErrInvalidGoalInput)
 			}
 			if err := database.DB.Where("cycle_id = ? AND goal_type = ? AND parent_task_id = ?", cycleID, "parent_task", *g.ParentTaskID).First(&existing).Error; err == nil {
 				found = true
 			}
 		default:
-			return nil, errors.New("无效的 goal_type，必须为 dimension/habit/parent_task")
+			return nil, fmt.Errorf("%w: 无效的 goal_type，必须为 dimension/habit/parent_task", ErrInvalidGoalInput)
 		}
 		if found {
 			result = append(result, existing)

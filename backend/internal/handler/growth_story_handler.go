@@ -107,6 +107,7 @@ func (h *GrowthStoryHandler) GenerateStory(c *gin.Context) {
 // GetStory GET /api/growth-stories/:cycle_id
 // 注意：路由参数叫 :cycle_id，但语义是成长周期 ID（growth_cycles.id），不是故事主键 id。
 // 查询时强制加 family_id 归属校验，防止越权读别家故事。
+// project 类型故事（cycle_id=0）不能用此接口，请使用 GetStoryByID。
 func (h *GrowthStoryHandler) GetStory(c *gin.Context) {
 	cycleID64, err := strconv.ParseUint(c.Param("cycle_id"), 10, 32)
 	if err != nil || cycleID64 == 0 {
@@ -117,6 +118,26 @@ func (h *GrowthStoryHandler) GetStory(c *gin.Context) {
 	familyID := middleware.GetFamilyID(c)
 
 	story, err := h.service.GetStory(cycleID, familyID)
+	if err != nil {
+		util.FailNotFound(c, err.Error())
+		return
+	}
+	util.OK(c, story)
+}
+
+// GetStoryByID GET /api/growth-stories/by-id/:story_id
+// 按成长故事主键 ID 查询（支持 cycle 类型 + project 类型的通用查询接口）
+// 强制加 family_id 归属校验，防止越权读别家故事。
+func (h *GrowthStoryHandler) GetStoryByID(c *gin.Context) {
+	storyID64, err := strconv.ParseUint(c.Param("story_id"), 10, 32)
+	if err != nil || storyID64 == 0 {
+		util.FailBadRequest(c, "无效的故事 ID")
+		return
+	}
+	storyID := uint(storyID64)
+	familyID := middleware.GetFamilyID(c)
+
+	story, err := h.service.GetStoryByID(storyID, familyID)
 	if err != nil {
 		util.FailNotFound(c, err.Error())
 		return

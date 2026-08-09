@@ -66,7 +66,9 @@ func (s *HabitService) ensureHabitDailyReady(childID uint, skipAIEncouragement b
 		// 查 Habit 配置（Habit 已合并为 TaskTemplate，通过 TemplateType="habit" 区分）
 		var habit model.TaskTemplate
 		if err := database.DB.Where("id = ? AND template_type = ?", habitID, "habit").First(&habit).Error; err != nil {
-			log.Printf("[Habit] 习惯 %d 不存在: %v", habitID, err)
+			// 孤儿目标：habit_id 指向的模板不存在或非 habit 类型（通常是旧 Habit 表遗留 ID 未迁移）
+			// 提高日志级别并打印 child_id，便于排查静默失败
+			log.Printf("[Habit][ERROR] 孩子习惯模板不存在 child_id=%d goal.habit_id=%d（可能是旧表遗留 ID 未迁移，请清理 goals 表对应记录）: %v", childID, habitID, err)
 			continue
 		}
 

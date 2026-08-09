@@ -42,9 +42,11 @@ export async function createCustomTemplate(data: {
 }
 
 // 创建主题任务（父任务）
-// body: child_id + template_id（基于模板）或 child_id + title/description/estimated_days/category（自定义）
+// body: child_id + cycle_id + template_id（基于模板）或 child_id + cycle_id + title/description/estimated_days/category（自定义）
+// cycle_id 用于关联 goal，后端会自动在 goals 表建立 goal_type=parent_task 记录
 export async function createParentTask(data: {
   child_id: number;
+  cycle_id?: number;
   template_id?: number;
   title?: string;
   description?: string;
@@ -55,6 +57,14 @@ export async function createParentTask(data: {
     method: 'POST',
     url: '/tasks/parent',
     data,
+  });
+}
+
+// 删除主题任务（父任务）及其子任务和 goal 关联
+export async function deleteParentTask(parentTaskId: number): Promise<void> {
+  return request<void>({
+    method: 'DELETE',
+    url: `/tasks/parent/${parentTaskId}`,
   });
 }
 

@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"growpocket/internal/middleware"
 	"growpocket/internal/service"
 	"growpocket/pkg/util"
+	"log"
 	"strconv"
 	"time"
 
@@ -11,11 +13,15 @@ import (
 )
 
 type GrowthCycleHandler struct {
-	service *service.GrowthCycleService
+	service      *service.GrowthCycleService
+	habitService *service.HabitService // 用于设置习惯目标后立即生成当日习惯任务
 }
 
 func NewGrowthCycleHandler() *GrowthCycleHandler {
-	return &GrowthCycleHandler{service: service.NewGrowthCycleService()}
+	return &GrowthCycleHandler{
+		service:      service.NewGrowthCycleService(),
+		habitService: service.NewHabitService(nil), // 降级模式，不调AI
+	}
 }
 
 // CreateCycle POST /api/growth-cycles
@@ -57,43 +63,13 @@ func (h *GrowthCycleHandler) CreateCycle(c *gin.Context) {
 	util.OK(c, cycle)
 }
 
-// SetGoal POST /api/growth-cycles/:id/goals
-func (h *GrowthCycleHandler) SetGoal(c *gin.Context) {
-	cycleID64, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil || cycleID64 == 0 {
-		util.FailBadRequest(c, "无效的周期 ID")
-		return
-	}
-	cycleID := uint(cycleID64)
-	var req struct {
-		ChildID     uint `json:"child_id" binding:"required"`
-		DimensionID uint `json:"dimension_id" binding:"required"`
-		TargetScore int  `json:"target_score" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		util.FailBadRequest(c, "请提供 child_id, dimension_id, target_score")
-		return
-	}
-	if middleware.GetRole(c) != "parent" {
-		util.FailForbidden(c, "仅家长可设置阶段目标")
-		return
-	}
-	familyID := middleware.GetFamilyID(c)
-	goal, err := h.service.SetGoal(cycleID, familyID, req.ChildID, req.DimensionID, req.TargetScore)
-	if err != nil {
-		util.FailInternal(c, err.Error())
-		return
-	}
-	util.OK(c, goal)
-}
-
 // SetGoalsBatch POST /api/growth/goals/batch
 // 批量设置阶段目标（支持 dimension/habit/parent_task 三种类型）
 func (h *GrowthCycleHandler) SetGoalsBatch(c *gin.Context) {
 	var req struct {
-		CycleID uint                   `json:"cycle_id" binding:"required"`
-		ChildID uint                   `json:"child_id" binding:"required"`
-		Goals   []service.GoalInput    `json:"goals" binding:"required"`
+		CycleID uint                `json:"cycle_id" binding:"required"`
+		ChildID uint                `json:"child_id" binding:"required"`
+		Goals   []service.GoalInput `json:"goals" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		util.FailBadRequest(c, "请提供 cycle_id, child_id, goals")
@@ -110,13 +86,31 @@ func (h *GrowthCycleHandler) SetGoalsBatch(c *gin.Context) {
 	familyID := middleware.GetFamilyID(c)
 	goals, err := h.service.SetGoalsBatch(req.CycleID, familyID, req.ChildID, req.Goals)
 	if err != nil {
-		if err.Error() == "孩子档案不存在" || err.Error() == "目标列表不能为空" {
+		// 区分参数校验错误（400）和服务器错误（500）
+		if errors.Is(err, service.ErrInvalidGoalInput) {
 			util.FailBadRequest(c, err.Error())
 			return
 		}
 		util.FailInternal(c, err.Error())
 		return
 	}
+
+	// 兜底：若本次设置包含 habit 类型目标，立即生成当日习惯打卡任务
+	// 避免用户需等到 08:00 定时任务或重启后端才能看到习惯任务
+	hasHabitGoal := false
+	for _, g := range req.Goals {
+		if g.GoalType == "habit" {
+			hasHabitGoal = true
+			break
+		}
+	}
+	if hasHabitGoal && h.habitService != nil {
+		if err := h.habitService.EnsureHabitDailyReadyLite(req.ChildID); err != nil {
+			log.Printf("[GrowthCycle][SetGoalsBatch] 设置习惯目标后立即生成任务失败 child=%d: %v", req.ChildID, err)
+			// 不返回错误，仅记录日志
+		}
+	}
+
 	util.OK(c, gin.H{"goals": goals})
 }
 

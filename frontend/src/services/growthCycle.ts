@@ -33,7 +33,6 @@ export interface DimensionProgress {
   dimension_id: number;
   dimension_name: string;
   dimension_code: string;
-  target_score: number;
   current_score: number;
   progress: number; // 0-100
 }
@@ -53,25 +52,7 @@ export async function getCurrentCycle(childId: number): Promise<CurrentCycleResu
   });
 }
 
-// 设置阶段目标
-export async function setGoal(
-  cycleId: number,
-  childId: number,
-  dimensionId: number,
-  targetScore: number,
-): Promise<Goal> {
-  return request<Goal>({
-    method: 'POST',
-    url: `/growth-cycles/${cycleId}/goals`,
-    data: {
-      child_id: childId,
-      dimension_id: dimensionId,
-      target_score: targetScore,
-    },
-  });
-}
-
-// 批量设置阶段目标（不传 target_score，仅勾选维度）
+// 批量设置阶段目标（仅勾选维度/习惯/主题任务，不设目标分）
 export interface BatchGoalItem {
   goal_type: string;
   dimension_id?: number;

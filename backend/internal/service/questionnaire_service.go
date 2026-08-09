@@ -26,6 +26,15 @@ type AnswerInput struct {
 	Score       int  `json:"score"`
 }
 
+// qOption / qItem : 解析问卷 Questions JSON 的临时结构
+type qOption struct {
+	Score int `json:"score"`
+}
+type qItem struct {
+	DimensionID uint     `json:"dimension_id"`
+	Options     []qOption `json:"options"`
+}
+
 // GetByStage 按阶段获取问卷，level 非空时按档位过滤，未命中时回退到通用问卷
 func (s *QuestionnaireService) GetByStage(stage, level string) (*model.Questionnaire, error) {
 	var q model.Questionnaire
@@ -46,7 +55,10 @@ func (s *QuestionnaireService) GetByStage(stage, level string) (*model.Questionn
 	return &q, nil
 }
 
-// SubmitAnswers 提交答案，计算维度分值，发放积分奖励
+// SubmitAnswers 提交答案：
+// 1. 解析问卷题目的每维度理论 min/max 得分
+// 2. 计算用户答题实际得分
+// 3. 调用 SetQuestionnaireBaseline 建档（不是累加任务奖励式加分）
 func (s *QuestionnaireService) SubmitAnswers(familyID, childID uint, questionnaireID uint, stage string, answers []AnswerInput) (int, error) {
 	// 校验孩子归属当前家庭，避免跨家庭写分/生成脏数据
 	var child model.User
@@ -60,16 +72,48 @@ func (s *QuestionnaireService) SubmitAnswers(familyID, childID uint, questionnai
 		return 0, errors.New("问卷不存在")
 	}
 
-	// 计算每维度得分
+	// 解析问卷 Questions，计算每个维度的理论 rawMin / rawMax
+	var items []qItem
+	dimMin := map[uint]int{}
+	dimMax := map[uint]int{}
+	if q.Questions != "" {
+		if err := json.Unmarshal([]byte(q.Questions), &items); err == nil {
+			for _, it := range items {
+				if it.DimensionID == 0 || len(it.Options) == 0 {
+					continue
+				}
+				minS, maxS := it.Options[0].Score, it.Options[0].Score
+				for _, op := range it.Options {
+					if op.Score < minS {
+						minS = op.Score
+					}
+					if op.Score > maxS {
+						maxS = op.Score
+					}
+				}
+				dimMin[it.DimensionID] += minS
+				dimMax[it.DimensionID] += maxS
+			}
+		} else {
+			log.Printf("[Questionnaire] 解析问卷 Questions 失败 id=%d: %v", q.ID, err)
+		}
+	}
+
+	// 用户答题：每维度累加实际得分
 	dimScores := map[uint]int{}
 	for _, ans := range answers {
 		dimScores[ans.DimensionID] += ans.Score
 	}
 
-	// 累加到能力维度
+	// 按维度建档：调用 SetQuestionnaireBaseline（覆盖式写入，不是任务加分式累加）
 	for dimID, score := range dimScores {
-		if err := s.ability.AddScoreForDimension(childID, familyID, dimID, score); err != nil {
-			log.Printf("[Questionnaire] 累加维度分值失败 child=%d dim=%d: %v", childID, dimID, err)
+		rawMin, rawMax := dimMin[dimID], dimMax[dimID]
+		if rawMax <= rawMin {
+			// 未命中解析时的兜底：每题 3 档（1-5 分），假设用户每维度答了 3 题 → [3,15]
+			rawMin, rawMax = 3, 15
+		}
+		if err := s.ability.SetQuestionnaireBaseline(childID, familyID, dimID, score, rawMin, rawMax); err != nil {
+			log.Printf("[Questionnaire] 基线建档失败 child=%d dim=%d raw=%d/%d~%d: %v", childID, dimID, score, rawMin, rawMax, err)
 		}
 	}
 

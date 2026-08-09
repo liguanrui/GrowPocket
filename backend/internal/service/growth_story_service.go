@@ -15,9 +15,9 @@ import (
 // GrowthStoryService 成长故事服务（v3）
 type GrowthStoryService struct {
 	aiService     *AIService
-	ability        *AbilityService
-	cycleService   *GrowthCycleService
-	questionnaire  *QuestionnaireService
+	ability       *AbilityService
+	cycleService  *GrowthCycleService
+	questionnaire *QuestionnaireService
 }
 
 // NewGrowthStoryService 创建成长故事服务实例
@@ -41,48 +41,109 @@ type aiStoryResult struct {
 type habitStat struct {
 	HabitID         uint       // 习惯配置 ID
 	HabitTitle      string     // 习惯标题（取自 Habit 表）
-	StreakCount     int        // 连续坚持天数
-	TotalCount      int        // 累计坚持天数
+	StreakCount     int        // 当前连续坚持天数（实时值，跨周期）
+	TotalCount      int        // 累计坚持天数（跨周期总累计，用于 markFormedHabits 养成判定）
+	CycleCount      int        // 本周期内的打卡天数（仅统计本周期 habit_daily 的完成数）
 	HabitGoal       int        // 习惯目标天数
 	LastCheckinDate *time.Time // 上次打卡日期
 	ParentComment   string     // 家长批语（当前任务表无批语字段，暂为空字符串）
 	MasterTaskID    uint       // habit_master 任务 ID
 }
 
-// collectHabitStats 聚合周期内（created_at BETWEEN cycle.StartDate AND cycle.EndDate）
-// 的 habit_master 任务及其养成统计，并查询关联 Habit 信息（标题）。
+// collectHabitStats 聚合本周期的习惯养成统计
+// 【修复 P0 Bug】：此前直接按 habit_master.created_at BETWEEN 周期时间过滤，
+// 导致上一周期创建且未养成的 habit_master（status=1 会跨周期延续）被漏掉。
+// 正确的查询路径：
+//   1. 查当前周期 GoalType='habit' 的 goals，拿到本周期关注的 habit_id 列表
+//   2. 对每个 habit_id，按 (task_kind, habit_id, child_id, status<=3) 查 habit_master
+//      （不按 created_at 过滤，允许跨周期延续的 master 被查到）
+//   3. 统计本周期内该习惯 habit_daily 的完成数（status=3 AND created_at IN 周期）→ CycleCount
 // 家长批语：当前任务表无 review_comment 字段，留空字符串；后续若有批语字段可在此扩展。
 func (s *GrowthStoryService) collectHabitStats(familyID, childID uint, cycle model.GrowthCycle) []habitStat {
-	var masters []model.Task
-	if err := database.DB.Where("family_id = ? AND child_id = ? AND task_kind = ? AND created_at BETWEEN ? AND ?",
-		familyID, childID, "habit_master", cycle.StartDate, cycle.EndDate).
-		Order("created_at ASC").Find(&masters).Error; err != nil {
-		log.Printf("[GrowthStory] 查询 habit_master 失败 family=%d child=%d: %v", familyID, childID, err)
+	// 步骤 1：查当前周期的习惯目标（habit_id 列表）
+	var habitGoals []model.Goal
+	if err := database.DB.Where("cycle_id = ? AND family_id = ? AND child_id = ? AND goal_type = ?",
+		cycle.ID, familyID, childID, "habit").Find(&habitGoals).Error; err != nil {
+		log.Printf("[GrowthStory] 查询周期习惯目标失败 cycle=%d family=%d child=%d: %v",
+			cycle.ID, familyID, childID, err)
+		return nil
+	}
+	if len(habitGoals) == 0 {
+		return nil
+	}
+	habitIDs := make([]uint, 0, len(habitGoals))
+	for _, g := range habitGoals {
+		if g.HabitID != nil && *g.HabitID > 0 {
+			habitIDs = append(habitIDs, *g.HabitID)
+		}
+	}
+	if len(habitIDs) == 0 {
 		return nil
 	}
 
-	stats := make([]habitStat, 0, len(masters))
+	// 步骤 2：批量查询 habit_master（不限 created_at，允许跨周期延续）
+	var masters []model.Task
+	if err := database.DB.Where("family_id = ? AND child_id = ? AND task_kind = ? AND habit_id IN ? AND status <= ?",
+		familyID, childID, "habit_master", habitIDs, model.TaskStatusCompleted).
+		Find(&masters).Error; err != nil {
+		log.Printf("[GrowthStory] 查询 habit_master 失败 family=%d child=%d habit_ids=%v: %v",
+			familyID, childID, habitIDs, err)
+		return nil
+	}
+	masterByHabit := make(map[uint]model.Task, len(masters))
 	for _, m := range masters {
-		if m.HabitID == 0 {
-			continue
-		}
+		masterByHabit[m.HabitID] = m
+	}
+
+	// 步骤 3：统计本周期内各习惯的 habit_daily 完成数 → CycleCount
+	type cycleCountRow struct {
+		HabitID uint `gorm:"column:habit_id"`
+		Cnt     int  `gorm:"column:cnt"`
+	}
+	var cycleCounts []cycleCountRow
+	if err := database.DB.Model(&model.Task{}).
+		Select("habit_id, COUNT(*) AS cnt").
+		Where("family_id = ? AND child_id = ? AND task_kind = ? AND habit_id IN ? AND status = ? AND created_at BETWEEN ? AND ?",
+			familyID, childID, "habit_daily", habitIDs, model.TaskStatusCompleted, cycle.StartDate, cycle.EndDate).
+		Group("habit_id").
+		Scan(&cycleCounts).Error; err != nil {
+		log.Printf("[GrowthStory] 统计周期 habit_daily 完成数失败: %v", err)
+		// 统计失败不阻断，CycleCount 全部记 0
+	}
+	cycleCountMap := make(map[uint]int, len(cycleCounts))
+	for _, r := range cycleCounts {
+		cycleCountMap[r.HabitID] = r.Cnt
+	}
+
+	// 步骤 4：组装结果（按 habitIDs 顺序，与 goals 顺序保持一致）
+	stats := make([]habitStat, 0, len(habitIDs))
+	for _, hid := range habitIDs {
+		master, ok := masterByHabit[hid]
 		var habit model.TaskTemplate
-		if err := database.DB.Where("id = ? AND template_type = ?", m.HabitID, "habit").First(&habit).Error; err != nil {
-			log.Printf("[GrowthStory] 习惯配置 %d 不存在: %v", m.HabitID, err)
+		if err := database.DB.Where("id = ? AND template_type = ? AND family_id = ?",
+			hid, "habit", familyID).First(&habit).Error; err != nil {
+			log.Printf("[GrowthStory] 习惯配置 %d 不存在或不属于当前家庭: %v", hid, err)
 			continue
 		}
-		// 家长批语：查询关联 habit_daily 任务的 description 作为参考（当前无独立批语字段，留空）
-		// 保留 ParentComment 字段以便后续扩展，此处默认空字符串。
-		stats = append(stats, habitStat{
-			HabitID:         m.HabitID,
+		stat := habitStat{
+			HabitID:         hid,
 			HabitTitle:      habit.Title,
-			StreakCount:     m.StreakCount,
-			TotalCount:      m.TotalCount,
-			HabitGoal:       m.HabitGoal,
-			LastCheckinDate: m.LastCheckinDate,
+			StreakCount:     0,
+			TotalCount:      0,
+			CycleCount:      cycleCountMap[hid],
+			HabitGoal:       21,
+			LastCheckinDate: nil,
 			ParentComment:   "",
-			MasterTaskID:    m.ID,
-		})
+			MasterTaskID:    0,
+		}
+		if ok {
+			stat.StreakCount = master.StreakCount
+			stat.TotalCount = master.TotalCount
+			stat.HabitGoal = master.HabitGoal
+			stat.LastCheckinDate = master.LastCheckinDate
+			stat.MasterTaskID = master.ID
+		}
+		stats = append(stats, stat)
 	}
 	return stats
 }
@@ -448,16 +509,6 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 
 	// 4. 【新增】AI 重新评定能力得分
 	abilityDeltas, _ := s.ability.ReassessScores(s.aiService, childID, familyID, tasks, dimensions)
-	// 查询周期目标，填充 TargetScore
-	var goals []model.Goal
-	database.DB.Where("cycle_id = ?", cycleID).Find(&goals)
-	goalMap := make(map[uint]int)
-	for _, g := range goals {
-		goalMap[g.DimensionID] = g.TargetScore
-	}
-	for i := range abilityDeltas {
-		abilityDeltas[i].TargetScore = goalMap[abilityDeltas[i].DimensionID]
-	}
 	// 将能力变化序列化为 ability_summary
 	abilitySummaryJSON := ""
 	if len(abilityDeltas) > 0 {
@@ -561,9 +612,6 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 				}
 				line := fmt.Sprintf("- **%s**：%d → %d（%s%d）",
 					d.DimensionName, d.OldScore, d.NewScore, arrow, absInt(d.Delta))
-				if d.TargetScore > 0 {
-					line += fmt.Sprintf("（阶段目标 %d）", d.TargetScore)
-				}
 				parts = append(parts, line)
 			}
 			parts = append(parts, "")
@@ -573,8 +621,8 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 			parts = append(parts, "\n### 习惯养成评估\n")
 			for _, st := range habitStats {
 				level := habitAssessLevel(st)
-				line := fmt.Sprintf("- **%s**：连续 %d 天，累计 %d / 目标 %d 天 —— %s",
-					st.HabitTitle, st.StreakCount, st.TotalCount, st.HabitGoal, level)
+				line := fmt.Sprintf("- **%s**：本阶段打卡 %d 天，连续坚持 %d 天，累计 %d / 目标 %d 天 —— %s",
+					st.HabitTitle, st.CycleCount, st.StreakCount, st.TotalCount, st.HabitGoal, level)
 				parts = append(parts, line)
 			}
 			parts = append(parts, "")
@@ -656,9 +704,21 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 }
 
 // GetStory 按 cycle_id + family_id 查询成长故事（加家庭归属校验，禁止越权读别家故事）
+// 注意：cycle_id 为 0 的 project 类型故事不会被命中，需要用 GetStoryByID
 func (s *GrowthStoryService) GetStory(cycleID, familyID uint) (*model.GrowthStory, error) {
 	var story model.GrowthStory
 	if err := database.DB.Where("cycle_id = ? AND family_id = ?", cycleID, familyID).First(&story).Error; err != nil {
+		return nil, errors.New("成长故事不存在")
+	}
+	sanitizeGrowthStory(&story)
+	return &story, nil
+}
+
+// GetStoryByID 按成长故事主键 ID + family_id 查询（支持 cycle 和 project 两种类型）
+// 比 GetStory 更通用，project 类型故事（cycle_id=0）必须通过此接口查询
+func (s *GrowthStoryService) GetStoryByID(storyID, familyID uint) (*model.GrowthStory, error) {
+	var story model.GrowthStory
+	if err := database.DB.Where("id = ? AND family_id = ?", storyID, familyID).First(&story).Error; err != nil {
 		return nil, errors.New("成长故事不存在")
 	}
 	sanitizeGrowthStory(&story)
@@ -969,14 +1029,15 @@ func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.Grow
 		parts = append(parts, "周期内暂无完成的任务记录。")
 	}
 
-	// ===== 区块二：习惯养成（习惯名 + 连续天数 + 累计天数 + 目标 + 家长批语 + AI 评估养成程度）=====
+	// ===== 区块二：习惯养成（习惯名 + 本阶段打卡数 + 连续天数 + 累计天数 + 目标 + 家长批语 + AI 评估养成程度）=====
 	// 无习惯目标时跳过该区块，不生成空内容
 	if len(habitStats) > 0 {
 		parts = append(parts, "\n## 习惯养成")
 		parts = append(parts, "请根据以下数据评估每个习惯的养成程度（已养成/基本养成/待加强），并在故事中融入习惯养成的小结：")
+		parts = append(parts, "养成程度判定标准（请严格执行）：累计完成率≥80% 为已养成，≥50% 为基本养成，其余为待加强。")
 		for _, st := range habitStats {
-			line := fmt.Sprintf("- %s：连续 %d 天，累计 %d 天（目标 %d 天）",
-				st.HabitTitle, st.StreakCount, st.TotalCount, st.HabitGoal)
+			line := fmt.Sprintf("- %s：本阶段打卡 %d 天，连续坚持 %d 天，历史累计 %d 天（目标 %d 天）",
+				st.HabitTitle, st.CycleCount, st.StreakCount, st.TotalCount, st.HabitGoal)
 			if st.ParentComment != "" {
 				line += fmt.Sprintf("，家长批语：「%s」", st.ParentComment)
 			}

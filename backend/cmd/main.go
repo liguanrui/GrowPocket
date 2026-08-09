@@ -9,6 +9,7 @@ import (
 	"growpocket/internal/service"
 	"growpocket/pkg/envloader"
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -116,6 +117,7 @@ func main() {
 		// 主题任务（父任务）+ 子任务大纲生成 + 分批实例化（Task 19）
 		parentTaskHandler := handler.NewParentTaskHandler(service.NewParentTaskService(aiService))
 		authorized.POST("/tasks/parent", parentTaskHandler.CreateParentTask)
+		authorized.DELETE("/tasks/parent/:id", parentTaskHandler.DeleteParentTask)
 		authorized.POST("/tasks/parent/:id/generate-children", parentTaskHandler.GenerateChildren)
 		authorized.POST("/tasks/parent/:id/advance-batch", parentTaskHandler.AdvanceBatch)
 		authorized.GET("/tasks/:id/children", parentTaskHandler.GetChildren)
@@ -164,7 +166,6 @@ func main() {
 		growthCycleHandler := handler.NewGrowthCycleHandler()
 		authorized.POST("/growth-cycles", growthCycleHandler.CreateCycle)
 		authorized.PUT("/growth-cycles/:id", growthCycleHandler.UpdateCycle)
-		authorized.POST("/growth-cycles/:id/goals", growthCycleHandler.SetGoal)
 		authorized.POST("/growth/goals/batch", growthCycleHandler.SetGoalsBatch)
 		authorized.GET("/growth-cycles/current/:child_id", growthCycleHandler.GetCurrentCycle)
 		authorized.GET("/growth-cycles/cycle-stats", growthCycleHandler.GetCycleStats)
@@ -252,6 +253,8 @@ func main() {
 		growthStoryHandler := handler.NewGrowthStoryHandler(service.NewGrowthStoryService(aiService))
 		authorized.GET("/growth-stories", growthStoryHandler.ListStories)
 		authorized.POST("/growth-stories/:cycle_id", growthStoryHandler.GenerateStory)
+		// by-id 路由必须放在 :cycle_id 之前，避免 "by-id" 被误解析为 cycle_id 参数值
+		authorized.GET("/growth-stories/by-id/:story_id", growthStoryHandler.GetStoryByID)
 		authorized.GET("/growth-stories/:cycle_id", growthStoryHandler.GetStory)
 		authorized.GET("/growth-stories/:cycle_id/tasks", growthStoryHandler.GetCycleTasks)
 
