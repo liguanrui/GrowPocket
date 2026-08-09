@@ -2,6 +2,7 @@ package database
 
 import (
 	"growpocket/internal/model"
+	"growpocket/pkg/util"
 	"log"
 	"os"
 	"path/filepath"
@@ -102,6 +103,10 @@ func Init(dbPath string) {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
+	if err := ensureFamilyShareCodes(db); err != nil {
+		log.Printf("家庭分享码补全失败: %v", err)
+	}
+
 	if err := migrateAchievementData(db); err != nil {
 		log.Printf("成就数据迁移失败: %v", err)
 	}
@@ -128,6 +133,32 @@ func Init(dbPath string) {
 	}
 
 	log.Printf("数据库初始化完成: %s", dbPath)
+}
+
+// ensureFamilyShareCodes 为缺少分享码的旧家庭补全唯一码
+func ensureFamilyShareCodes(db *gorm.DB) error {
+	var families []model.Family
+	if err := db.Where("share_code = ? OR share_code IS NULL", "").Find(&families).Error; err != nil {
+		return err
+	}
+	for i := range families {
+		assigned := false
+		for retry := 0; retry < 12; retry++ {
+			code, err := util.GenerateShareCode(8)
+			if err != nil {
+				return err
+			}
+			if err := db.Model(&families[i]).Update("share_code", code).Error; err != nil {
+				continue // 唯一冲突则重试
+			}
+			assigned = true
+			break
+		}
+		if !assigned {
+			log.Printf("家庭 %d 分享码补全失败（冲突过多）", families[i].ID)
+		}
+	}
+	return nil
 }
 
 func migrateAchievementData(db *gorm.DB) error {

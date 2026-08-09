@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
-import { Settings, User, Users, ListTodo, LogOut, ChevronRight, Clock, FastForward, RotateCcw, FlaskConical, Bell } from 'lucide-react';
+import { Settings, User, Users, ListTodo, LogOut, ChevronRight, Clock, FastForward, RotateCcw, FlaskConical, Bell, Share2, Copy } from 'lucide-react';
 import { getDebugTime, advanceTime, resetTime } from '../services/debug';
 import type { DebugTimeInfo } from '../services/debug';
 import { fetchUnreadCount } from '../services/messages';
+import { getFamily } from '../services/children';
+import { copyText } from '../utils/clipboard';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -19,12 +21,33 @@ export function SettingsPage() {
   const [debugTime, setDebugTime] = useState<DebugTimeInfo | null>(null);
   const [debugLoading, setDebugLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [shareCode, setShareCode] = useState(authStore.family?.share_code || '');
 
   useEffect(() => {
     fetchUnreadCount()
       .then(setUnreadCount)
       .catch(() => setUnreadCount(0));
+    getFamily()
+      .then((info) => {
+        setShareCode(info.share_code || '');
+        authStore.setFamily({
+          id: info.id,
+          name: info.name,
+          share_code: info.share_code,
+        });
+      })
+      .catch(() => {});
   }, []);
+
+  const handleCopyShareCode = async () => {
+    if (!shareCode) {
+      toast.error('暂无分享码');
+      return;
+    }
+    const ok = await copyText(shareCode);
+    if (ok) toast.success('分享码已复制');
+    else toast.error('复制失败，请长按分享码手动复制');
+  };
 
   const handleLogout = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -155,6 +178,30 @@ export function SettingsPage() {
 
       <div className="max-w-lg mx-auto px-4 -mt-3">
         <div className="space-y-3">
+          {/* 家庭分享码：独立入口，一键复制 */}
+          <div className="w-full bg-card rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Share2 size={22} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-text-primary">家庭分享码</div>
+                <p className="mt-1.5 text-xl font-bold font-mono tracking-[0.2em] text-[#2D2A26] select-all">
+                  {shareCode || '--------'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleCopyShareCode()}
+                disabled={!shareCode}
+                className="flex-shrink-0 px-3 py-2 rounded-xl bg-primary text-white text-sm font-medium flex items-center gap-1.5 active:scale-95 disabled:opacity-40"
+              >
+                <Copy size={16} />
+                复制
+              </button>
+            </div>
+          </div>
+
           {menuItems.map((item) => {
             const Icon = item.icon;
             const badge = 'badge' in item ? Number(item.badge || 0) : 0;

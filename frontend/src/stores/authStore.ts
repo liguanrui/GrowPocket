@@ -10,6 +10,7 @@ interface AuthUser {
 interface AuthFamily {
   id: number;
   name: string;
+  share_code?: string;
 }
 
 interface AuthState {
@@ -18,9 +19,14 @@ interface AuthState {
   family: AuthFamily | null;
   isLoggedIn: boolean;
   login: (nickname: string, password: string) => Promise<void>;
-  register: (nickname: string, password: string) => Promise<void>;
+  register: (
+    nickname: string,
+    password: string,
+    shareCode?: string,
+  ) => Promise<{ hasChildren: boolean; joined: boolean }>;
   logout: () => void;
   setUser: (user: AuthUser) => void;
+  setFamily: (family: AuthFamily) => void;
 }
 
 function loadFromStorage() {
@@ -55,8 +61,8 @@ export const useAuthStore = create<AuthState>((set) => {
       });
     },
 
-    async register(nickname: string, password: string) {
-      const result = await authService.register(nickname, password);
+    async register(nickname: string, password: string, shareCode?: string) {
+      const result = await authService.register(nickname, password, shareCode);
       localStorage.setItem('token', result.token);
       localStorage.setItem('currentUser', JSON.stringify(result.user));
       localStorage.setItem('currentFamily', JSON.stringify(result.family));
@@ -66,6 +72,10 @@ export const useAuthStore = create<AuthState>((set) => {
         family: result.family,
         isLoggedIn: true,
       });
+      return {
+        hasChildren: !!result.has_children,
+        joined: !!result.joined,
+      };
     },
 
     logout() {
@@ -79,6 +89,11 @@ export const useAuthStore = create<AuthState>((set) => {
     setUser(user: AuthUser) {
       localStorage.setItem('currentUser', JSON.stringify(user));
       set({ user });
+    },
+
+    setFamily(family: AuthFamily) {
+      localStorage.setItem('currentFamily', JSON.stringify(family));
+      set({ family });
     },
   };
 });
