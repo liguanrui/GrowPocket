@@ -138,7 +138,7 @@ const WRITE_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
   ],
 };
 
-// ============ 工具卡横滑行（自动轮播 + 悬停暂停 + 无缝循环）============
+// ============ 工具卡横滑行（自动轮播 + 悬停暂停；到首尾停住并反向，不循环）============
 interface AutoScrollRowProps {
   group: ToolSuggestionGroup;
   onPick: (prompt: string) => void;
@@ -147,55 +147,47 @@ interface AutoScrollRowProps {
 function AutoScrollRow({ group, onPick, compact = false }: AutoScrollRowProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useRef(false);
-  const animatingRef = useRef(false);
+  const dirRef = useRef(1); // 1 向右，-1 向左
   const rafRef = useRef<number | null>(null);
 
-  // 通过复制 3 份内容实现无缝循环；复制一份 items 让 key 不冲突
-  const tripled = useMemo(() => {
-    const all: (ToolSuggestion & { _uniq: string })[] = [];
-    [0, 1, 2].forEach((k) => {
-      group.items.forEach((it, i) => {
-        all.push({ ...it, _uniq: `${it.name}-${k}-${i}` });
-      });
-    });
-    return all;
-  }, [group]);
-
-  // 启动后初始化滚动位置到中间段（避免开头滚动就见底）
   useEffect(() => {
     if (!scrollerRef.current) return;
     const el = scrollerRef.current;
-    const segLen = el.scrollWidth / 3;
-    // 从中间段开始，这样既能左滑也能右滑
-    el.scrollLeft = segLen;
+    el.scrollLeft = 0;
+    dirRef.current = 1;
 
     let lastTs = performance.now();
-    const PX_PER_SEC = 28; // 匀速速度：可根据喜好调
+    const PX_PER_SEC = 28;
 
     const tick = (ts: number) => {
       if (!scrollerRef.current) return;
-      const dt = Math.min(100, ts - lastTs); // 防止切后台后大跳
+      const dt = Math.min(100, ts - lastTs);
       lastTs = ts;
       if (!pausedRef.current) {
         const elNow = scrollerRef.current;
-        const seg = elNow.scrollWidth / 3;
-        let next = elNow.scrollLeft + (PX_PER_SEC * dt) / 1000;
-        // 超过右侧段则跳回中段对应位置（无缝）
-        if (next >= seg * 2) next -= seg;
-        // 如果被用户往左拉过了头，则补回中段
-        if (next < seg) next += seg;
+        const maxScroll = Math.max(0, elNow.scrollWidth - elNow.clientWidth);
+        if (maxScroll <= 1) {
+          rafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        let next = elNow.scrollLeft + (dirRef.current * PX_PER_SEC * dt) / 1000;
+        if (next >= maxScroll) {
+          next = maxScroll;
+          dirRef.current = -1;
+        } else if (next <= 0) {
+          next = 0;
+          dirRef.current = 1;
+        }
         elNow.scrollLeft = next;
       }
       rafRef.current = requestAnimationFrame(tick);
     };
 
-    animatingRef.current = true;
     rafRef.current = requestAnimationFrame(tick);
     return () => {
-      animatingRef.current = false;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [tripled.length]);
+  }, [group.items.length]);
 
   return (
     <div>
@@ -244,11 +236,11 @@ function AutoScrollRow({ group, onPick, compact = false }: AutoScrollRowProps) {
         }}
       >
         <style>{`.autoscroll-row-hidesb::-webkit-scrollbar{display:none}`}</style>
-        {tripled.map((item) => {
+        {group.items.map((item) => {
           const Icon = item.icon;
           return (
             <button
-              key={item._uniq}
+              key={item.name}
               onClick={() => onPick(item.prompt)}
               className={`autoscroll-row-hidesb flex-shrink-0 flex flex-col items-center rounded-2xl bg-white border border-[#F5E6D3] hover:border-[#F59E6B]/40 hover:shadow-sm active:scale-[0.98] transition-all ${
                 compact
@@ -506,6 +498,7 @@ export function AssistantPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
+  const [toolsExpanded, setToolsExpanded] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ===== 动作确认卡片状态 =====
@@ -907,10 +900,13 @@ export function AssistantPage() {
   const isEmpty = messages.length === 0;
 
   return (
-    <div className="relative min-h-screen flex flex-col" style={{ background: C.bg }}>
+    <div
+      className="relative flex flex-col overflow-hidden"
+      style={{ background: C.bg, height: 'calc(100dvh - 5rem)' }}
+    >
       {/* 固定页眉 */}
       <header
-        className="sticky top-0 z-50 h-14 flex items-center justify-between px-4 border-b border-[#F5E6D3]"
+        className="flex-shrink-0 z-50 h-14 flex items-center justify-between px-4 border-b border-[#F5E6D3]"
         style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)' }}
       >
         {/* 左侧按钮组 */}
@@ -974,7 +970,7 @@ export function AssistantPage() {
       </header>
 
       {/* 对话模式切换（segmented control）：家长可切换家长/儿童模式；儿童角色只能儿童模式 */}
-      <div className="px-4 pt-1.5 pb-1">
+      <div className="flex-shrink-0 px-4 pt-1.5 pb-1">
         <div className="max-w-[448px] mx-auto flex justify-center">
           <div className="inline-flex p-0.5 rounded-full bg-[#FFF1E6] border border-[#F5E6D3]">
             <button
@@ -1002,48 +998,46 @@ export function AssistantPage() {
         </div>
       </div>
 
-      {/* 消息区 / 空状态 */}
-      <main className={`flex-1 overflow-y-auto px-4 py-4 ${voiceMode ? 'pb-64' : 'pb-28'}`}>
-        <div className="max-w-[448px] mx-auto">
-          {/* 非空态时 IP + 工具栏略收缩；空态时保持原样居中大号 */}
-          <div className={`flex flex-col items-stretch ${isEmpty ? 'pt-3 pb-2 gap-2.5' : 'pt-2 pb-2 gap-2'}`}>
-            {isEmpty ? (
-              /* 空状态：IP 居中放大 + 问候语居中 */
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-28 h-28 rounded-2xl shadow-md flex items-center justify-center bg-[#FFF1E6]">
-                  <RandomExpressionAvatar size={96} />
-                </div>
-                <div className="text-center">
-                  <h1 className="text-xl font-bold text-[#2D2A26] leading-none">
-                    {getGreeting()}，我是小萌芽
-                  </h1>
-                  <p className="text-xs text-[#7A7168] mt-1.5 leading-snug">
-                    有什么我可以帮你的吗？点下面卡片就能用啦
-                  </p>
-                </div>
+      {/* 查一查 / 做一做：固定在顶部，不随对话滚动 */}
+      <section
+        className="flex-shrink-0 px-4 pt-2 pb-2 border-b border-[#F5E6D3]"
+        style={{ background: C.bg }}
+      >
+        <div className="max-w-[448px] mx-auto flex flex-col items-stretch gap-2">
+          {isEmpty ? (
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <div className="w-24 h-24 rounded-2xl shadow-md flex items-center justify-center bg-[#FFF1E6]">
+                <RandomExpressionAvatar size={84} />
               </div>
-            ) : (
-              /* 有会话时：IP 迷你 + 问候语 左右紧凑，放在顶部当 sticky 头部（但在滚动容器内部，跟随滚动） */
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl shadow-sm flex items-center justify-center bg-[#FFF1E6] flex-shrink-0">
-                  <RandomExpressionAvatar size={40} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-base font-bold text-[#2D2A26] leading-tight truncate">
-                    {getGreeting()}，我是小萌芽
-                  </div>
-                  <p className="text-[11px] text-[#7A7168] leading-tight mt-0.5 truncate">
-                    试试下面卡片，或直接对我说~
-                  </p>
-                </div>
+              <div className="text-center">
+                <h1 className="text-lg font-bold text-[#2D2A26] leading-none">
+                  {getGreeting()}，我是小萌芽
+                </h1>
+                <p className="text-xs text-[#7A7168] mt-1.5 leading-snug">
+                  有什么我可以帮你的吗？点下面卡片就能用啦
+                </p>
               </div>
-            )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl shadow-sm flex items-center justify-center bg-[#FFF1E6] flex-shrink-0">
+                <RandomExpressionAvatar size={40} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-base font-bold text-[#2D2A26] leading-tight truncate">
+                  {getGreeting()}，我是小萌芽
+                </div>
+                <p className="text-[11px] text-[#7A7168] leading-tight mt-0.5 truncate">
+                  试试下面卡片，或直接对我说~
+                </p>
+              </div>
+            </div>
+          )}
 
-            {/* 工具栏：在空态和有消息态都显示 */}
-            <div className={`${isEmpty ? 'space-y-2.5' : 'space-y-2'}`}>
+          {toolsExpanded && (
+            <div className="space-y-2">
               {[
                 READONLY_TOOL_SUGGESTIONS,
-                // 儿童模式过滤掉家长专属写工具（adjust_score/create_task_template/create_cycle/set_stage_goal）
                 {
                   ...WRITE_TOOL_SUGGESTIONS,
                   items: mode === 'child'
@@ -1061,19 +1055,28 @@ export function AssistantPage() {
                 />
               ))}
             </div>
+          )}
 
-            {/* 会话分隔线：有消息时，工具栏下方和消息区之间加一条分隔 */}
-            {!isEmpty && (
-              <div className="flex items-center gap-2 mt-1 mb-1">
-                <div className="flex-1 h-px bg-[#F5E6D3]" />
-                <span className="text-[10px] text-[#B9B1A8] uppercase tracking-wider">对话</span>
-                <div className="flex-1 h-px bg-[#F5E6D3]" />
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setToolsExpanded((v) => !v)}
+            className="w-full flex items-center justify-center gap-1 py-1 rounded-lg text-[11px] font-medium text-[#7A7168] active:bg-[#FFF1E6] transition-colors"
+            aria-expanded={toolsExpanded}
+            aria-label={toolsExpanded ? '收起快捷工具' : '展开快捷工具'}
+          >
+            <span>{toolsExpanded ? '收起' : '展开'}</span>
+            <ChevronDown
+              size={14}
+              className={`transition-transform duration-200 ${toolsExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </div>
+      </section>
 
-          {/* 消息列表（仅非空态渲染；仍然保留末尾自动滚动锚点） */}
-          {!isEmpty && (
+      {/* 仅对话消息区可纵向滚动 */}
+      <main className={`flex-1 min-h-0 overflow-y-auto px-4 pt-3 ${voiceMode ? 'pb-48' : 'pb-24'}`}>
+        <div className="max-w-[448px] mx-auto">
+          {!isEmpty ? (
             <div className="space-y-3">
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex items-start gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -1160,6 +1163,8 @@ export function AssistantPage() {
               )}
               <div ref={messagesEndRef} />
             </div>
+          ) : (
+            <div ref={messagesEndRef} />
           )}
         </div>
       </main>

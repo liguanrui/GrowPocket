@@ -21,11 +21,11 @@ export interface Goal {
   child_id: number;
   dimension_id: number;
   target_score: number;
-  created_at?: string;
-  updated_at?: string;
-  goal_type?: 'dimension' | 'habit' | 'parent_task';
+  goal_type?: 'dimension' | 'habit' | 'parent_task' | string;
   habit_id?: number | null;
   parent_task_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // 维度目标进度

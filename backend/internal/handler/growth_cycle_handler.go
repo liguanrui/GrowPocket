@@ -47,6 +47,10 @@ func (h *GrowthCycleHandler) CreateCycle(c *gin.Context) {
 	}
 	cycle, err := h.service.CreateCycle(familyID, req.ChildID, name, startDate, endDate)
 	if err != nil {
+		if err.Error() == "孩子档案不存在" || err.Error() == "结束日期不能早于开始日期" || err.Error() == "周期长度需在 1-4 周之间" {
+			util.FailBadRequest(c, err.Error())
+			return
+		}
 		util.FailInternal(c, err.Error())
 		return
 	}
@@ -106,6 +110,10 @@ func (h *GrowthCycleHandler) SetGoalsBatch(c *gin.Context) {
 	familyID := middleware.GetFamilyID(c)
 	goals, err := h.service.SetGoalsBatch(req.CycleID, familyID, req.ChildID, req.Goals)
 	if err != nil {
+		if err.Error() == "孩子档案不存在" || err.Error() == "目标列表不能为空" {
+			util.FailBadRequest(c, err.Error())
+			return
+		}
 		util.FailInternal(c, err.Error())
 		return
 	}

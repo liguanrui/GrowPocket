@@ -366,7 +366,7 @@ export function MallPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-8 pb-12 px-5 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">

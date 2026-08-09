@@ -994,6 +994,11 @@ export function GrowthPage() {
       setSetupGoals([]);
       setSetupHabits([]);
     }
+    // 重置习惯表单，并根据孩子年龄加载预设习惯
+    setShowCustomHabitForm(false);
+    setCustomHabitTitle('');
+    setCustomHabitDesc('');
+    setPresetHabits([]);
     // 重置主题任务相关状态（parent_task goal 没有保存 template_id，无法可靠回填；避免错填所以保持未选）
     setSetupThemeTemplateId(null);
     setSetupThemeCustom(null);
@@ -1003,11 +1008,6 @@ export function GrowthPage() {
     setCustomThemeDays(14);
     setCustomThemeCategory('nature');
     setPresetThemeTemplates([]);
-    // 重置自定义习惯表单状态 + 加载预设（习惯回填在上面已经做了）
-    setShowCustomHabitForm(false);
-    setCustomHabitTitle('');
-    setCustomHabitDesc('');
-    setPresetHabits([]);
     const age = computeChildAge(selectedChild);
     setPresetHabitsLoading(true);
     getPresetHabits(age)
@@ -1229,14 +1229,23 @@ export function GrowthPage() {
     : 0;
   const completedDimensions = progressList.filter(p => p.progress >= 100).length;
   const stageLabel = cycleName || '未设置阶段';
-  const goalText = progressList.length > 0
-    ? `提升${progressList.map(p => p.dimension_name).join('、')}能力`
+  const dimensionGoalIds = cycleGoals
+    .filter((g) => (g.goal_type || 'dimension') === 'dimension' && g.dimension_id > 0)
+    .map((g) => g.dimension_id);
+  const dimensionGoalNames = dimensionGoalIds
+    .map((id) => dimensions.find((d) => d.id === id)?.name)
+    .filter(Boolean) as string[];
+  const goalText = dimensionGoalNames.length > 0
+    ? `提升${dimensionGoalNames.join('、')}能力`
     : '为孩子的成长设定阶段性目标';
 
-  // 是否已设置目标（有周期且至少一个维度有目标分）
-  const hasGoals = !!cycleId && progressList.some(p => p.target_score > 0);
-  // 是否存在未达标的目标
-  const hasUncompletedGoals = progressList.some(p => p.target_score > 0 && p.progress < 100);
+  // 是否已设置目标（有周期且至少勾选了一个维度；批量接口不再写 target_score）
+  const hasGoals = !!cycleId && dimensionGoalIds.length > 0;
+  // 是否存在未达标的目标（仍用旧 progress 结构兜底；无分维进度时只要有目标即允许回顾）
+  const hasUncompletedGoals = dimensionGoalIds.length > 0 && (
+    progressList.some(p => p.target_score > 0 && p.progress < 100) ||
+    !progressList.some(p => p.target_score > 0)
+  );
   // 阶段时间区间内是否有已完成任务
   const hasCompletedTasksInCycle = (() => {
     if (!cycleStartDate || !cycleEndDate) return false;
@@ -1332,12 +1341,12 @@ export function GrowthPage() {
   return (
     <div className="min-h-screen bg-bg pb-24">
       {/* Header：绿色渐变 */}
-      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-8 pb-10 px-5 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-emerald-500 to-green-600 pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div>
-              <h1 className="text-xl font-bold text-white">成长记录</h1>
-              <p className="text-white/80 text-sm mt-0.5">记录每一个成长瞬间</p>
+              <h1 className="text-base font-bold text-white">成长记录</h1>
+              <p className="text-white/80 text-xs mt-0.5">记录每一个成长瞬间</p>
             </div>
             <button
               onClick={() => setShowShareModal(true)}

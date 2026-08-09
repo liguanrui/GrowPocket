@@ -49,6 +49,10 @@ func (h *QuestionnaireHandler) Submit(c *gin.Context) {
 	familyID := middleware.GetFamilyID(c)
 	reward, err := h.service.SubmitAnswers(familyID, req.ChildID, req.QuestionnaireID, req.Stage, req.Answers)
 	if err != nil {
+		if err.Error() == "孩子档案不存在" || err.Error() == "问卷不存在" {
+			util.FailBadRequest(c, err.Error())
+			return
+		}
 		util.FailInternal(c, err.Error())
 		return
 	}

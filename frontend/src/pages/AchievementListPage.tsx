@@ -237,7 +237,7 @@ export function AchievementListPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-amber-500 to-yellow-500 pt-12 pb-8 px-5 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-amber-500 to-yellow-500 pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
           <button
             onClick={() => navigate(-1)}

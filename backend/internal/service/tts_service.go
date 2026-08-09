@@ -19,15 +19,17 @@ import (
 )
 
 const (
-	edgeTrustedToken   = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-	edgeChromiumFull   = "143.0.3650.75"
-	edgeWSSBase        = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
-	defaultTTSVoice    = "zh-CN-YunxiaNeural" // 云夏：甜美童声（女童向）
-	defaultTTSRate     = "-5%"                // 稍慢更软萌
-	defaultTTSPitch    = "+45Hz"              // 再抬高音调，更甜美
-	defaultTTSVolume   = "+0%"
-	maxTTSTextRunes    = 500
-	winEpochSeconds    = 11644473600
+	edgeTrustedToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+	edgeChromiumFull = "143.0.3650.75"
+	edgeWSSBase      = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
+	// 晓晓：接近豆包默认的年轻女声助手，自然清晰（Edge 通道不支持 mstts 风格，style 默认 none）
+	defaultTTSVoice  = "zh-CN-XiaoxiaoNeural"
+	defaultTTSRate   = "+0%"
+	defaultTTSPitch  = "+0Hz"
+	defaultTTSVolume = "+0%"
+	defaultTTSStyle  = "none"
+	maxTTSTextRunes  = 500
+	winEpochSeconds  = 11644473600
 )
 
 // TTSService 使用微软 Edge 在线 TTS（无需 API Key）合成语音
@@ -36,6 +38,7 @@ type TTSService struct {
 	rate   string
 	pitch  string
 	volume string
+	style  string
 }
 
 func NewTTSService() *TTSService {
@@ -55,7 +58,11 @@ func NewTTSService() *TTSService {
 	if volume == "" {
 		volume = defaultTTSVolume
 	}
-	return &TTSService{voice: voice, rate: rate, pitch: pitch, volume: volume}
+	style := os.Getenv("TTS_STYLE")
+	if style == "" {
+		style = defaultTTSStyle
+	}
+	return &TTSService{voice: voice, rate: rate, pitch: pitch, volume: volume, style: style}
 }
 
 // Synthesize 将文本合成为 MP3 字节
@@ -119,7 +126,7 @@ func (s *TTSService) Synthesize(text string) ([]byte, error) {
 		return nil, fmt.Errorf("TTS 发送配置失败: %w", err)
 	}
 
-	ssml := buildSSML(s.voice, s.rate, s.pitch, s.volume, text)
+	ssml := buildSSML(s.voice, s.rate, s.pitch, s.volume, s.style, text)
 	ssmlMsg := fmt.Sprintf(
 		"X-RequestId:%s\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:%sZ\r\nPath:ssml\r\n\r\n%s",
 		strings.ReplaceAll(uuid.NewString(), "-", ""),
@@ -175,14 +182,24 @@ func jsDateString() string {
 	return time.Now().UTC().Format("Mon Jan 02 2006 15:04:05") + " GMT+0000 (Coordinated Universal Time)"
 }
 
-func buildSSML(voice, rate, pitch, volume, text string) string {
+func buildSSML(voice, rate, pitch, volume, style, text string) string {
 	esc := xmlEscape(text)
+	prosody := fmt.Sprintf(
+		"<prosody pitch='%s' rate='%s' volume='%s'>%s</prosody>",
+		xmlEscape(pitch), xmlEscape(rate), xmlEscape(volume), esc,
+	)
+	inner := prosody
+	// 晓晓等支持风格的音色：chat 更接近豆包默认助手口吻
+	if style != "" && style != "none" {
+		inner = fmt.Sprintf(
+			"<mstts:express-as style='%s'>%s</mstts:express-as>",
+			xmlEscape(style), prosody,
+		)
+	}
 	return fmt.Sprintf(
-		"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>"+
-			"<voice name='%s'>"+
-			"<prosody pitch='%s' rate='%s' volume='%s'>%s</prosody>"+
-			"</voice></speak>",
-		xmlEscape(voice), xmlEscape(pitch), xmlEscape(rate), xmlEscape(volume), esc,
+		"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='zh-CN'>"+
+			"<voice name='%s'>%s</voice></speak>",
+		xmlEscape(voice), inner,
 	)
 }
 
@@ -255,5 +272,6 @@ func (s *TTSService) VoiceInfo() map[string]string {
 		"rate":   s.rate,
 		"pitch":  s.pitch,
 		"volume": s.volume,
+		"style":  s.style,
 	}
 }

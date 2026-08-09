@@ -188,7 +188,7 @@ export function TaskListPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-primary to-primary-dark pt-6 pb-6 px-4 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-primary to-primary-dark pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -238,24 +238,20 @@ export function TaskListPage() {
 
       <div className="px-4 -mt-2 mb-4">
         <div className="max-w-lg mx-auto">
-          <div className="flex gap-2 overflow-x-auto bg-card rounded-2xl p-1 shadow-sm">
-            {STATUS_TABS.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={String(tab.id)}
-                  onClick={() => setStatusTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl whitespace-nowrap text-xs font-medium transition-all flex-1 justify-center ${
-                    statusTab === tab.id
-                      ? 'bg-primary text-white shadow'
-                      : 'text-text-secondary hover:bg-gray-50'
-                  }`}
-                >
-                  <Icon size={14} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+          <div className="flex gap-0.5 bg-card rounded-2xl p-1 shadow-sm">
+            {STATUS_TABS.map((tab) => (
+              <button
+                key={String(tab.id)}
+                onClick={() => setStatusTab(tab.id)}
+                className={`flex min-w-0 flex-1 items-center justify-center px-1 py-2 rounded-xl text-[11px] font-medium transition-all ${
+                  statusTab === tab.id
+                    ? 'bg-primary text-white shadow'
+                    : 'text-text-secondary hover:bg-gray-50'
+                }`}
+              >
+                <span className="truncate">{tab.label}</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>

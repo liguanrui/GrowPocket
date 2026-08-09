@@ -21,6 +21,8 @@ import {
   generateChildren,
 } from '../services/parentTasks';
 import type { ParentTaskTemplate } from '../services/parentTasks';
+import { gradeLabel as gradeName } from '../utils/gradeLabel';
+import { saveChildDraft, clearChildDraft } from '../utils/childDraft';
 
 // 暖橙色彩常量
 const C = {
@@ -106,7 +108,7 @@ export function computeAge(birthdayISO: string): number {
   return age < 0 ? 0 : age;
 }
 
-// 前端与后端一致的 9/1 入学规则年级推算（0=幼儿园/未入学, 1-6 小学）
+// 前端与后端一致的 9/1 入学规则年级推算（0=未上小学, 1-6 小学）
 export function computeGrade(birthdayISO: string): number {
   const b = new Date(birthdayISO);
   const now = new Date();
@@ -120,11 +122,6 @@ export function computeGrade(birthdayISO: string): number {
   if (g < 0) g = 0;
   if (g > 6) g = 6;
   return g;
-}
-
-function gradeName(g: number): string {
-  if (g <= 0) return '幼儿园';
-  return ['一', '二', '三', '四', '五', '六'][g - 1] + '年级';
 }
 
 function formatBirthdayMD(birthdayISO: string | null | undefined): string {
@@ -261,38 +258,64 @@ export function OnboardingPage() {
   // 预设列表是否已加载（避免重复请求）
   const [presetLoaded, setPresetLoaded] = useState(false);
 
-  // Step 6 初始化：加载能力分数、维度、年级
+  // Step 6 初始化：校验孩子归属、加载能力分数、维度、年级
   useEffect(() => {
-    if (step === 6 && urlChildId) {
-      getChildScores(urlChildId).then(setScores).catch(() => {});
-      getAbilities().then(setDimensions).catch(() => {});
-      // 默认今天起，2 周
-      const start = formatDateISO(new Date());
-      setSetupStartDate(start);
-      // 从孩子档案取年级和年龄（问卷返回后本地 birthday 状态可能已丢失）
-      childStore.fetchChildren().then(() => {
-        const child = useChildStore.getState().children.find((c) => c.id === urlChildId);
-        const g = child?.derived_grade ?? child?.grade ?? derivedGrade ?? 1;
-        setStep6Grade(g && g > 0 ? g : 1);
-        // 根据孩子年龄加载预设习惯和主题模板
-        const childAge = child?.derived_age ?? child?.age ?? derivedAge ?? 6;
-        if (!presetLoaded) {
-          setPresetLoaded(true);
-          setPresetHabitsLoading(true);
-          getPresetHabits(childAge)
-            .then((list) => setPresetHabits(list || []))
-            .catch(() => setPresetHabits([]))
-            .finally(() => setPresetHabitsLoading(false));
-          setPresetThemesLoading(true);
-          getPresetTemplates(childAge)
-            .then((list) => setPresetThemeTemplates(list || []))
-            .catch(() => setPresetThemeTemplates([]))
-            .finally(() => setPresetThemesLoading(false));
+    if (step !== 6 || !urlChildId) return;
+
+    let cancelled = false;
+    // 默认今天起，2 周
+    const start = formatDateISO(new Date());
+    setSetupStartDate(start);
+    getAbilities().then(setDimensions).catch(() => {});
+
+    childStore.fetchChildren().then(() => {
+      if (cancelled) return;
+      const children = useChildStore.getState().children;
+      const child = children.find((c) => c.id === urlChildId);
+      // URL 中的 child_id 可能来自其他账号/历史链接，不属于当前家庭 → 纠正后重进 Step 6
+      if (!child) {
+        const fallback =
+          children.find((c) => c.id === useChildStore.getState().currentChildId) || children[0];
+        if (fallback) {
+          toast.error('孩子档案不匹配，已切换到当前家庭的孩子');
+          navigate(
+            `/onboarding?step=6&child_id=${fallback.id}&mode=${encodeURIComponent(onboardingMode)}`,
+            { replace: true },
+          );
+        } else {
+          toast.error('未找到孩子档案，请重新创建');
+          navigate(`/onboarding?mode=${encodeURIComponent(onboardingMode)}`, { replace: true });
         }
-      }).catch(() => {
-        setStep6Grade(derivedGrade > 0 ? derivedGrade : 1);
-      });
-    }
+        return;
+      }
+
+      getChildScores(urlChildId).then((s) => {
+        if (!cancelled) setScores(s);
+      }).catch(() => {});
+
+      const g = child.derived_grade || child.grade || derivedGrade || 1;
+      setStep6Grade(g > 0 ? g : 1);
+      // 年龄为 0 时不能用 ??（0 是有效数字），需用 || 回退
+      const childAge = child.derived_age || child.age || derivedAge || 6;
+      if (!presetLoaded) {
+        setPresetLoaded(true);
+        setPresetHabitsLoading(true);
+        getPresetHabits(childAge)
+          .then((list) => { if (!cancelled) setPresetHabits(list || []); })
+          .catch(() => { if (!cancelled) setPresetHabits([]); })
+          .finally(() => { if (!cancelled) setPresetHabitsLoading(false); });
+        setPresetThemesLoading(true);
+        getPresetTemplates(childAge)
+          .then((list) => { if (!cancelled) setPresetThemeTemplates(list || []); })
+          .catch(() => { if (!cancelled) setPresetThemeTemplates([]); })
+          .finally(() => { if (!cancelled) setPresetThemesLoading(false); });
+      }
+    }).catch(() => {
+      if (!cancelled) setStep6Grade(derivedGrade > 0 ? derivedGrade : 1);
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, urlChildId]);
 
   // 按年级预勾选主轴维度（仅首次）
@@ -330,8 +353,26 @@ export function OnboardingPage() {
   const handleNext = () => {
     if (step < 5) setStep(step + 1);
   };
+
+  const abandonOnboarding = () => {
+    const ok = window.confirm('退出后不会保存孩子信息，确定离开吗？');
+    if (!ok) return;
+    clearChildDraft();
+    if (onboardingMode === 'add_child') {
+      navigate('/settings/family', { replace: true });
+    } else {
+      navigate('/assistant', { replace: true });
+    }
+  };
+
   const handlePrev = () => {
-    if (step > 1 && step < 6) setStep(step - 1);
+    if (step === 6) return;
+    if (step <= 1) {
+      // 添加孩子流程：第一步返回即放弃（尚未落库）
+      if (onboardingMode === 'add_child') abandonOnboarding();
+      return;
+    }
+    setStep(step - 1);
   };
 
   const toggleHobby = (tag: string) => {
@@ -342,28 +383,31 @@ export function OnboardingPage() {
     }
   };
 
-  // Step 5: 创建儿童档案并跳转问卷（birthday 主驱动）
-  const handleStartQuestionnaire = async () => {
+  // Step 5: 仅保存本地草稿并跳转问卷；问卷全部答完后才真正创建孩子档案
+  const handleStartQuestionnaire = () => {
     if (submitting) return;
+    if (!nickname.trim()) {
+      toast.error('请先填写昵称');
+      return;
+    }
     setSubmitting(true);
     try {
-      const hobbiesJSON = JSON.stringify(hobbies);
-      const child = await childStore.addChild({
+      saveChildDraft({
         nickname: nickname.trim(),
         birthday: birthday || undefined,
         grade: (gradeOverridden && grade !== null) ? grade : (birthday ? undefined : grade || undefined),
         grade_overridden: gradeOverridden,
         age: birthday ? undefined : (age || undefined),
-        hobbies: hobbiesJSON,
+        hobbies: JSON.stringify(hobbies),
+        level,
+        mode: onboardingMode,
       });
-      childStore.setCurrentChildId(child.id);
-      toast.success('档案创建成功！');
-      // 增加 return=onboarding 参数，问卷完成后返回 Onboarding Step 6
-      // mode 参数传递：add_child 走完后跳回家庭管理
+      // return 带回 onboarding，问卷完成后创建孩子并进入 Step 6
       const returnPath = `onboarding&mode=${onboardingMode}`;
-      navigate(`/questionnaire?stage=register&level=${level}&child_id=${child.id}&return=${encodeURIComponent(returnPath)}`, { replace: true });
-    } catch (e: any) {
-      toast.error(e instanceof Error ? e.message : '创建档案失败');
+      navigate(
+        `/questionnaire?stage=register&level=${level}&draft=1&return=${encodeURIComponent(returnPath)}`,
+        { replace: true },
+      );
     } finally {
       setSubmitting(false);
     }
@@ -567,10 +611,10 @@ export function OnboardingPage() {
         <div className="max-w-[448px] mx-auto flex items-center justify-between">
           <button
             onClick={handlePrev}
-            disabled={step === 1 || step === 6}
+            disabled={step === 6 || (step === 1 && onboardingMode !== 'add_child')}
             className="w-10 h-10 rounded-lg flex items-center justify-center disabled:opacity-30"
             style={{ background: C.muted, color: C.mutedFg }}
-            aria-label="上一步"
+            aria-label={step <= 1 ? '退出' : '上一步'}
           >
             <ChevronLeft size={20} />
           </button>
@@ -706,7 +750,7 @@ export function OnboardingPage() {
                 {birthday ? (
                   <div>
                     <p className="text-lg font-bold mb-1" style={{ color: '#2D2A26' }}>
-                      {derivedAge} 岁 · {gradeName(derivedGrade)}
+                      {derivedAge} 岁 · {gradeName(derivedGrade, derivedAge)}
                     </p>
                     <p className="text-xs" style={{ color: C.mutedFg }}>
                       今年 {formatBirthdayMD(birthday)} 过生日 🎂
@@ -1013,7 +1057,7 @@ export function OnboardingPage() {
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: '#2D2A26' }}>
                                   {habit.title}
-                                  {!habit.is_system && (
+                                  {habit.is_custom && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-medium">
                                       自定义
                                     </span>
@@ -1126,7 +1170,7 @@ export function OnboardingPage() {
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap" style={{ color: '#2D2A26' }}>
                                     {tpl.title}
-                                    {!tpl.is_system && (
+                                    {tpl.is_custom && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700 font-medium">
                                         自定义
                                       </span>

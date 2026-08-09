@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Sprout } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 
 export default function LoginPage() {
@@ -32,8 +33,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-primary-50 p-6">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-gray-100 p-8 hover:shadow-2xl transition-shadow duration-300">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 mx-auto bg-gradient-to-br from-primary to-amber-500 rounded-3xl flex items-center justify-center mb-4 shadow-lg shadow-primary/20 rotate-3 hover:rotate-0 transition-transform">
-            <span className="text-4xl">🏡</span>
+          <div className="w-20 h-20 mx-auto rounded-3xl bg-[#4a9a68] flex items-center justify-center mb-4 shadow-md">
+            <Sprout className="w-10 h-10 text-[#fef1f2]" strokeWidth={2} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">欢迎回到童劳童得</h1>
           <p className="text-sm text-gray-500 mt-2">使用家长账号登录</p>

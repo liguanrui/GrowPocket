@@ -9,6 +9,8 @@ import { Users, Plus, Edit2, Trash2, X, Check, Home, Sparkles } from 'lucide-rea
 import { IPPAvatar } from '../components/IPPAvatar';
 import { MobileDatePicker } from '../components/MobileDatePicker';
 import { useToastStore } from '../stores/toastStore';
+import { gradeLabel as gradeName } from '../utils/gradeLabel';
+import { saveChildDraft } from '../utils/childDraft';
 
 // 与 OnboardingPage 共用的爱好标签
 const HOBBY_TAGS = [
@@ -45,10 +47,6 @@ function computeGrade(birthday: string | null | undefined): number {
   if (g < 0) g = 0;
   if (g > 6) g = 6;
   return g;
-}
-function gradeName(g: number): string {
-  if (g <= 0) return '幼儿园';
-  return ['一', '二', '三', '四', '五', '六'][g - 1] + '年级';
 }
 function formatBirthday(birthday: string | null | undefined): string {
   if (!birthday) return '';
@@ -179,7 +177,7 @@ function ChildForm({
           {/* 推算展示 + 年级手动覆盖 */}
           <div className="rounded-xl p-4 bg-gray-50 border border-gray-100">
             <div className="text-sm font-semibold text-text-primary mb-1">
-              {derivedAge > 0 ? `${derivedAge} 岁 · ${gradeName(derivedGrade)}` : '选择生日后自动显示年龄和年级'}
+              {birthday ? `${derivedAge} 岁 · ${gradeName(derivedGrade, derivedAge)}` : '选择生日后自动显示年龄和年级'}
             </div>
             <div className="text-xs text-text-tertiary mb-3">按 9 月 1 日入学规则自动推算</div>
 
@@ -316,18 +314,31 @@ export function FamilySettingsPage() {
     navigate('/onboarding?mode=add_child');
   };
 
-  const handleAddChildLegacy = async (data: any) => {
-    // 兜底路径：精简表单提交 → 直接保存 + 跳问卷（老流程）
-    try {
-      const newChild = await childService.addChild(data);
-      setShowChildForm(false);
-      childStore.fetchChildren();
-      if (newChild && newChild.id) {
-        navigate(`/questionnaire?stage=register&child_id=${newChild.id}`);
-      }
-    } catch (e: any) {
-      toast.error(e instanceof Error ? e.message : '添加孩子失败');
-    }
+  const handleAddChildLegacy = (data: any) => {
+    // 兜底路径：仅存本地草稿，问卷全部答完后再创建孩子（与 Onboarding 一致）
+    const grade =
+      typeof data.grade === 'number'
+        ? data.grade
+        : data.birthday
+          ? computeGrade(data.birthday)
+          : 0;
+    const levelMap: Record<number, string> = { 1: 'L1', 2: 'L2', 3: 'L3', 4: 'L4', 5: 'L5', 6: 'L6' };
+    const level = levelMap[grade] || 'L1';
+    saveChildDraft({
+      nickname: data.nickname,
+      birthday: data.birthday,
+      grade: data.grade,
+      grade_overridden: data.grade_overridden,
+      age: data.age,
+      hobbies: data.hobbies,
+      level,
+      mode: 'add_child',
+    });
+    setShowChildForm(false);
+    navigate(
+      `/questionnaire?stage=register&level=${level}&draft=1&return=${encodeURIComponent('onboarding&mode=add_child')}`,
+      { replace: true },
+    );
   };
 
   const handleUpdateChild = async (data: any) => {
@@ -436,7 +447,7 @@ export function FamilySettingsPage() {
                       </div>
                       <div className="text-xs text-text-tertiary mt-0.5 truncate">
                         {age > 0 ? `${age} 岁 · ` : ''}
-                        {gradeName(grade)}
+                        {gradeName(grade, age)}
                         {child.birthday ? ` · ${formatBirthday(child.birthday)}` : ''}
                         {` · ${gender}`}
                       </div>

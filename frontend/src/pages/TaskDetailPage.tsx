@@ -581,6 +581,7 @@ export function TaskDetailPage() {
       uiStore.setPreviousBalance(currentBalance);
       uiStore.setNeedRefreshScore(true);
       uiStore.setNeedRefreshTasks(true);
+      uiStore.setPendingTaskStatus(3); // 回到任务看板「已完成」Tab
       childStore.setCurrentChildId(task.child_id);
       toast.success(`验收通过，已发放 ${points} 积分`);
       setTimeout(() => {
@@ -601,7 +602,11 @@ export function TaskDetailPage() {
       }
       setShowReview(false);
       uiStore.setNeedRefreshTasks(true);
+      uiStore.setPendingTaskStatus(4); // 回到任务看板「已拒绝」Tab
       toast.success('已拒绝任务');
+      setTimeout(() => {
+        navigate('/home', { replace: true });
+      }, 500);
     } catch (e: any) {
       toast.error(e.message || '拒绝失败');
     }
@@ -621,7 +626,7 @@ export function TaskDetailPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-primary to-primary-dark pt-6 pb-6 px-4">
+      <div className="bg-gradient-to-br from-primary to-primary-dark pt-3 pb-4 px-4">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-4">
             <button

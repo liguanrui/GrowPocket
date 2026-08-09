@@ -7,6 +7,7 @@ import { masterChallengeApi } from '../services/masterChallenge';
 import type { MasterChallengeTemplate, MasterChallengeInstance } from '../services/masterChallenge';
 import { getAbilities } from '../services/ability';
 import type { AbilityDimension } from '../services/ability';
+import { masterChallengeIcon } from '../utils/masterChallengeIcon';
 
 // 模板分类 → 中文标签
 const CATEGORY_LABELS: Record<string, string> = {
@@ -105,24 +106,26 @@ export function MasterChallengePoolPage() {
   return (
     <div className="min-h-screen bg-bg pb-24">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-gradient-to-br from-amber-400 to-yellow-500 text-white rounded-b-3xl pt-8 pb-10 px-5">
-        <div className="flex items-center justify-between">
+      <div className="bg-gradient-to-br from-amber-400 to-yellow-500 text-white rounded-b-2xl pt-3 pb-3.5 px-4">
+        <div className="flex items-center gap-2">
           <button
             onClick={handleBack}
             className="flex items-center justify-center w-8 h-8 -ml-1 text-white"
             aria-label="返回"
           >
-            <ChevronLeft size={24} />
+            <ChevronLeft size={22} />
           </button>
-          <h1 className="text-xl font-bold">大师挑战</h1>
-          <Trophy size={22} />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold">大师挑战</h1>
+            <p className="text-white/85 text-[11px] mt-0.5 truncate">
+              能力进阶后的高阶玩法 · {childName}
+            </p>
+          </div>
+          <Trophy size={18} className="flex-shrink-0 opacity-90" />
         </div>
-        <p className="text-white/85 text-sm mt-2 text-center">
-          能力进阶后的高阶玩法 · {childName}
-        </p>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-5">
+      <div className="max-w-lg mx-auto px-4 pt-3">
         {loading ? (
           <div className="py-16 flex flex-col items-center justify-center text-text-tertiary">
             <Loader2 size={28} className="animate-spin text-amber-400" />
@@ -201,7 +204,9 @@ export function MasterChallengePoolPage() {
                               </p>
                             )}
                           </div>
-                          <span className="text-lg flex-shrink-0">{tpl.icon || '🎯'}</span>
+                          <span className="text-lg flex-shrink-0" aria-hidden>
+                            {masterChallengeIcon(tpl.icon)}
+                          </span>
                         </div>
 
                         {/* 元信息：难度 / 周期 / 主轴维度 */}

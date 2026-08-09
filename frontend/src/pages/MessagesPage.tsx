@@ -61,8 +61,15 @@ export function MessagesPage() {
         /* ignore */
       }
     }
-    if (msg.related_type === 'activity' || msg.related_type === 'donation') {
-      navigate('/community');
+    // 按消息类型跳到社区对应 Tab（捐赠→公益项目/我的捐赠，活动→公益活动）
+    const type = msg.type || '';
+    const related = msg.related_type || '';
+    if (related === 'donation' || type.startsWith('donation_')) {
+      navigate('/community?tab=projects&mine=1');
+      return;
+    }
+    if (related === 'activity' || type.startsWith('activity_')) {
+      navigate('/community?tab=activities');
     }
   };
 
@@ -78,19 +85,19 @@ export function MessagesPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24">
-      <div className="bg-gradient-to-br from-primary to-amber-500 pt-4 pb-8 px-4 rounded-b-3xl">
+      <div className="bg-gradient-to-br from-primary to-amber-500 pt-3 pb-4 px-4 rounded-b-2xl">
         <div className="max-w-lg mx-auto">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <button
               onClick={() => navigate(-1)}
-              className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white"
+              className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white"
               aria-label="返回"
             >
-              <ArrowLeft size={20} />
+              <ArrowLeft size={18} />
             </button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-white">系统消息</h1>
-              <p className="text-white/80 text-sm">报名通知与活动动态</p>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-base font-bold text-white">系统消息</h1>
+              <p className="text-white/80 text-xs">报名通知与活动动态</p>
             </div>
             <button
               onClick={() => void handleMarkAll()}

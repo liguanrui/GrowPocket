@@ -386,11 +386,15 @@ func (s *CommunityService) CompleteDonation(donationID uint) error {
 		return err
 	}
 
+	relatedType := "donation"
+	relatedID := donation.ID
 	transaction := &model.Transaction{
 		ChildID:      donation.ChildID,
 		Type:         model.TransactionTypeIncome,
 		Amount:       donation.Points,
 		Reason:       fmt.Sprintf("公益捐赠: %s (%.1fkg)", donation.ProjectTitle, donation.Weight),
+		RelatedID:    &relatedID,
+		RelatedType:  &relatedType,
 		BalanceAfter: newBalance,
 		CreatedAt:    now,
 	}
