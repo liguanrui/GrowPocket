@@ -69,10 +69,32 @@ export async function deleteChild(id: number): Promise<void> {
   });
 }
 
-export async function updateFamilyName(name: string): Promise<{ id: number; name: string }> {
-  return request<{ id: number; name: string }>({
+export async function updateFamilyName(name: string): Promise<{ id: number; name: string; share_code?: string }> {
+  return request<{ id: number; name: string; share_code?: string }>({
     method: 'PUT',
     url: '/family/name',
     data: { name },
+  });
+}
+
+export interface FamilyInfo {
+  id: number;
+  name: string;
+  share_code: string;
+  child_count: number;
+  is_active: boolean;
+}
+
+export async function getFamily(): Promise<FamilyInfo> {
+  return request<FamilyInfo>({
+    method: 'GET',
+    url: '/family',
+  });
+}
+
+export async function regenerateShareCode(): Promise<FamilyInfo> {
+  return request<FamilyInfo>({
+    method: 'POST',
+    url: '/family/share-code/regenerate',
   });
 }

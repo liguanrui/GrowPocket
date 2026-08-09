@@ -5,12 +5,13 @@ import { useAuthStore } from '../stores/authStore';
 import { useChildStore } from '../stores/childStore';
 import * as childService from '../services/children';
 import type { Child } from '../services/children';
-import { Users, Plus, Edit2, Trash2, X, Check, Home, Sparkles } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, X, Check, Home, Sparkles, Copy, RefreshCw } from 'lucide-react';
 import { IPPAvatar } from '../components/IPPAvatar';
 import { MobileDatePicker } from '../components/MobileDatePicker';
 import { useToastStore } from '../stores/toastStore';
 import { gradeLabel as gradeName } from '../utils/gradeLabel';
 import { saveChildDraft } from '../utils/childDraft';
+import { copyText } from '../utils/clipboard';
 
 // 与 OnboardingPage 共用的爱好标签
 const HOBBY_TAGS = [
@@ -280,11 +281,26 @@ export function FamilySettingsPage() {
   const [childrenList, setChildrenList] = useState<Child[]>([]);
   const [showChildForm, setShowChildForm] = useState(false);
   const [editingChild, setEditingChild] = useState<Child | undefined>();
+  const [shareCode, setShareCode] = useState(authStore.family?.share_code || '');
+  const [familyName, setFamilyName] = useState(authStore.family?.name || '');
+  const [regenLoading, setRegenLoading] = useState(false);
 
   useEffect(() => {
     if (childStore.children.length === 0) {
       childStore.fetchChildren();
     }
+    childService
+      .getFamily()
+      .then((info) => {
+        setShareCode(info.share_code || '');
+        setFamilyName(info.name || '');
+        authStore.setFamily({
+          id: info.id,
+          name: info.name,
+          share_code: info.share_code,
+        });
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -292,6 +308,35 @@ export function FamilySettingsPage() {
       setChildrenList(childStore.children);
     }
   }, [childStore.children]);
+
+  const handleCopyShareCode = async () => {
+    if (!shareCode) {
+      toast.error('暂无分享码');
+      return;
+    }
+    const ok = await copyText(shareCode);
+    if (ok) toast.success('分享码已复制');
+    else toast.error('复制失败，请长按分享码手动复制');
+  };
+
+  const handleRegenerateShareCode = async () => {
+    if (!confirm('重新生成后，旧分享码将失效。确定继续？')) return;
+    setRegenLoading(true);
+    try {
+      const info = await childService.regenerateShareCode();
+      setShareCode(info.share_code);
+      authStore.setFamily({
+        id: info.id,
+        name: info.name,
+        share_code: info.share_code,
+      });
+      toast.success('已生成新的分享码');
+    } catch (e: any) {
+      toast.error(e?.message || '重新生成失败');
+    } finally {
+      setRegenLoading(false);
+    }
+  };
 
   // 长按 + 按钮 3 秒 fallback：打开原始精简 ChildForm（极端场景兜底）
   const pressTimer = useRef<number | null>(null);
@@ -386,11 +431,43 @@ export function FamilySettingsPage() {
           <div className="space-y-3 pl-13">
             <div className="flex items-center justify-between py-2 border-b border-gray-100">
               <span className="text-text-secondary">家庭名称</span>
-              <span className="text-text-primary font-medium">{authStore.family?.name || '未加入家庭'}</span>
+              <span className="text-text-primary font-medium">{familyName || authStore.family?.name || '未加入家庭'}</span>
             </div>
-            <div className="flex items-center justify-between py-2">
+            <div className="flex items-center justify-between py-2 border-b border-gray-100">
               <span className="text-text-secondary">家庭成员</span>
               <span className="text-text-primary font-medium">{childrenList.length} 位孩子</span>
+            </div>
+            <div className="py-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-text-secondary">家庭分享码</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyShareCode}
+                    className="text-xs text-primary font-medium flex items-center gap-1"
+                  >
+                    <Copy size={14} />
+                    复制
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleRegenerateShareCode()}
+                    disabled={regenLoading}
+                    className="text-xs text-text-tertiary font-medium flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <RefreshCw size={14} className={regenLoading ? 'animate-spin' : ''} />
+                    重新生成
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#FFF1E6] border border-[#F5E6D3] px-4 py-3 text-center">
+                <p className="text-2xl font-bold tracking-[0.2em] text-[#2D2A26] font-mono">
+                  {shareCode || '--------'}
+                </p>
+              </div>
+              <p className="text-[11px] text-text-tertiary mt-2 leading-relaxed">
+                把分享码给另一位家长，注册时填写即可加入本家庭，共同管理孩子档案。
+              </p>
             </div>
           </div>
         </div>

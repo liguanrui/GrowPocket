@@ -21,8 +21,9 @@ func NewAuthHandler(cfg *config.Config) *AuthHandler {
 }
 
 type registerReq struct {
-	Nickname string `json:"nickname" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Nickname  string `json:"nickname" binding:"required"`
+	Password  string `json:"password" binding:"required"`
+	ShareCode string `json:"share_code"`
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -33,8 +34,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	out, err := h.service.Register(service.RegisterInput{
-		Nickname: req.Nickname,
-		Password: req.Password,
+		Nickname:  req.Nickname,
+		Password:  req.Password,
+		ShareCode: req.ShareCode,
 	}, h.cfg.JWTSecret, h.cfg.JWTDuration)
 	if err != nil {
 		util.FailBadRequest(c, err.Error())
@@ -49,9 +51,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			"role":     out.User.Role,
 		},
 		"family": gin.H{
-			"id":   out.Family.ID,
-			"name": out.Family.Name,
+			"id":         out.Family.ID,
+			"name":       out.Family.Name,
+			"share_code": out.Family.ShareCode,
 		},
+		"has_children": out.HasChildren,
+		"joined":       out.Joined,
 	})
 }
 
@@ -84,8 +89,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"role":     out.User.Role,
 		},
 		"family": gin.H{
-			"id":   out.Family.ID,
-			"name": out.Family.Name,
+			"id":         out.Family.ID,
+			"name":       out.Family.Name,
+			"share_code": out.Family.ShareCode,
 		},
 	})
 }

@@ -6,6 +6,8 @@ export default function RegisterPage() {
   const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  const [shareCode, setShareCode] = useState('');
+  const [showShareCode, setShowShareCode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const register = useAuthStore((s) => s.register);
@@ -28,9 +30,13 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
-      await register(nickname.trim(), password);
-      // 注册成功后进入 Onboarding 新手指引流程，IP「小萌芽」陪伴收集儿童信息并进入分龄问卷
-      navigate('/onboarding', { replace: true });
+      const result = await register(nickname.trim(), password, shareCode.trim() || undefined);
+      // 加入已有家庭且已有孩子 → 首页；否则走新手引导
+      if (result.hasChildren) {
+        navigate('/home', { replace: true });
+      } else {
+        navigate('/onboarding', { replace: true });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败');
     } finally {
@@ -79,6 +85,34 @@ export default function RegisterPage() {
               placeholder="请再次输入密码"
             />
           </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowShareCode((v) => !v)}
+              className="text-sm text-primary font-medium"
+            >
+              {showShareCode ? '收起家庭分享码' : '已有家庭？填写分享码加入 →'}
+            </button>
+            {showShareCode && (
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-2">家庭分享码（可选）</label>
+                <input
+                  value={shareCode}
+                  onChange={(e) => setShareCode(e.target.value.toUpperCase())}
+                  maxLength={8}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition font-mono tracking-widest uppercase"
+                  placeholder="8 位分享码"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                />
+                <p className="text-xs text-gray-400 mt-1.5">
+                  向家庭中已注册的家长索取分享码，填写后即可加入同一家庭
+                </p>
+              </div>
+            )}
+          </div>
+
           {error && <div className="text-red-500 text-sm">{error}</div>}
 
           <button
@@ -86,7 +120,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full py-3 bg-gradient-to-r from-primary to-warm-light hover:from-primary-dark hover:to-warm-dark text-white font-semibold rounded-xl active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-primary/25"
           >
-            {loading ? '注册中...' : '注册并登录'}
+            {loading ? '注册中...' : shareCode.trim() ? '加入家庭并注册' : '注册并登录'}
           </button>
         </form>
 

@@ -9,6 +9,7 @@ import (
 	"growpocket/internal/service"
 	"growpocket/pkg/envloader"
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -92,7 +93,9 @@ func main() {
 		authorized.GET("/children/:id", childrenHandler.GetChild)
 		authorized.PUT("/children/:id", childrenHandler.UpdateChild)
 		authorized.DELETE("/children/:id", childrenHandler.DeleteChild)
+		authorized.GET("/family", childrenHandler.GetFamily)
 		authorized.PUT("/family/name", childrenHandler.UpdateFamilyName)
+		authorized.POST("/family/share-code/regenerate", childrenHandler.RegenerateShareCode)
 
 		// 任务
 		taskHandler := handler.NewTaskHandler(cfg)

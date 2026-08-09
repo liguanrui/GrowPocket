@@ -9,19 +9,28 @@ export interface AuthUser {
 export interface AuthFamily {
   id: number;
   name: string;
+  share_code?: string;
 }
 
 export interface LoginResponse {
   token: string;
   user: AuthUser;
   family: AuthFamily;
+  has_children?: boolean;
+  joined?: boolean;
 }
 
-export async function register(nickname: string, password: string): Promise<LoginResponse> {
+export async function register(
+  nickname: string,
+  password: string,
+  shareCode?: string,
+): Promise<LoginResponse> {
+  const data: Record<string, string> = { nickname, password };
+  if (shareCode?.trim()) data.share_code = shareCode.trim().toUpperCase();
   return request<LoginResponse>({
     method: 'POST',
     url: '/auth/register',
-    data: { nickname, password },
+    data,
   });
 }
 

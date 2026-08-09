@@ -188,7 +188,25 @@ func (h *ChildrenHandler) UpdateFamilyName(c *gin.Context) {
 		util.FailBadRequest(c, err.Error())
 		return
 	}
-	util.OK(c, gin.H{"id": family.ID, "name": family.Name})
+	util.OK(c, gin.H{"id": family.ID, "name": family.Name, "share_code": family.ShareCode})
+}
+
+func (h *ChildrenHandler) GetFamily(c *gin.Context) {
+	info, err := h.service.GetFamily(middleware.GetFamilyID(c))
+	if err != nil {
+		util.FailBadRequest(c, err.Error())
+		return
+	}
+	util.OK(c, info)
+}
+
+func (h *ChildrenHandler) RegenerateShareCode(c *gin.Context) {
+	info, err := h.service.RegenerateShareCode(middleware.GetFamilyID(c))
+	if err != nil {
+		util.FailBadRequest(c, err.Error())
+		return
+	}
+	util.OK(c, info)
 }
 
 // enrichChild 在 User 实体基础上追加 derived_age / derived_grade / grade_overridden，前端直接用

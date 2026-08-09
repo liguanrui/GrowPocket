@@ -257,3 +257,58 @@ func (s *ChildService) UpdateFamilyName(familyID uint, name string) (*model.Fami
 
 	return &family, nil
 }
+
+// FamilyInfo 当前家庭详情（含分享码与孩子数）
+type FamilyInfo struct {
+	ID         uint   `json:"id"`
+	Name       string `json:"name"`
+	ShareCode  string `json:"share_code"`
+	ChildCount int64  `json:"child_count"`
+	IsActive   bool   `json:"is_active"`
+}
+
+func (s *ChildService) GetFamily(familyID uint) (*FamilyInfo, error) {
+	var family model.Family
+	if err := database.DB.First(&family, familyID).Error; err != nil {
+		return nil, errors.New("家庭不存在")
+	}
+	if family.ShareCode == "" {
+		if code, err := allocateUniqueShareCode(database.DB); err == nil {
+			database.DB.Model(&family).Update("share_code", code)
+			family.ShareCode = code
+		}
+	}
+	var childCount int64
+	database.DB.Model(&model.User{}).Where("family_id = ? AND role = ?", familyID, model.RoleChild).Count(&childCount)
+	return &FamilyInfo{
+		ID:         family.ID,
+		Name:       family.Name,
+		ShareCode:  family.ShareCode,
+		ChildCount: childCount,
+		IsActive:   family.IsActive,
+	}, nil
+}
+
+func (s *ChildService) RegenerateShareCode(familyID uint) (*FamilyInfo, error) {
+	var family model.Family
+	if err := database.DB.First(&family, familyID).Error; err != nil {
+		return nil, errors.New("家庭不存在")
+	}
+	code, err := allocateUniqueShareCode(database.DB)
+	if err != nil {
+		return nil, err
+	}
+	if err := database.DB.Model(&family).Update("share_code", code).Error; err != nil {
+		return nil, errors.New("重新生成失败")
+	}
+	family.ShareCode = code
+	var childCount int64
+	database.DB.Model(&model.User{}).Where("family_id = ? AND role = ?", familyID, model.RoleChild).Count(&childCount)
+	return &FamilyInfo{
+		ID:         family.ID,
+		Name:       family.Name,
+		ShareCode:  family.ShareCode,
+		ChildCount: childCount,
+		IsActive:   family.IsActive,
+	}, nil
+}
