@@ -19,7 +19,7 @@ import { request } from '../services/api';
 import { useToastStore } from '../stores/toastStore';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
-import { isEchoOfLastReply, sanitizeAssistantDisplay } from '../lib/utils';
+import { isEchoOfLastReply } from '../lib/utils';
 
 type ExpressionType = 'happy' | 'encourage' | 'think' | 'surprised' | 'comfort' | 'proud';
 
@@ -106,13 +106,13 @@ const READONLY_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
     { name: 'query_child_balance', label: '积分余额', prompt: '我现在有多少积分？', icon: Coins },
     { name: 'query_child_scores', label: '能力得分', prompt: '帮我看看各项能力得分', icon: BarChart3 },
     { name: 'list_tasks', label: '今日任务', prompt: '今天有哪些待办任务？', icon: ListTodo },
-    { name: 'get_task_detail', label: '任务详情', prompt: '帮我看看某个任务的详情', icon: FileText },
+    { name: 'get_task_detail', label: '任务详情', prompt: '帮我看看任务 #1 的详情', icon: FileText },
     { name: 'list_redeem_items', label: '积分商城', prompt: '积分商城有什么好东西？', icon: ShoppingBag },
     { name: 'list_redeem_records', label: '兑换记录', prompt: '最近的积分兑换记录', icon: Receipt },
     { name: 'get_growth_timeline', label: '成长时间线', prompt: '展示最近 30 天的成长时间线', icon: Clock },
     { name: 'get_growth_album', label: '成果相册', prompt: '看看我的成果相册', icon: Image },
     { name: 'get_current_cycle', label: '当前周期', prompt: '当前成长周期及阶段目标', icon: Target },
-    { name: 'get_cycle_progress', label: '周期进度', prompt: '帮我查一下当前周期的进度', icon: TrendingUp },
+    { name: 'get_cycle_progress', label: '周期进度', prompt: '帮我查一下周期 #1 的进度', icon: TrendingUp },
     { name: 'list_growth_stories', label: '成长故事', prompt: '看看我的成长故事', icon: Sparkles },
     { name: 'list_master_challenges', label: '大师挑战', prompt: '大师挑战进行得怎么样了？', icon: Trophy },
     { name: 'list_activities', label: '公益活动', prompt: '有什么公益活动可以参加？', icon: Heart },
@@ -125,8 +125,8 @@ const WRITE_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
   subtitle: '发起操作',
   accent: '#8B6CE3',
   items: [
-    { name: 'submit_task', label: '提交任务', prompt: '我要提交一个任务', icon: CheckSquare },
-    { name: 'redeem_item', label: '兑换商品', prompt: '我想用积分兑换商城里的商品', icon: ShoppingBag },
+    { name: 'submit_task', label: '提交任务', prompt: '我要提交任务 #1', icon: CheckSquare },
+    { name: 'redeem_item', label: '兑换商品', prompt: '我想用积分兑换商品 #1', icon: ShoppingBag },
     { name: 'set_stage_goal', label: '设置阶段目标', prompt: '帮我为周期设置一个能力目标', icon: Target },
     { name: 'create_cycle', label: '创建成长周期', prompt: '创建一个新的成长周期', icon: Calendar },
     { name: 'adjust_score', label: '奖励积分', prompt: '给宝贝奖励 50 积分，标题：作业认真', icon: Flag },
@@ -533,11 +533,7 @@ export function AssistantPage() {
   // 加载最近会话消息
   const loadRecentMessages = (childId: number) => {
     chatService.getChatHistory(childId).then((res) => {
-      setMessages(
-        res.messages.map((m) =>
-          m.role === 'assistant' ? { ...m, content: sanitizeAssistantDisplay(m.content) } : m,
-        ),
-      );
+      setMessages(res.messages);
       setSessionId(res.session_id);
     }).catch(() => {});
   };
@@ -583,12 +579,11 @@ export function AssistantPage() {
       const res = await chatService.sendMessage(content, selectedChildId, sessionId || undefined);
       setSessionId(res.session_id);
       const aiMsgId = Date.now() + 1;
-      const cleanReply = sanitizeAssistantDisplay(res.reply || '');
       const aiMsg: ChatMessage = {
         id: aiMsgId,
         session_id: res.session_id,
         role: 'assistant',
-        content: cleanReply,
+        content: res.reply,
         intent: res.intent,
         created_at: new Date().toISOString(),
         suggested_actions: res.suggested_actions,
@@ -598,20 +593,20 @@ export function AssistantPage() {
       loadSessions(selectedChildId);
 
       // 记录最近一次 AI 回复（用于回声检测）
-      lastAssistantReplyRef.current = cleanReply;
+      lastAssistantReplyRef.current = res.reply;
 
       // AI 回复朗读（TTS）
-      if (ttsEnabled && tts.isSupported && cleanReply) {
+      if (ttsEnabled && tts.isSupported && res.reply) {
         // 先确保上一条停掉，避免叠加
         if (ttsSafetyTimerRef.current) {
           clearTimeout(ttsSafetyTimerRef.current);
           ttsSafetyTimerRef.current = null;
         }
         setSpeakingMsgId(aiMsgId);
-        tts.speak(cleanReply);
+        tts.speak(res.reply);
         // 兜底：最长 N 秒后自动解除"正在朗读"态（某些系统 onend 偶尔不触发）
         // 粗略按每秒读 4~5 字计算，加上 3 秒缓冲
-        const estimatedSec = Math.min(60, Math.max(4, Math.ceil(cleanReply.length / 4.5) + 3));
+        const estimatedSec = Math.min(60, Math.max(4, Math.ceil(res.reply.length / 4.5) + 3));
         ttsSafetyTimerRef.current = setTimeout(() => {
           setSpeakingMsgId(null);
         }, estimatedSec * 1000);
@@ -758,11 +753,7 @@ export function AssistantPage() {
   const handleSelectSession = async (s: ChatSession) => {
     try {
       const msgs = await chatService.getSessionMessages(s.id);
-      setMessages(
-        msgs.map((m) =>
-          m.role === 'assistant' ? { ...m, content: sanitizeAssistantDisplay(m.content) } : m,
-        ),
-      );
+      setMessages(msgs);
       setSessionId(s.id);
       setShowDrawer(false);
     } catch {
@@ -796,7 +787,7 @@ export function AssistantPage() {
       id: localMsgIdRef.current,
       session_id: sessionId,
       role: 'assistant',
-      content: sanitizeAssistantDisplay(content),
+      content,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, aiMsg]);

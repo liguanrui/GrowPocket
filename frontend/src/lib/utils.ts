@@ -6,46 +6,6 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * 把 AI 气泡里的 Markdown / 占位符清洗成适合展示的纯中文。
- * 解决界面上直接露出 **加粗**、商品 #1 等符号的问题。
- */
-export function sanitizeAssistantDisplay(raw: string): string {
-  if (!raw) return '';
-  let text = raw;
-
-  // 代码块 / 行内代码
-  text = text.replace(/```[\s\S]*?```/g, '');
-  text = text.replace(/`([^`]+)`/g, '$1');
-
-  // 链接只保留文案
-  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
-
-  // 标题行前缀 #
-  text = text.replace(/^#{1,6}\s+/gm, '');
-
-  // **bold** / *italic* / __bold__ / ~~strike~~
-  text = text.replace(/\*\*([^*]+?)\*\*/g, '$1');
-  text = text.replace(/\*([^*]+?)\*/g, '$1');
-  text = text.replace(/__([^_]+?)__/g, '$1');
-  text = text.replace(/_([^_]+?)_/g, '$1');
-  text = text.replace(/~~([^~]+?)~~/g, '$1');
-
-  // 残留成对星号（模型偶发未闭合）
-  text = text.replace(/\*\*/g, '');
-
-  // 「商品 #1」「任务 #1」等示例占位 → 去掉编号
-  text = text.replace(/(商品|任务|周期|活动|奖励)\s*#\d+/g, '$1');
-  // 其余孤立 #数字（避免读成井号）
-  text = text.replace(/#(\d+)/g, '$1');
-
-  // 清理因删编号产生的多余空格
-  text = text.replace(/[ \t]{2,}/g, ' ');
-  text = text.replace(/ +\n/g, '\n');
-
-  return text.trim();
-}
-
-/**
  * 把 AI 返回的 Markdown/富文本清洗为适合朗读的「自然中文」。
  * 避免 TTS 把符号读错：* → 乘以、# → 井号、[]()链接 → 读括号里的URL等
  * 保留「标点、数字、汉字、基础标点」，其余全部去掉或替换成自然停顿。
