@@ -61,8 +61,15 @@ export function MessagesPage() {
         /* ignore */
       }
     }
-    if (msg.related_type === 'activity' || msg.related_type === 'donation') {
-      navigate('/community');
+    // 按消息类型跳到社区对应 Tab（捐赠→公益项目/我的捐赠，活动→公益活动）
+    const type = msg.type || '';
+    const related = msg.related_type || '';
+    if (related === 'donation' || type.startsWith('donation_')) {
+      navigate('/community?tab=projects&mine=1');
+      return;
+    }
+    if (related === 'activity' || type.startsWith('activity_')) {
+      navigate('/community?tab=activities');
     }
   };
 

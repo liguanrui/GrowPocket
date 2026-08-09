@@ -19,7 +19,7 @@ import { request } from '../services/api';
 import { useToastStore } from '../stores/toastStore';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
-import { isEchoOfLastReply } from '../lib/utils';
+import { isEchoOfLastReply, sanitizeAssistantDisplay } from '../lib/utils';
 
 type ExpressionType = 'happy' | 'encourage' | 'think' | 'surprised' | 'comfort' | 'proud';
 
@@ -106,13 +106,13 @@ const READONLY_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
     { name: 'query_child_balance', label: '积分余额', prompt: '我现在有多少积分？', icon: Coins },
     { name: 'query_child_scores', label: '能力得分', prompt: '帮我看看各项能力得分', icon: BarChart3 },
     { name: 'list_tasks', label: '今日任务', prompt: '今天有哪些待办任务？', icon: ListTodo },
-    { name: 'get_task_detail', label: '任务详情', prompt: '帮我看看任务 #1 的详情', icon: FileText },
+    { name: 'get_task_detail', label: '任务详情', prompt: '帮我看看某个任务的详情', icon: FileText },
     { name: 'list_redeem_items', label: '积分商城', prompt: '积分商城有什么好东西？', icon: ShoppingBag },
     { name: 'list_redeem_records', label: '兑换记录', prompt: '最近的积分兑换记录', icon: Receipt },
     { name: 'get_growth_timeline', label: '成长时间线', prompt: '展示最近 30 天的成长时间线', icon: Clock },
     { name: 'get_growth_album', label: '成果相册', prompt: '看看我的成果相册', icon: Image },
     { name: 'get_current_cycle', label: '当前周期', prompt: '当前成长周期及阶段目标', icon: Target },
-    { name: 'get_cycle_progress', label: '周期进度', prompt: '帮我查一下周期 #1 的进度', icon: TrendingUp },
+    { name: 'get_cycle_progress', label: '周期进度', prompt: '帮我查一下当前周期的进度', icon: TrendingUp },
     { name: 'list_growth_stories', label: '成长故事', prompt: '看看我的成长故事', icon: Sparkles },
     { name: 'list_master_challenges', label: '大师挑战', prompt: '大师挑战进行得怎么样了？', icon: Trophy },
     { name: 'list_activities', label: '公益活动', prompt: '有什么公益活动可以参加？', icon: Heart },
@@ -125,15 +125,15 @@ const WRITE_TOOL_SUGGESTIONS: ToolSuggestionGroup = {
   subtitle: '发起操作',
   accent: '#8B6CE3',
   items: [
-    { name: 'submit_task', label: '提交任务', prompt: '我要提交任务 #1', icon: CheckSquare },
-    { name: 'redeem_item', label: '兑换商品', prompt: '我想用积分兑换商品 #1', icon: ShoppingBag },
+    { name: 'submit_task', label: '提交任务', prompt: '我要提交一个任务', icon: CheckSquare },
+    { name: 'redeem_item', label: '兑换商品', prompt: '我想用积分兑换商城里的商品', icon: ShoppingBag },
     { name: 'set_stage_goal', label: '设置阶段目标', prompt: '帮我为周期设置一个能力目标', icon: Target },
     { name: 'create_cycle', label: '创建成长周期', prompt: '创建一个新的成长周期', icon: Calendar },
     { name: 'adjust_score', label: '奖励积分', prompt: '给宝贝奖励 50 积分，标题：作业认真', icon: Flag },
   ],
 };
 
-// ============ 工具卡横滑行（自动轮播 + 悬停暂停 + 无缝循环）============
+// ============ 工具卡横滑行（自动轮播 + 悬停暂停；到首尾停住并反向，不循环）============
 interface AutoScrollRowProps {
   group: ToolSuggestionGroup;
   onPick: (prompt: string) => void;
@@ -142,55 +142,48 @@ interface AutoScrollRowProps {
 function AutoScrollRow({ group, onPick, compact = false }: AutoScrollRowProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const pausedRef = useRef(false);
-  const animatingRef = useRef(false);
+  const dirRef = useRef(1); // 1 向右，-1 向左
   const rafRef = useRef<number | null>(null);
 
-  // 通过复制 3 份内容实现无缝循环；复制一份 items 让 key 不冲突
-  const tripled = useMemo(() => {
-    const all: (ToolSuggestion & { _uniq: string })[] = [];
-    [0, 1, 2].forEach((k) => {
-      group.items.forEach((it, i) => {
-        all.push({ ...it, _uniq: `${it.name}-${k}-${i}` });
-      });
-    });
-    return all;
-  }, [group]);
-
-  // 启动后初始化滚动位置到中间段（避免开头滚动就见底）
   useEffect(() => {
     if (!scrollerRef.current) return;
     const el = scrollerRef.current;
-    const segLen = el.scrollWidth / 3;
-    // 从中间段开始，这样既能左滑也能右滑
-    el.scrollLeft = segLen;
+    el.scrollLeft = 0;
+    dirRef.current = 1;
 
     let lastTs = performance.now();
-    const PX_PER_SEC = 28; // 匀速速度：可根据喜好调
+    const PX_PER_SEC = 28;
 
     const tick = (ts: number) => {
       if (!scrollerRef.current) return;
-      const dt = Math.min(100, ts - lastTs); // 防止切后台后大跳
+      const dt = Math.min(100, ts - lastTs);
       lastTs = ts;
       if (!pausedRef.current) {
         const elNow = scrollerRef.current;
-        const seg = elNow.scrollWidth / 3;
-        let next = elNow.scrollLeft + (PX_PER_SEC * dt) / 1000;
-        // 超过右侧段则跳回中段对应位置（无缝）
-        if (next >= seg * 2) next -= seg;
-        // 如果被用户往左拉过了头，则补回中段
-        if (next < seg) next += seg;
+        const maxScroll = Math.max(0, elNow.scrollWidth - elNow.clientWidth);
+        if (maxScroll <= 1) {
+          // 内容未超出可视区，无需滚动
+          rafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        let next = elNow.scrollLeft + (dirRef.current * PX_PER_SEC * dt) / 1000;
+        if (next >= maxScroll) {
+          next = maxScroll;
+          dirRef.current = -1;
+        } else if (next <= 0) {
+          next = 0;
+          dirRef.current = 1;
+        }
         elNow.scrollLeft = next;
       }
       rafRef.current = requestAnimationFrame(tick);
     };
 
-    animatingRef.current = true;
     rafRef.current = requestAnimationFrame(tick);
     return () => {
-      animatingRef.current = false;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [tripled.length]);
+  }, [group.items.length]);
 
   return (
     <div>
@@ -239,11 +232,11 @@ function AutoScrollRow({ group, onPick, compact = false }: AutoScrollRowProps) {
         }}
       >
         <style>{`.autoscroll-row-hidesb::-webkit-scrollbar{display:none}`}</style>
-        {tripled.map((item) => {
+        {group.items.map((item) => {
           const Icon = item.icon;
           return (
             <button
-              key={item._uniq}
+              key={item.name}
               onClick={() => onPick(item.prompt)}
               className={`autoscroll-row-hidesb flex-shrink-0 flex flex-col items-center rounded-2xl bg-white border border-[#F5E6D3] hover:border-[#F59E6B]/40 hover:shadow-sm active:scale-[0.98] transition-all ${
                 compact
@@ -512,6 +505,7 @@ export function AssistantPage() {
   // ===== 语音相关状态 =====
   const [voiceMode, setVoiceMode] = useState(false);          // 底部面板：文字 or 语音
   const [ttsEnabled, setTtsEnabled] = useState(true);         // AI 回复是否朗读
+  const [toolsExpanded, setToolsExpanded] = useState(true);   // 查一查/做一做默认展开
   const [speakingMsgId, setSpeakingMsgId] = useState<number | null>(null); // 当前正在朗读哪条 AI 消息
   const sendAfterStopRef = useRef(false);                     // 停止录音后是否自动发送
   const lastAssistantReplyRef = useRef<string>('');           // 上一条 AI 回复全文（用于回声检测）
@@ -539,7 +533,11 @@ export function AssistantPage() {
   // 加载最近会话消息
   const loadRecentMessages = (childId: number) => {
     chatService.getChatHistory(childId).then((res) => {
-      setMessages(res.messages);
+      setMessages(
+        res.messages.map((m) =>
+          m.role === 'assistant' ? { ...m, content: sanitizeAssistantDisplay(m.content) } : m,
+        ),
+      );
       setSessionId(res.session_id);
     }).catch(() => {});
   };
@@ -585,11 +583,12 @@ export function AssistantPage() {
       const res = await chatService.sendMessage(content, selectedChildId, sessionId || undefined);
       setSessionId(res.session_id);
       const aiMsgId = Date.now() + 1;
+      const cleanReply = sanitizeAssistantDisplay(res.reply || '');
       const aiMsg: ChatMessage = {
         id: aiMsgId,
         session_id: res.session_id,
         role: 'assistant',
-        content: res.reply,
+        content: cleanReply,
         intent: res.intent,
         created_at: new Date().toISOString(),
         suggested_actions: res.suggested_actions,
@@ -599,20 +598,20 @@ export function AssistantPage() {
       loadSessions(selectedChildId);
 
       // 记录最近一次 AI 回复（用于回声检测）
-      lastAssistantReplyRef.current = res.reply;
+      lastAssistantReplyRef.current = cleanReply;
 
       // AI 回复朗读（TTS）
-      if (ttsEnabled && tts.isSupported && res.reply) {
+      if (ttsEnabled && tts.isSupported && cleanReply) {
         // 先确保上一条停掉，避免叠加
         if (ttsSafetyTimerRef.current) {
           clearTimeout(ttsSafetyTimerRef.current);
           ttsSafetyTimerRef.current = null;
         }
         setSpeakingMsgId(aiMsgId);
-        tts.speak(res.reply);
+        tts.speak(cleanReply);
         // 兜底：最长 N 秒后自动解除"正在朗读"态（某些系统 onend 偶尔不触发）
         // 粗略按每秒读 4~5 字计算，加上 3 秒缓冲
-        const estimatedSec = Math.min(60, Math.max(4, Math.ceil(res.reply.length / 4.5) + 3));
+        const estimatedSec = Math.min(60, Math.max(4, Math.ceil(cleanReply.length / 4.5) + 3));
         ttsSafetyTimerRef.current = setTimeout(() => {
           setSpeakingMsgId(null);
         }, estimatedSec * 1000);
@@ -759,7 +758,11 @@ export function AssistantPage() {
   const handleSelectSession = async (s: ChatSession) => {
     try {
       const msgs = await chatService.getSessionMessages(s.id);
-      setMessages(msgs);
+      setMessages(
+        msgs.map((m) =>
+          m.role === 'assistant' ? { ...m, content: sanitizeAssistantDisplay(m.content) } : m,
+        ),
+      );
       setSessionId(s.id);
       setShowDrawer(false);
     } catch {
@@ -793,7 +796,7 @@ export function AssistantPage() {
       id: localMsgIdRef.current,
       session_id: sessionId,
       role: 'assistant',
-      content,
+      content: sanitizeAssistantDisplay(content),
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, aiMsg]);
@@ -863,10 +866,13 @@ export function AssistantPage() {
   const isEmpty = messages.length === 0;
 
   return (
-    <div className="relative min-h-screen flex flex-col" style={{ background: C.bg }}>
+    <div
+      className="relative flex flex-col overflow-hidden"
+      style={{ background: C.bg, height: 'calc(100dvh - 5rem)' }}
+    >
       {/* 固定页眉 */}
       <header
-        className="sticky top-0 z-50 h-14 flex items-center justify-between px-4 border-b border-[#F5E6D3]"
+        className="flex-shrink-0 z-50 h-14 flex items-center justify-between px-4 border-b border-[#F5E6D3]"
         style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)' }}
       >
         {/* 左侧按钮组 */}
@@ -928,45 +934,44 @@ export function AssistantPage() {
         </div>
       </header>
 
-      {/* 消息区 / 空状态 */}
-      <main className={`flex-1 overflow-y-auto px-4 py-4 ${voiceMode ? 'pb-64' : 'pb-28'}`}>
-        <div className="max-w-[448px] mx-auto">
-          {/* 非空态时 IP + 工具栏略收缩；空态时保持原样居中大号 */}
-          <div className={`flex flex-col items-stretch ${isEmpty ? 'pt-3 pb-2 gap-2.5' : 'pt-2 pb-2 gap-2'}`}>
-            {isEmpty ? (
-              /* 空状态：IP 居中放大 + 问候语居中 */
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-28 h-28 rounded-2xl shadow-md flex items-center justify-center bg-[#FFF1E6]">
-                  <RandomExpressionAvatar size={96} />
-                </div>
-                <div className="text-center">
-                  <h1 className="text-xl font-bold text-[#2D2A26] leading-none">
-                    {getGreeting()}，我是小萌芽
-                  </h1>
-                  <p className="text-xs text-[#7A7168] mt-1.5 leading-snug">
-                    有什么我可以帮你的吗？点下面卡片就能用啦
-                  </p>
-                </div>
+      {/* 查一查 / 做一做：固定在顶部，不随对话滚动 */}
+      <section
+        className="flex-shrink-0 px-4 pt-2 pb-2 border-b border-[#F5E6D3]"
+        style={{ background: C.bg }}
+      >
+        <div className="max-w-[448px] mx-auto flex flex-col items-stretch gap-2">
+          {isEmpty ? (
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <div className="w-24 h-24 rounded-2xl shadow-md flex items-center justify-center bg-[#FFF1E6]">
+                <RandomExpressionAvatar size={84} />
               </div>
-            ) : (
-              /* 有会话时：IP 迷你 + 问候语 左右紧凑，放在顶部当 sticky 头部（但在滚动容器内部，跟随滚动） */
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl shadow-sm flex items-center justify-center bg-[#FFF1E6] flex-shrink-0">
-                  <RandomExpressionAvatar size={40} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-base font-bold text-[#2D2A26] leading-tight truncate">
-                    {getGreeting()}，我是小萌芽
-                  </div>
-                  <p className="text-[11px] text-[#7A7168] leading-tight mt-0.5 truncate">
-                    试试下面卡片，或直接对我说~
-                  </p>
-                </div>
+              <div className="text-center">
+                <h1 className="text-lg font-bold text-[#2D2A26] leading-none">
+                  {getGreeting()}，我是小萌芽
+                </h1>
+                <p className="text-xs text-[#7A7168] mt-1.5 leading-snug">
+                  有什么我可以帮你的吗？点下面卡片就能用啦
+                </p>
               </div>
-            )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl shadow-sm flex items-center justify-center bg-[#FFF1E6] flex-shrink-0">
+                <RandomExpressionAvatar size={40} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-base font-bold text-[#2D2A26] leading-tight truncate">
+                  {getGreeting()}，我是小萌芽
+                </div>
+                <p className="text-[11px] text-[#7A7168] leading-tight mt-0.5 truncate">
+                  试试下面卡片，或直接对我说~
+                </p>
+              </div>
+            </div>
+          )}
 
-            {/* 工具栏：在空态和有消息态都显示 */}
-            <div className={`${isEmpty ? 'space-y-2.5' : 'space-y-2'}`}>
+          {toolsExpanded && (
+            <div className="space-y-2">
               {[READONLY_TOOL_SUGGESTIONS, WRITE_TOOL_SUGGESTIONS].map((group) => (
                 <AutoScrollRow
                   key={group.title}
@@ -976,19 +981,29 @@ export function AssistantPage() {
                 />
               ))}
             </div>
+          )}
 
-            {/* 会话分隔线：有消息时，工具栏下方和消息区之间加一条分隔 */}
-            {!isEmpty && (
-              <div className="flex items-center gap-2 mt-1 mb-1">
-                <div className="flex-1 h-px bg-[#F5E6D3]" />
-                <span className="text-[10px] text-[#B9B1A8] uppercase tracking-wider">对话</span>
-                <div className="flex-1 h-px bg-[#F5E6D3]" />
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setToolsExpanded((v) => !v)}
+            className="w-full flex items-center justify-center gap-1 py-1 rounded-lg text-[11px] font-medium text-[#7A7168] active:bg-[#FFF1E6] transition-colors"
+            aria-expanded={toolsExpanded}
+            aria-label={toolsExpanded ? '收起快捷工具' : '展开快捷工具'}
+          >
+            <span>{toolsExpanded ? '收起' : '展开'}</span>
+            <ChevronDown
+              size={14}
+              className={`transition-transform duration-200 ${toolsExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
 
-          {/* 消息列表（仅非空态渲染；仍然保留末尾自动滚动锚点） */}
-          {!isEmpty && (
+        </div>
+      </section>
+
+      {/* 仅对话消息区可纵向滚动 */}
+      <main className={`flex-1 min-h-0 overflow-y-auto px-4 pt-3 ${voiceMode ? 'pb-48' : 'pb-24'}`}>
+        <div className="max-w-[448px] mx-auto">
+          {!isEmpty ? (
             <div className="space-y-3">
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex items-start gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -999,7 +1014,6 @@ export function AssistantPage() {
                   )}
                   {msg.role === 'assistant' ? (
                     <div className="flex flex-col gap-2 max-w-[75%]">
-                      {/* AI 气泡：正在朗读时加个橙色边框+波浪动画；点击可停/重播 */}
                       <button
                         type="button"
                         onClick={() => handleAssistantBubbleClick(msg)}
@@ -1011,7 +1025,6 @@ export function AssistantPage() {
                         aria-label={speakingMsgId === msg.id ? '点击停止朗读' : '点击再听一遍'}
                       >
                         <span>{msg.content}</span>
-                        {/* 朗读状态指示：三条竖线 + Volume 图标（右下角） */}
                         {speakingMsgId === msg.id && (
                           <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#F59E6B] text-white shadow-md">
                             <span className="flex items-end gap-[2px] h-3">
@@ -1021,14 +1034,12 @@ export function AssistantPage() {
                             </span>
                           </span>
                         )}
-                        {/* 未朗读时 hover 提示：右下角淡 Volume1 */}
                         {speakingMsgId !== msg.id && (
                           <span className="pointer-events-none absolute -right-2 -top-1 hidden items-center justify-center h-6 w-6 rounded-full bg-white border border-[#F5E6D3] text-[#F59E6B] group-hover:flex shadow-sm">
                             <Volume1 size={13} />
                           </span>
                         )}
                       </button>
-                      {/* 动作确认卡片：AI 回复携带 suggested_actions 时渲染（每条一张） */}
                       {msg.suggested_actions && msg.suggested_actions.length > 0 && (
                         msg.suggested_actions.map((suggestion, idx) => {
                           const key = `${msg.id}-${idx}`;
@@ -1048,7 +1059,7 @@ export function AssistantPage() {
                       )}
                     </div>
                   ) : (
-                    <div className={`max-w-[75%] px-4 py-2.5 text-sm whitespace-pre-wrap break-words bg-[#F59E6B] text-white rounded-lg rounded-tr-sm`}>
+                    <div className="max-w-[75%] px-4 py-2.5 text-sm whitespace-pre-wrap break-words bg-[#F59E6B] text-white rounded-lg rounded-tr-sm">
                       {msg.content}
                     </div>
                   )}
@@ -1057,7 +1068,6 @@ export function AssistantPage() {
               {loading && (
                 <div className="flex items-start gap-2 justify-start">
                   <div className="w-8 h-8 rounded-full bg-[#F59E6B]/10 flex items-center justify-center flex-shrink-0">
-                    {/* 思路 C 专属场景：AI 思考打字 Loading */}
                     <IPPAvatar animationName="loading" size={32} />
                   </div>
                   <div className="bg-white border border-[#F5E6D3] rounded-lg rounded-tl-sm shadow-sm px-4 py-3">
@@ -1071,6 +1081,8 @@ export function AssistantPage() {
               )}
               <div ref={messagesEndRef} />
             </div>
+          ) : (
+            <div ref={messagesEndRef} />
           )}
         </div>
       </main>

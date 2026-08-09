@@ -21,6 +21,8 @@ import {
   generateChildren,
 } from '../services/parentTasks';
 import type { ParentTaskTemplate } from '../services/parentTasks';
+import { gradeLabel as gradeName } from '../utils/gradeLabel';
+import { saveChildDraft, clearChildDraft } from '../utils/childDraft';
 
 // 暖橙色彩常量
 const C = {
@@ -106,7 +108,7 @@ export function computeAge(birthdayISO: string): number {
   return age < 0 ? 0 : age;
 }
 
-// 前端与后端一致的 9/1 入学规则年级推算（0=幼儿园/未入学, 1-6 小学）
+// 前端与后端一致的 9/1 入学规则年级推算（0=未上小学, 1-6 小学）
 export function computeGrade(birthdayISO: string): number {
   const b = new Date(birthdayISO);
   const now = new Date();
@@ -120,11 +122,6 @@ export function computeGrade(birthdayISO: string): number {
   if (g < 0) g = 0;
   if (g > 6) g = 6;
   return g;
-}
-
-function gradeName(g: number): string {
-  if (g <= 0) return '幼儿园';
-  return ['一', '二', '三', '四', '五', '六'][g - 1] + '年级';
 }
 
 function formatBirthdayMD(birthdayISO: string | null | undefined): string {
@@ -356,8 +353,26 @@ export function OnboardingPage() {
   const handleNext = () => {
     if (step < 5) setStep(step + 1);
   };
+
+  const abandonOnboarding = () => {
+    const ok = window.confirm('退出后不会保存孩子信息，确定离开吗？');
+    if (!ok) return;
+    clearChildDraft();
+    if (onboardingMode === 'add_child') {
+      navigate('/settings/family', { replace: true });
+    } else {
+      navigate('/assistant', { replace: true });
+    }
+  };
+
   const handlePrev = () => {
-    if (step > 1 && step < 6) setStep(step - 1);
+    if (step === 6) return;
+    if (step <= 1) {
+      // 添加孩子流程：第一步返回即放弃（尚未落库）
+      if (onboardingMode === 'add_child') abandonOnboarding();
+      return;
+    }
+    setStep(step - 1);
   };
 
   const toggleHobby = (tag: string) => {
@@ -368,28 +383,31 @@ export function OnboardingPage() {
     }
   };
 
-  // Step 5: 创建儿童档案并跳转问卷（birthday 主驱动）
-  const handleStartQuestionnaire = async () => {
+  // Step 5: 仅保存本地草稿并跳转问卷；问卷全部答完后才真正创建孩子档案
+  const handleStartQuestionnaire = () => {
     if (submitting) return;
+    if (!nickname.trim()) {
+      toast.error('请先填写昵称');
+      return;
+    }
     setSubmitting(true);
     try {
-      const hobbiesJSON = JSON.stringify(hobbies);
-      const child = await childStore.addChild({
+      saveChildDraft({
         nickname: nickname.trim(),
         birthday: birthday || undefined,
         grade: (gradeOverridden && grade !== null) ? grade : (birthday ? undefined : grade || undefined),
         grade_overridden: gradeOverridden,
         age: birthday ? undefined : (age || undefined),
-        hobbies: hobbiesJSON,
+        hobbies: JSON.stringify(hobbies),
+        level,
+        mode: onboardingMode,
       });
-      childStore.setCurrentChildId(child.id);
-      toast.success('档案创建成功！');
-      // 增加 return=onboarding 参数，问卷完成后返回 Onboarding Step 6
-      // mode 参数传递：add_child 走完后跳回家庭管理
+      // return 带回 onboarding，问卷完成后创建孩子并进入 Step 6
       const returnPath = `onboarding&mode=${onboardingMode}`;
-      navigate(`/questionnaire?stage=register&level=${level}&child_id=${child.id}&return=${encodeURIComponent(returnPath)}`, { replace: true });
-    } catch (e: any) {
-      toast.error(e instanceof Error ? e.message : '创建档案失败');
+      navigate(
+        `/questionnaire?stage=register&level=${level}&draft=1&return=${encodeURIComponent(returnPath)}`,
+        { replace: true },
+      );
     } finally {
       setSubmitting(false);
     }
@@ -593,10 +611,10 @@ export function OnboardingPage() {
         <div className="max-w-[448px] mx-auto flex items-center justify-between">
           <button
             onClick={handlePrev}
-            disabled={step === 1 || step === 6}
+            disabled={step === 6 || (step === 1 && onboardingMode !== 'add_child')}
             className="w-10 h-10 rounded-lg flex items-center justify-center disabled:opacity-30"
             style={{ background: C.muted, color: C.mutedFg }}
-            aria-label="上一步"
+            aria-label={step <= 1 ? '退出' : '上一步'}
           >
             <ChevronLeft size={20} />
           </button>
@@ -732,7 +750,7 @@ export function OnboardingPage() {
                 {birthday ? (
                   <div>
                     <p className="text-lg font-bold mb-1" style={{ color: '#2D2A26' }}>
-                      {derivedAge} 岁 · {gradeName(derivedGrade)}
+                      {derivedAge} 岁 · {gradeName(derivedGrade, derivedAge)}
                     </p>
                     <p className="text-xs" style={{ color: C.mutedFg }}>
                       今年 {formatBirthdayMD(birthday)} 过生日 🎂

@@ -214,7 +214,7 @@ func main() {
 		authorized.GET("/chat/sessions/search", chatHandler.SearchSessions)
 		authorized.GET("/chat/sessions/:id/messages", chatHandler.GetSessionMessages)
 
-		// 云端 TTS（小萌芽甜美童声，Edge Neural）
+		// 云端 TTS（小萌芽助手女声，Edge XiaoxiaoNeural）
 		ttsHandler := handler.NewTTSHandler(service.NewTTSService())
 		authorized.POST("/tts", ttsHandler.Synthesize)
 

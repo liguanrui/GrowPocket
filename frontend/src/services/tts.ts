@@ -1,5 +1,5 @@
 /**
- * 云端 TTS：调用后端 /api/tts，返回 MP3 Blob（甜美童声）
+ * 云端 TTS：调用后端 /api/tts，返回 MP3 Blob（晓晓·助手女声）
  */
 export async function synthesizeSpeech(text: string): Promise<Blob> {
   const token = localStorage.getItem('token');

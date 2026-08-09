@@ -8,7 +8,7 @@ interface UseSpeechSynthesisOptions {
   pitch?: number;  // 浏览器回退音调
   volume?: number;
   preprocess?: boolean;
-  /** 优先走云端甜美童声（默认 true） */
+  /** 优先走云端助手女声（默认 true） */
   preferCloud?: boolean;
 }
 
@@ -84,8 +84,8 @@ export function useSpeechSynthesis(
 ): UseSpeechSynthesisReturn {
   const {
     lang = 'zh-CN',
-    rate = 0.98,
-    pitch = 1.42,
+    rate = 1.0,
+    pitch = 1.05,
     volume = 1,
     preprocess = true,
     preferCloud = true,
@@ -93,7 +93,7 @@ export function useSpeechSynthesis(
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
-  const [currentVoiceName, setCurrentVoiceName] = useState('云夏·甜美童声');
+  const [currentVoiceName, setCurrentVoiceName] = useState('晓晓·智能助手');
 
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
   const pickedVoiceRef = useRef<SpeechSynthesisVoice | undefined>(undefined);
@@ -221,7 +221,7 @@ export function useSpeechSynthesis(
       }
 
       setIsSpeaking(true);
-      setCurrentVoiceName('云夏·甜美童声');
+      setCurrentVoiceName('晓晓·智能助手');
 
       (async () => {
         try {

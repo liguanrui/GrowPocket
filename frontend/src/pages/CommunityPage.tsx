@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Heart, MessageCircle, Plus, X, Image as ImageIcon, MapPin, Users, Calendar, Gift, BookOpen, Trophy, Trash2, CheckCircle, ClipboardList, Phone } from 'lucide-react';
 import { useChildStore } from '../stores/childStore';
 import { useAuthStore } from '../stores/authStore';
@@ -17,11 +17,34 @@ const activityTypeLabels: Record<number, string> = {
   5: '其他',
 };
 
+type CommunityTab = 'feed' | 'projects' | 'activities';
+
+function parseCommunityTab(raw: string | null): CommunityTab {
+  if (raw === 'projects' || raw === 'activities' || raw === 'feed') return raw;
+  return 'feed';
+}
+
 // ============ 社区主页 ============
 export function CommunityPage() {
   const childStore = useChildStore();
-  const [activeTab, setActiveTab] = useState<'feed' | 'projects' | 'activities'>('feed');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<CommunityTab>(() => parseCommunityTab(searchParams.get('tab')));
   const [showShareModal, setShowShareModal] = useState(false);
+  const openMyDonations = searchParams.get('mine') === '1';
+
+  // 支持系统消息等外链：/community?tab=projects&mine=1
+  useEffect(() => {
+    setActiveTab(parseCommunityTab(searchParams.get('tab')));
+  }, [searchParams]);
+
+  const switchTab = (tab: CommunityTab) => {
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'feed') next.delete('tab');
+    else next.set('tab', tab);
+    if (tab !== 'projects') next.delete('mine');
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-bg pb-20">
@@ -43,7 +66,7 @@ export function CommunityPage() {
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as 'feed' | 'projects' | 'activities')}
+              onClick={() => switchTab(tab.id as CommunityTab)}
               className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 activeTab === tab.id
                   ? 'bg-primary text-white shadow'
@@ -59,7 +82,7 @@ export function CommunityPage() {
       {/* Tab 内容 */}
       <div className="max-w-lg mx-auto px-4 mt-4 space-y-3">
         {activeTab === 'feed' && <ShareFeed onShowShareModal={() => setShowShareModal(true)} />}
-        {activeTab === 'projects' && <CharityProjects />}
+        {activeTab === 'projects' && <CharityProjects initialShowMyDonations={openMyDonations} />}
         {activeTab === 'activities' && <Activities />}
       </div>
 
@@ -664,12 +687,16 @@ function DonationModal({ project, onClose, onSuccess }: { project: CharityProjec
   );
 }
 
-function CharityProjects() {
+function CharityProjects({ initialShowMyDonations = false }: { initialShowMyDonations?: boolean }) {
   const [projects, setProjects] = useState<CharityProject[]>([]);
   const [donations, setDonations] = useState<CharityDonation[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeProject, setActiveProject] = useState<CharityProject | null>(null);
-  const [showMyDonations, setShowMyDonations] = useState(false);
+  const [showMyDonations, setShowMyDonations] = useState(initialShowMyDonations);
+
+  useEffect(() => {
+    setShowMyDonations(initialShowMyDonations);
+  }, [initialShowMyDonations]);
 
   useEffect(() => {
     loadData();
