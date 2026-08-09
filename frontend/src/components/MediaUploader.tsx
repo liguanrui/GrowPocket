@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Upload, Camera, Images, X, Loader2, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToastStore } from '../stores/toastStore';
 import { uploadMedia, isVideoMediaUrl } from '../services/tasks';
+import { compressImageForUpload } from '../utils/compressImage';
 
 const MAX_VIDEO_SECONDS = 60;
 // 缩略图默认上限：超过了仍可上传，但视觉区默认显示前 MAX_THUMB 张 + +N，点击可进入预览查看全部
@@ -200,7 +201,9 @@ export function MediaUploader(props: Props) {
     try {
       const results: string[] = [];
       for (const f of validated) {
-        const res = await uploadMedia(f);
+        // 手机原图常超 Nginx 默认 1MB 限制，上传前压缩图片
+        const toUpload = isVideoFile(f) ? f : await compressImageForUpload(f);
+        const res = await uploadMedia(toUpload);
         results.push(res.url);
       }
       const next = [...urls, ...results];

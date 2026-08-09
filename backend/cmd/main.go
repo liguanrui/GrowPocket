@@ -70,6 +70,8 @@ func main() {
 
 	// Gin
 	r := gin.Default()
+	// 手机视频可达数十 MB；提高 multipart 内存阈值，避免落盘异常
+	r.MaxMultipartMemory = 100 << 20 // 100 MiB
 
 	// 中间件
 	r.Use(middleware.CORS())

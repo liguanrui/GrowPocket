@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Gift, Check, Package, Edit3, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
+import { MediaUploader } from '../components/MediaUploader';
 import * as redeemService from '../services/redeem';
-import type { RedeemItem } from '../services/redeem';
 
 const CATEGORIES: { key: 0 | 1 | 2; label: string; desc: string }[] = [
   { key: 0, label: '物质奖励', desc: '玩具、文具、书籍等实物' },
@@ -26,6 +26,7 @@ export function CreateItemPage() {
   const [stock, setStock] = useState(10);
   const [isLimited, setIsLimited] = useState(true);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
+  const [mediaUploading, setMediaUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(isEdit);
 
@@ -138,23 +139,22 @@ export function CreateItemPage() {
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
         <div className="bg-card rounded-2xl p-5 shadow-sm space-y-5">
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">商品图片（可选）</label>
-            <button
-              onClick={() => {
-                const mockUrl = `https://picsum.photos/400/400?random=${Date.now()}`;
-                setImageUrl(mockUrl);
-              }}
-              className={`w-full aspect-[4/3] rounded-2xl overflow-hidden ${imageUrl ? 'border-0' : 'bg-bg border-2 border-dashed border-gray-200 flex items-center justify-center'} hover:border-primary transition-colors`}
-            >
-              {imageUrl ? (
-                <img src={imageUrl} alt="商品" className="w-full h-full object-cover" />
-              ) : (
-                <div className="text-center">
-                  <Gift size={32} className="text-text-tertiary mx-auto" />
-                  <span className="text-sm text-text-secondary mt-2 block">选择商品图片</span>
-                </div>
-              )}
-            </button>
+            <div className="mb-2 flex items-center gap-2">
+              <label className="block text-sm font-medium text-text-primary">商品图片</label>
+              <span className="text-[11px] text-text-tertiary">可选</span>
+            </div>
+            <MediaUploader
+              mediaUrls={imageUrl ? [imageUrl] : []}
+              onChange={(urls) => setImageUrl(urls[0])}
+              onUploadingChange={setMediaUploading}
+              disabled={submitting}
+              size="compact"
+              maxCount={1}
+              label="上传商品图片（可选）"
+            />
+            <p className="mt-2 text-[11px] text-text-tertiary leading-relaxed">
+              支持拍摄或从相册选择，与任务成果上传方式相同
+            </p>
           </div>
 
           <div>
@@ -185,9 +185,16 @@ export function CreateItemPage() {
             </label>
             <div className="relative">
               <input
-                type="number"
-                value={points}
-                onChange={(e) => setPoints(Math.max(0, Number(e.target.value) || 0))}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={points === 0 ? '' : String(points)}
+                onChange={(e) => {
+                  // 去掉非数字与前导 0，避免手机端出现 010
+                  const digits = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+                  setPoints(digits === '' ? 0 : Math.max(0, parseInt(digits, 10)));
+                }}
+                placeholder="0"
                 className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary text-lg font-bold text-center"
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-text-tertiary text-sm">积分</span>
@@ -243,9 +250,15 @@ export function CreateItemPage() {
             {isLimited && (
               <div className="relative">
                 <input
-                  type="number"
-                  value={stock}
-                  onChange={(e) => setStock(Math.max(1, Number(e.target.value) || 1))}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={String(stock)}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+                    const n = digits === '' ? 1 : parseInt(digits, 10);
+                    setStock(Math.max(1, n));
+                  }}
                   className="w-full px-4 py-3 bg-bg rounded-xl border border-gray-100 focus:border-primary outline-none text-text-primary text-base font-medium text-center"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-text-tertiary text-sm">件</span>
@@ -257,10 +270,10 @@ export function CreateItemPage() {
         <div className="sticky bottom-4 pt-2">
           <button
             onClick={handleSubmit}
-            disabled={!name.trim() || points <= 0 || submitting}
+            disabled={!name.trim() || points <= 0 || submitting || mediaUploading}
             className="w-full py-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-2xl font-semibold shadow-lg shadow-purple-500/20 hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? '提交中...' : isEdit ? '保存修改' : '发布商品'}
+            {mediaUploading ? '图片上传中...' : submitting ? '提交中...' : isEdit ? '保存修改' : '发布商品'}
           </button>
         </div>
 
