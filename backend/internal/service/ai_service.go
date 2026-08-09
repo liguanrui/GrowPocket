@@ -2,11 +2,14 @@ package service
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"growpocket/internal/model"
@@ -16,7 +19,12 @@ type AIService struct {
 	apiKey  string
 	model   string
 	baseURL string
-	client  *http.Client
+	// 识图多模态（可与文本模型分离）
+	visionAPIKey  string
+	visionModel   string
+	visionBaseURL string
+	client        *http.Client
+	visionClient  *http.Client
 }
 
 // ToolDefinition OpenAI 兼容的工具定义
@@ -72,11 +80,137 @@ type chatResponseMessage struct {
 
 func NewAIService(apiKey, model, baseURL string) *AIService {
 	return &AIService{
-		apiKey:  apiKey,
-		model:   model,
-		baseURL: baseURL,
-		client:  &http.Client{Timeout: 60 * time.Second},
+		apiKey:       apiKey,
+		model:        model,
+		baseURL:      baseURL,
+		client:       &http.Client{Timeout: 60 * time.Second},
+		visionClient: &http.Client{Timeout: 90 * time.Second},
 	}
+}
+
+// SetVisionConfig 配置识图多模态端点（OpenAI 兼容 image_url）。未配置时 CaptionImage 会失败并由上层降级。
+func (s *AIService) SetVisionConfig(apiKey, model, baseURL string) {
+	if s == nil {
+		return
+	}
+	s.visionAPIKey = apiKey
+	s.visionModel = model
+	s.visionBaseURL = baseURL
+}
+
+func (s *AIService) visionCreds() (apiKey, model, baseURL string) {
+	apiKey = s.visionAPIKey
+	if apiKey == "" {
+		apiKey = s.apiKey
+	}
+	model = s.visionModel
+	if model == "" {
+		model = s.model
+	}
+	baseURL = s.visionBaseURL
+	if baseURL == "" {
+		baseURL = s.baseURL
+	}
+	return apiKey, model, strings.TrimRight(baseURL, "/")
+}
+
+func isTextOnlyModel(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" {
+		return true
+	}
+	return strings.Contains(m, "deepseek-chat") ||
+		strings.Contains(m, "deepseek-reasoner") ||
+		m == "deepseek-v4-flash" ||
+		m == "deepseek-v4-pro"
+}
+
+// CaptionImage 识图写短旁白：把本地图片以 data URL 发给多模态模型。
+// DeepSeek 文本模型不支持 image_url，需配置 VISION_MODEL（如 qwen-vl-plus / glm-4v-flash / gpt-4o-mini）。
+func (s *AIService) CaptionImage(imagePath, mimeType, userHint string) (string, error) {
+	if s == nil {
+		return "", errors.New("AI 服务未初始化")
+	}
+	apiKey, model, baseURL := s.visionCreds()
+	if apiKey == "" {
+		return "", errors.New("未配置识图 API Key")
+	}
+	// 文本-only 模型（如 deepseek-chat）跳过识图，避免无意义 400
+	if isTextOnlyModel(model) {
+		return "", errors.New("当前模型不支持识图，请配置 VISION_MODEL（如 qwen-vl-plus / glm-4v-flash）")
+	}
+	data, err := os.ReadFile(imagePath)
+	if err != nil {
+		return "", err
+	}
+	if mimeType == "" {
+		mimeType = "image/jpeg"
+		lower := strings.ToLower(imagePath)
+		if strings.HasSuffix(lower, ".png") {
+			mimeType = "image/png"
+		} else if strings.HasSuffix(lower, ".webp") {
+			mimeType = "image/webp"
+		}
+	}
+	// 限制体积，避免超大图撑爆请求
+	if len(data) > 4*1024*1024 {
+		return "", errors.New("图片过大，无法识图")
+	}
+	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
+	prompt := "请仔细看这张照片里的画面（人物、动作、环境、情绪）。用一句中文旁白描述可见内容，12～24字，口语温暖，只写画面里有的东西，不要编造任务名或积分。只返回这一句，不要引号、不要解释。"
+	if strings.TrimSpace(userHint) != "" {
+		prompt += "补充提示（可忽略若不匹配画面）：" + truncateRunes(userHint, 40)
+	}
+
+	messages := []map[string]interface{}{
+		{
+			"role": "user",
+			"content": []map[string]interface{}{
+				{"type": "text", "text": prompt},
+				{"type": "image_url", "image_url": map[string]string{"url": dataURL}},
+			},
+		},
+	}
+	reqBody := map[string]interface{}{
+		"model":       model,
+		"messages":    messages,
+		"max_tokens":  80,
+		"temperature": 0.4,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+	req, err := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := s.visionClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.New("识图请求失败: " + resp.Status + " " + string(raw))
+	}
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", err
+	}
+	if len(result.Choices) == 0 {
+		return "", errors.New("识图返回空结果")
+	}
+	caption := strings.TrimSpace(result.Choices[0].Message.Content)
+	caption = strings.Trim(caption, "\"“”'")
+	caption = strings.ReplaceAll(caption, "\n", "")
+	return truncateRunes(caption, 28), nil
 }
 
 type chatMessage struct {

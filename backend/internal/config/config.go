@@ -15,6 +15,10 @@ type Config struct {
 	AIAPIKey           string
 	AIModel            string
 	AIBaseURL          string
+	// 识图（多模态）专用；为空时回退到 AI_*。DeepSeek 文本模型不支持识图，需配置 qwen-vl / glm-4v / gpt-4o 等。
+	VisionAPIKey       string
+	VisionModel        string
+	VisionBaseURL      string
 	AdminJWTSecret     string
 	AdminJWTExpireHour int
 	AdminInitPassword  string
@@ -30,6 +34,9 @@ func Load() *Config {
 		AIAPIKey:           getEnv("AI_API_KEY", ""),
 		AIModel:            getEnv("AI_MODEL", "deepseek-chat"),
 		AIBaseURL:          getEnv("AI_BASE_URL", "https://api.deepseek.com/v1"),
+		VisionAPIKey:       getEnv("VISION_API_KEY", ""),
+		VisionModel:        getEnv("VISION_MODEL", ""),
+		VisionBaseURL:      getEnv("VISION_BASE_URL", ""),
 		AdminJWTSecret:     getEnv("ADMIN_JWT_SECRET", "growpocket-admin-secret-change-in-production"),
 		AdminJWTExpireHour: getEnvInt("ADMIN_JWT_EXPIRE_HOUR", 8),
 		AdminInitPassword:  getEnv("ADMIN_INIT_PASSWORD", ""),

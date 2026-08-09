@@ -144,3 +144,27 @@ func (h *GrowthStoryHandler) GetStoryByID(c *gin.Context) {
 	}
 	util.OK(c, story)
 }
+
+// EnsureYearbookCopy POST /api/growth-stories/by-id/:story_id/yearbook
+// 为已有故事补齐年报短文案（AI 根据任务/照片/能力变化生成；已有则直接返回）
+func (h *GrowthStoryHandler) EnsureYearbookCopy(c *gin.Context) {
+	storyID64, err := strconv.ParseUint(c.Param("story_id"), 10, 32)
+	if err != nil || storyID64 == 0 {
+		util.FailBadRequest(c, "无效的故事 ID")
+		return
+	}
+	storyID := uint(storyID64)
+	familyID := middleware.GetFamilyID(c)
+
+	story, err := h.service.EnsureYearbookCopy(storyID, familyID)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "不存在") {
+			util.FailNotFound(c, msg)
+			return
+		}
+		util.FailInternal(c, msg)
+		return
+	}
+	util.OK(c, story)
+}

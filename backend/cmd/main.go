@@ -55,8 +55,14 @@ func main() {
 		log.Printf("同步系统模板失败: %v", err)
 	}
 
-	// 初始化 AI 服务
+	// 初始化 AI 服务（文本 + 可选识图多模态）
 	aiService := service.NewAIService(cfg.AIAPIKey, cfg.AIModel, cfg.AIBaseURL)
+	aiService.SetVisionConfig(cfg.VisionAPIKey, cfg.VisionModel, cfg.VisionBaseURL)
+	if cfg.VisionModel != "" {
+		log.Printf("识图模型已配置: %s @ %s", cfg.VisionModel, cfg.VisionBaseURL)
+	} else {
+		log.Printf("未配置 VISION_MODEL：相册旁白将优先用画面描述缓存润色（DeepSeek 文本模型无法直接识图）")
+	}
 
 	// 启动 AI 每日任务生成定时器（v3）
 	taskGenService := service.NewTaskGenerationService(aiService)
@@ -257,6 +263,7 @@ func main() {
 		authorized.POST("/growth-stories/:cycle_id", growthStoryHandler.GenerateStory)
 		// by-id 路由必须放在 :cycle_id 之前，避免 "by-id" 被误解析为 cycle_id 参数值
 		authorized.GET("/growth-stories/by-id/:story_id", growthStoryHandler.GetStoryByID)
+		authorized.POST("/growth-stories/by-id/:story_id/yearbook", growthStoryHandler.EnsureYearbookCopy)
 		authorized.GET("/growth-stories/:cycle_id", growthStoryHandler.GetStory)
 		authorized.GET("/growth-stories/:cycle_id/tasks", growthStoryHandler.GetCycleTasks)
 

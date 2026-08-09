@@ -24,6 +24,18 @@ export type ParsedAbilitySummary =
   | { kind: 'project'; summary: ProjectAbilitySummary }
   | { kind: 'empty' };
 
+/** 回顾短旁白（AI 生成，每句宜短） */
+export interface YearbookCopy {
+  cover?: string;
+  period?: string;
+  first_task?: string;
+  stats?: string;
+  photos?: string;
+  close?: string;
+  /** 与相册照片顺序一一对应的短配文 */
+  photo_captions?: string[];
+}
+
 export interface GrowthStory {
   id: number;
   cycle_id: number;
@@ -33,6 +45,7 @@ export interface GrowthStory {
   content: string; // 故事正文（Markdown 文本）
   ability_summary: string; // 能力提升摘要 JSON 字符串：cycle→AbilityDelta[], project→ProjectAbilitySummary
   photo_urls: string; // 精选相册 JSON 字符串
+  yearbook_copy?: string; // 年报短文案 JSON
   created_at: string;
   // V3.1 模块 B：故事类型 cycle（周期回顾）/ project（大师挑战）
   type?: string;
@@ -159,8 +172,53 @@ export function parseAbilitySummary(summary: string): AbilityDelta[] {
 export function parsePhotoUrls(photos: string): string[] {
   try {
     const parsed = JSON.parse(photos);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const out: string[] = [];
+    for (const item of parsed) {
+      if (typeof item !== 'string' || !item.trim()) continue;
+      const s = item.trim();
+      if (s.startsWith('[')) {
+        out.push(...parsePhotoUrls(s));
+      } else {
+        out.push(s);
+      }
+    }
+    return out;
   } catch {
     return [];
   }
+}
+
+/** 解析年报短文案；无效则返回 null */
+export function parseYearbookCopy(raw?: string | null): YearbookCopy | null {
+  if (!raw || !String(raw).trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const y = parsed as YearbookCopy;
+    if (
+      !y.cover &&
+      !y.period &&
+      !y.first_task &&
+      !y.stats &&
+      !y.photos &&
+      !y.close &&
+      !(Array.isArray(y.photo_captions) && y.photo_captions.length > 0)
+    ) {
+      return null;
+    }
+    if (!Array.isArray(y.photo_captions)) y.photo_captions = [];
+    return y;
+  } catch {
+    return null;
+  }
+}
+
+/** 为已有故事补齐年报短文案（AI，幂等） */
+export async function ensureYearbookCopy(storyId: number): Promise<GrowthStory> {
+  return request<GrowthStory>({
+    method: 'POST',
+    url: `/growth-stories/by-id/${storyId}/yearbook`,
+    timeout: 90000,
+  });
 }

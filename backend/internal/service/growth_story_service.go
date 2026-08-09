@@ -30,11 +30,23 @@ func NewGrowthStoryService(aiService *AIService) *GrowthStoryService {
 	}
 }
 
+// aiYearbookCopy 回顾短文案（旁白宜短；photo_captions 与相册顺序一一对应）
+type aiYearbookCopy struct {
+	Cover         string   `json:"cover"`
+	Period        string   `json:"period"`
+	FirstTask     string   `json:"first_task"`
+	Stats         string   `json:"stats"`
+	Photos        string   `json:"photos"`
+	Close         string   `json:"close"`
+	PhotoCaptions []string `json:"photo_captions"`
+}
+
 // aiStoryResult AI 返回的成长故事结构
 type aiStoryResult struct {
-	Title          string `json:"title"`
-	Content        string `json:"content"`
-	AbilitySummary string `json:"ability_summary"`
+	Title          string           `json:"title"`
+	Content        string           `json:"content"`
+	AbilitySummary string           `json:"ability_summary"`
+	Yearbook       *aiYearbookCopy  `json:"yearbook"`
 }
 
 // habitStat 聚合周期内单个习惯的养成统计（来自 habit_master 任务）
@@ -441,6 +453,13 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 	var existing model.GrowthStory
 	if err := database.DB.Where("cycle_id = ?", cycleID).First(&existing).Error; err == nil {
 		log.Printf("[GrowthStory] 周期 %d 已有故事记录 story=%d，返回已有故事", cycleID, existing.ID)
+		sanitizeGrowthStory(&existing)
+		// 旧故事可能缺少年报文案，补生成一次（失败仍返回原故事）
+		if strings.TrimSpace(existing.YearbookCopy) == "" {
+			if filled, err := s.EnsureYearbookCopy(existing.ID, familyID); err == nil && filled != nil {
+				return filled, nil
+			}
+		}
 		return &existing, nil
 	}
 
@@ -517,14 +536,25 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		}
 	}
 
-	// 5. 查询周期内相册精选（取前 5 张）
+	// 5. 查询周期内相册精选（取前若干任务的照片，展平多图）
 	var albumTasks []model.Task
+	// 与前端回顾相册顺序一致：按创建时间升序展平
 	database.DB.Where("family_id = ? AND child_id = ? AND photo IS NOT NULL AND photo != '' AND created_at BETWEEN ? AND ?",
 		familyID, childID, cycle.StartDate, cycle.EndDate).
-		Order("created_at DESC").Limit(5).Find(&albumTasks)
-	photoURLs := make([]string, 0, len(albumTasks))
+		Order("created_at ASC").Limit(16).Find(&albumTasks)
+	photoURLs := make([]string, 0, 12)
+	photoTaskTitles := make([]string, 0, 12)
 	for _, t := range albumTasks {
-		photoURLs = append(photoURLs, t.Photo)
+		for _, u := range taskPhotoURLs(t.Photo) {
+			if len(photoURLs) >= 12 {
+				break
+			}
+			photoURLs = append(photoURLs, u)
+			photoTaskTitles = append(photoTaskTitles, t.Title)
+		}
+		if len(photoURLs) >= 12 {
+			break
+		}
 	}
 
 	// 5.5 聚合周期内习惯养成统计（habit_master 任务 + 关联 Habit 信息）
@@ -536,10 +566,10 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 	themeGroups := s.collectThemeTasks(familyID, childID, cycle)
 
 	// 6. 构造 system prompt（使用评定后的能力变化 + 习惯养成统计 + 主题任务）
-	prompt := s.buildStoryPrompt(childName, cycle, tasks, abilityDeltas, photoURLs, habitStats, themeGroups)
+	prompt := s.buildStoryPrompt(childName, cycle, tasks, abilityDeltas, photoURLs, photoTaskTitles, habitStats, themeGroups)
 
 	// 7. 调用 AI
-	reply, err := s.aiService.Chat(prompt, nil, "请根据上述信息生成阶段成长故事，返回 JSON 格式")
+	reply, err := s.aiService.Chat(prompt, nil, "请根据上述信息生成阶段成长故事，返回 JSON；content 用 Markdown 分节，全文约 500～800 字")
 	if err != nil {
 		log.Printf("[GrowthStory] AI 调用失败 cycle=%d: %v", cycleID, err)
 	}
@@ -547,6 +577,7 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 	// 8. 解析 AI 返回（解析失败时降级为本地拼接的阶段总结，保证页面有内容可展示）
 	title := fmt.Sprintf("%s的阶段成长故事", childName)
 	content := ""
+	yearbookJSON := ""
 	aiOK := false
 	if reply != "" {
 		cleaned := cleanJSONResponse(reply)
@@ -559,6 +590,9 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 				if result.Content != "" {
 					content = result.Content
 					aiOK = true
+				}
+				if result.Yearbook != nil {
+					yearbookJSON = marshalYearbookCopy(normalizeYearbookCopy(result.Yearbook))
 				}
 			} else {
 				content = reply
@@ -573,98 +607,85 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 	// AI 降级：无 Key / 网络失败 / 返回为空 —— 基于任务与能力变化在本地生成一份可读总结，
 	// 保证用户至少能看到阶段框架、任务列表与能力变化，而不是返回 500 让前端白屏。
 	if !aiOK {
-		parts := []string{fmt.Sprintf("## %s 的阶段回顾\n", childName)}
-		startStr := cycle.StartDate.Format("2006 年 1 月 2 日")
-		endStr := ""
-		if !cycle.EndDate.IsZero() {
-			endStr = " 至 " + cycle.EndDate.Format("2006 年 1 月 2 日")
-		}
-		parts = append(parts, fmt.Sprintf("\n这一阶段从 **%s**%s 开始，我们一起记录了 %d 个完成的小任务。\n",
-			startStr, endStr, len(tasks)))
+		// 本地降级：结构贴近正式 AI 文案（开场 + 日常 + 主题）
+		parts := []string{fmt.Sprintf("%s，这个阶段你像小太阳一样闪闪发光，完成了 **%d** 个小任务！\n", childName, len(tasks))}
 		if len(tasks) > 0 {
-			parts = append(parts, "\n### 完成的任务\n")
-			for i, t := range tasks {
-				line := fmt.Sprintf("%d. **%s**", i+1, t.Title)
-				if t.Points > 0 {
-					line += fmt.Sprintf("（+%d 积分）", t.Points)
-				}
-				if t.Description != "" {
-					desc := t.Description
-					if len(desc) > 80 {
-						desc = desc[:80] + "…"
-					}
-					line += fmt.Sprintf("：%s", desc)
-				}
-				parts = append(parts, line)
+			parts = append(parts, "\n### ☀️ 日常小成就\n")
+			bits := make([]string, 0, len(tasks))
+			for _, t := range tasks {
+				bits = append(bits, fmt.Sprintf("**%s**", t.Title))
 			}
-			parts = append(parts, "")
-		} else {
-			parts = append(parts, "\n> 这个阶段还没有完成的任务。下次多陪孩子一起完成任务，故事就会更丰富啦。\n")
+			parts = append(parts, fmt.Sprintf("你认真完成了%s，每件小事都在见证成长。\n", strings.Join(bits, "、")))
 		}
-		if len(abilityDeltas) > 0 {
-			parts = append(parts, "\n### 能力变化\n")
-			for _, d := range abilityDeltas {
-				arrow := "↔"
-				if d.Delta > 0 {
-					arrow = "↑+"
-				} else if d.Delta < 0 {
-					arrow = "↓"
-				}
-				line := fmt.Sprintf("- **%s**：%d → %d（%s%d）",
-					d.DimensionName, d.OldScore, d.NewScore, arrow, absInt(d.Delta))
-				parts = append(parts, line)
+		up := 0
+		var top string
+		for _, d := range abilityDeltas {
+			if d.Delta > up {
+				up = d.Delta
+				top = fmt.Sprintf("**%s** 提升了%d分", d.DimensionName, d.Delta)
 			}
-			parts = append(parts, "")
 		}
-		// 习惯养成评估（AI 降级时用规则判断养成程度）
+		if top != "" {
+			parts = append(parts, fmt.Sprintf("特别值得夸一夸：%s，真了不起！\n", top))
+		}
 		if len(habitStats) > 0 {
-			parts = append(parts, "\n### 习惯养成评估\n")
+			parts = append(parts, "\n### 🌱 习惯小进步\n")
 			for _, st := range habitStats {
-				level := habitAssessLevel(st)
-				line := fmt.Sprintf("- **%s**：本阶段打卡 %d 天，连续坚持 %d 天，累计 %d / 目标 %d 天 —— %s",
-					st.HabitTitle, st.CycleCount, st.StreakCount, st.TotalCount, st.HabitGoal, level)
-				parts = append(parts, line)
+				parts = append(parts, fmt.Sprintf("在 **%s** 上，你本阶段打卡 %d 天，连续坚持 %d 天，继续加油！",
+					st.HabitTitle, st.CycleCount, st.StreakCount))
 			}
-			parts = append(parts, "")
 		}
-		// 主题任务回顾区块（与日常任务、习惯养成区块并列）
 		if len(themeGroups) > 0 {
-			themeSummary := s.generateThemeTaskSummary(childName, themeGroups)
-			themeSection := s.buildThemeTaskSection(themeGroups, themeSummary)
-			if themeSection != "" {
-				parts = append(parts, themeSection)
+			parts = append(parts, "\n### 🎯 主题探索\n")
+			parts = append(parts, "你正在主题任务里勇敢尝试，主动观察和提问的样子真棒。\n")
+			parts = append(parts, "\n### 🎯 主题任务回顾\n")
+			for _, g := range themeGroups {
+				if g.AllCompleted {
+					parts = append(parts, fmt.Sprintf("- **%s**：已完成（%d/%d）", g.Parent.Title, g.CompletedCount, g.TotalCount))
+				} else {
+					parts = append(parts, fmt.Sprintf("- **%s**：进行中（%d/%d）", g.Parent.Title, g.CompletedCount, g.TotalCount))
+				}
 			}
 		}
-		if len(photoURLs) > 0 {
-			parts = append(parts, fmt.Sprintf("\n这一阶段还留下了 %d 张珍贵的照片，都收藏在故事相册里啦。\n", len(photoURLs)))
-		}
+		parts = append(parts, "\n> 每一步探索都是成长宝藏，继续加油！")
 		if err != nil {
-			// AI 本身返回了错误（非空 reply 的降级已在上面覆盖），仅作为家长可见提示
 			log.Printf("[GrowthStory] cycle=%d 使用本地降级故事（AI 失败原因：%v）", cycleID, err)
-			parts = append(parts, "\n---\n> 提示：成长故事使用了本地总结版本。配置 AI_API_KEY 后可以重新生成更有温度的故事。\n")
-		} else {
-			parts = append(parts, "\n---\n> 提示：系统 AI 暂未配置，当前为本地总结版本。配置 AI_API_KEY 后可以重新生成更有温度的故事。\n")
 		}
 		content = strings.Join(parts, "\n")
-		// 降级故事的标题也更接地气一点
-		title = fmt.Sprintf("%s 的阶段回顾（本地方）", childName)
+		title = fmt.Sprintf("%s 的阶段回顾", childName)
 	}
 
-	// 8.5 主题任务回顾区块（AI 成功路径：追加到 AI 生成内容末尾；降级路径已在 parts 中插入）
-	// 若周期内无主题任务则跳过，避免空内容
-	if aiOK && len(themeGroups) > 0 {
-		themeSummary := s.generateThemeTaskSummary(childName, themeGroups)
-		themeSection := s.buildThemeTaskSection(themeGroups, themeSummary)
-		if themeSection != "" {
-			content = content + "\n" + themeSection
+	// 8.5 AI 成功但未写主题时，补齐主题回顾区块
+	if aiOK && len(themeGroups) > 0 && !strings.Contains(content, "主题") {
+		var themeParts []string
+		themeParts = append(themeParts, "\n### 🎯 主题探索\n")
+		themeParts = append(themeParts, "你正在主题任务里勇敢尝试，主动观察和提问的样子真棒。\n")
+		themeParts = append(themeParts, "\n### 🎯 主题任务回顾\n")
+		for _, g := range themeGroups {
+			if g.AllCompleted {
+				themeParts = append(themeParts, fmt.Sprintf("- **%s**：已完成（%d/%d）", g.Parent.Title, g.CompletedCount, g.TotalCount))
+			} else {
+				themeParts = append(themeParts, fmt.Sprintf("- **%s**：进行中（%d/%d）", g.Parent.Title, g.CompletedCount, g.TotalCount))
+			}
 		}
+		content = content + strings.Join(themeParts, "\n")
 	}
+	// 软截断：保留完整分节文案，仅防止极端超长
+	content = truncateStoryContent(content, 900)
 
 	// 9. 创建 GrowthStory 记录
 	photosJSON := ""
 	if len(photoURLs) > 0 {
 		data, _ := json.Marshal(photoURLs)
 		photosJSON = string(data)
+	}
+	if yearbookJSON == "" {
+		yearbookJSON = marshalYearbookCopy(buildLocalYearbookCopy(childName, cycle.Name, tasks, photoTaskTitles, abilityDeltas))
+	}
+	// 相册旁白以识图为准（看画面，而不是任务标题）
+	if len(photoURLs) > 0 {
+		visionCaps := s.generatePhotoCaptionsFromImages(photoURLs, photoTaskTitles)
+		yearbookJSON = applyVisionCaptionsToYearbook(yearbookJSON, visionCaps)
 	}
 	story := &model.GrowthStory{
 		CycleID:        cycleID,
@@ -674,6 +695,7 @@ func (s *GrowthStoryService) GenerateStory(cycleID, familyID, childID uint, chil
 		Content:        content,
 		AbilitySummary: abilitySummaryJSON,
 		PhotoUrls:      photosJSON,
+		YearbookCopy:   yearbookJSON,
 	}
 	if err := database.DB.Create(story).Error; err != nil {
 		log.Printf("[GrowthStory] 保存成长故事失败 cycle=%d: %v", cycleID, err)
@@ -734,6 +756,11 @@ func (s *GrowthStoryService) GenerateProjectStory(instanceID uint) (*model.Growt
 	if err := database.DB.Where("type = ? AND master_challenge_instance_id = ?", "project", instanceID).First(&existing).Error; err == nil {
 		log.Printf("[GrowthStory] 大师挑战实例 %d 已有项目故事 story=%d，返回已有故事", instanceID, existing.ID)
 		sanitizeGrowthStory(&existing)
+		if strings.TrimSpace(existing.YearbookCopy) == "" {
+			if filled, err := s.EnsureYearbookCopy(existing.ID, existing.FamilyID); err == nil && filled != nil {
+				return filled, nil
+			}
+		}
 		return &existing, nil
 	}
 
@@ -844,6 +871,9 @@ func (s *GrowthStoryService) GenerateProjectStory(instanceID uint) (*model.Growt
 	}
 
 	log.Printf("[GrowthStory] 大师挑战实例 %d 项目故事生成完成 story=%d", instanceID, story.ID)
+	if filled, err := s.EnsureYearbookCopy(story.ID, story.FamilyID); err == nil && filled != nil {
+		return filled, nil
+	}
 	sanitizeGrowthStory(story)
 	return story, nil
 }
@@ -863,6 +893,7 @@ func sanitizeGrowthStory(s *model.GrowthStory) {
 	s.Content = sanitizeTextForJSON(s.Content)
 	s.AbilitySummary = sanitizeTextForJSON(s.AbilitySummary)
 	s.PhotoUrls = sanitizeTextForJSON(s.PhotoUrls)
+	s.YearbookCopy = sanitizeTextForJSON(s.YearbookCopy)
 }
 
 // sanitizeTextForJSON 把会破坏 JSON 严格解析的控制字符清理或规范化：
@@ -987,7 +1018,7 @@ func (s *GrowthStoryService) GetCycleTasks(cycleID, familyID uint) ([]model.Task
 // buildStoryPrompt 构造成长故事生成提示词（三区块结构：日常任务 / 习惯养成 / 主题任务）
 // Prompt 清晰分为三区块，每个区块独立呈现；无数据的区块自动跳过，避免生成空内容。
 // AI 调用使用现有封装（s.aiService.Chat），此处仅构造 prompt 文本。
-func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.GrowthCycle, tasks []model.Task, deltas []AbilityDelta, photos []string, habitStats []habitStat, themeGroups []themeTaskGroup) string {
+func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.GrowthCycle, tasks []model.Task, deltas []AbilityDelta, photos []string, photoTaskTitles []string, habitStats []habitStat, themeGroups []themeTaskGroup) string {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("你是一位专业的儿童成长记录师。请基于以下信息为儿童 %s 在周期 [%s]（%s ~ %s）生成本周期的成长故事。",
 		childName, cycle.Name,
@@ -1077,10 +1108,344 @@ func (s *GrowthStoryService) buildStoryPrompt(childName string, cycle model.Grow
 
 	// ===== 生成要求 =====
 	parts = append(parts, "\n## 要求")
-	parts = append(parts, "1. 故事分为三部分：日常任务回顾、习惯养成回顾、主题任务回顾（无数据的区块可省略）。")
-	parts = append(parts, "2. 每部分给出温暖、具体的评价和鼓励。")
-	parts = append(parts, "3. 整体语调积极、鼓励，关注孩子的成长过程。")
-	parts = append(parts, "4. 控制在 500-800 字。")
-	parts = append(parts, "返回纯 JSON（不要 markdown 代码块），格式：{\"title\":\"...\",\"content\":\"...\"}")
+	parts = append(parts, "1. content 用 Markdown 分块，结构固定如下（无数据的区块整段省略）：")
+	parts = append(parts, "   第一行：一句开场夸奖（称呼孩子名字，可加 **加粗** 关键词），不要标题")
+	parts = append(parts, "   ### ☀️ 日常小成就：把完成的日常任务编织进一段连贯叙事，任务名用 **加粗**；可点出 1～2 项能力分变化")
+	parts = append(parts, "   ### 🌱 习惯小进步：有习惯数据时单独成段，评价养成程度并鼓励；无习惯数据则整段省略")
+	parts = append(parts, "   ### 🎨 主题探索：有主题任务时写一段探索感受与鼓励；无则省略")
+	parts = append(parts, "   ### 🎯 主题任务回顾：有主题任务时用列表写完成度，如 `- **小小科学家**：进行中（0/1）`；无则省略")
+	parts = append(parts, "   结尾可选一行简短 > 寄语")
+	parts = append(parts, "2. 不要用【】方括号标题；口语温暖、具体，像在夸孩子；关键任务名/能力维度用 **加粗**。")
+	parts = append(parts, "3. content 全文约 500～800 字（含标点与标题），写得充实有画面感，但不要超过 800 字。")
+	parts = append(parts, "4. 额外生成 yearbook 字段：阶段回顾滑动卡片短旁白（每句 12～28 字，口语、具体、有温度；不要出现「年报」）。")
+	parts = append(parts, "   - cover / period / first_task / stats / photos / close：各一句")
+	parts = append(parts, "   - photo_captions：可省略（系统会按照片画面单独识图生成，不要根据任务标题编造照片旁白）")
+	parts = append(parts, `返回纯 JSON（不要外层 markdown 代码块），格式：{"title":"...","content":"...","yearbook":{"cover":"...","period":"...","first_task":"...","stats":"...","photos":"...","close":"..."}}`)
+	return strings.Join(parts, "\n")
+}
+
+// EnsureYearbookCopy 为已有故事补齐回顾短文案（缺旁白或相册配文时重新生成）
+func (s *GrowthStoryService) EnsureYearbookCopy(storyID, familyID uint) (*model.GrowthStory, error) {
+	var story model.GrowthStory
+	if err := database.DB.Where("id = ? AND family_id = ?", storyID, familyID).First(&story).Error; err != nil {
+		return nil, errors.New("成长故事不存在")
+	}
+
+	childName := ""
+	var child model.User
+	if err := database.DB.Where("id = ? AND role = ?", story.ChildID, model.RoleChild).First(&child).Error; err == nil {
+		childName = child.Nickname
+	}
+	if childName == "" {
+		childName = "宝贝"
+	}
+
+	var tasks []model.Task
+	var photoTaskTitles []string
+	var photoURLs []string
+	cycleName := story.Title
+	var deltas []AbilityDelta
+
+	if (story.Type == "" || story.Type == "cycle") && story.CycleID > 0 {
+		var cycle model.GrowthCycle
+		if err := database.DB.First(&cycle, story.CycleID).Error; err == nil {
+			if cycle.Name != "" {
+				cycleName = cycle.Name
+			}
+			database.DB.Where("family_id = ? AND child_id = ? AND status = ? AND created_at BETWEEN ? AND ?",
+				familyID, story.ChildID, model.TaskStatusCompleted, cycle.StartDate, cycle.EndDate).
+				Order("created_at ASC").Find(&tasks)
+
+			var albumTasks []model.Task
+			database.DB.Where("family_id = ? AND child_id = ? AND photo IS NOT NULL AND photo != '' AND created_at BETWEEN ? AND ?",
+				familyID, story.ChildID, cycle.StartDate, cycle.EndDate).
+				Order("created_at ASC").Limit(16).Find(&albumTasks)
+			for _, t := range albumTasks {
+				for _, u := range taskPhotoURLs(t.Photo) {
+					if len(photoURLs) >= 12 {
+						break
+					}
+					photoURLs = append(photoURLs, u)
+					photoTaskTitles = append(photoTaskTitles, t.Title)
+				}
+				if len(photoURLs) >= 12 {
+					break
+				}
+			}
+		}
+	}
+	if len(photoURLs) == 0 && story.PhotoUrls != "" {
+		for _, u := range taskPhotoURLs(story.PhotoUrls) {
+			if len(photoURLs) >= 12 {
+				break
+			}
+			photoURLs = append(photoURLs, u)
+			photoTaskTitles = append(photoTaskTitles, "精彩瞬间")
+		}
+	}
+	if story.AbilitySummary != "" {
+		_ = json.Unmarshal([]byte(story.AbilitySummary), &deltas)
+	}
+
+	photoCount := len(photoURLs)
+	if !yearbookNeedsRefresh(story.YearbookCopy, photoCount) {
+		sanitizeGrowthStory(&story)
+		return &story, nil
+	}
+
+	totalPoints := 0
+	for _, t := range tasks {
+		totalPoints += t.Points
+	}
+	firstTitle := ""
+	if len(tasks) > 0 {
+		firstTitle = tasks[0].Title
+	}
+
+	prompt := buildYearbookOnlyPrompt(childName, cycleName, story.Type, tasks, firstTitle, totalPoints, photoCount, photoTaskTitles, deltas)
+	reply, err := s.aiService.Chat(prompt, nil, "请只返回 yearbook JSON，旁白要短；photo_captions 可省略")
+	if err != nil {
+		log.Printf("[GrowthStory] 回顾文案 AI 失败 story=%d: %v", storyID, err)
+	}
+
+	yearbookJSON := ""
+	if reply != "" {
+		cleaned := cleanJSONResponse(reply)
+		var wrapped struct {
+			Yearbook *aiYearbookCopy `json:"yearbook"`
+		}
+		if json.Unmarshal([]byte(cleaned), &wrapped) == nil && wrapped.Yearbook != nil {
+			yearbookJSON = marshalYearbookCopy(normalizeYearbookCopy(wrapped.Yearbook))
+		} else {
+			var direct aiYearbookCopy
+			if json.Unmarshal([]byte(cleaned), &direct) == nil {
+				yearbookJSON = marshalYearbookCopy(normalizeYearbookCopy(&direct))
+			}
+		}
+	}
+	if yearbookJSON == "" {
+		yearbookJSON = marshalYearbookCopy(buildLocalYearbookCopy(childName, cycleName, tasks, photoTaskTitles, deltas))
+	}
+	if len(photoURLs) > 0 {
+		visionCaps := s.generatePhotoCaptionsFromImages(photoURLs, photoTaskTitles)
+		yearbookJSON = applyVisionCaptionsToYearbook(yearbookJSON, visionCaps)
+	}
+
+	if err := database.DB.Model(&story).Update("yearbook_copy", yearbookJSON).Error; err != nil {
+		log.Printf("[GrowthStory] 保存回顾文案失败 story=%d: %v", storyID, err)
+		return nil, errors.New("保存回顾文案失败")
+	}
+	story.YearbookCopy = yearbookJSON
+	sanitizeGrowthStory(&story)
+	return &story, nil
+}
+
+func yearbookCopyComplete(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	var y aiYearbookCopy
+	if json.Unmarshal([]byte(raw), &y) != nil {
+		return false
+	}
+	return y.Cover != "" || y.Close != "" || y.Stats != ""
+}
+
+func yearbookNeedsRefresh(raw string, photoCount int) bool {
+	if !yearbookCopyComplete(raw) {
+		return true
+	}
+	if photoCount <= 0 {
+		return false
+	}
+	var y aiYearbookCopy
+	if json.Unmarshal([]byte(raw), &y) != nil {
+		return true
+	}
+	return len(y.PhotoCaptions) == 0
+}
+
+func taskPhotoURLs(photo string) []string {
+	s := strings.TrimSpace(photo)
+	if s == "" {
+		return nil
+	}
+	if strings.HasPrefix(s, "[") {
+		var arr []string
+		if json.Unmarshal([]byte(s), &arr) == nil {
+			out := make([]string, 0, len(arr))
+			for _, u := range arr {
+				u = strings.TrimSpace(u)
+				if u == "" {
+					continue
+				}
+				// 嵌套 JSON 数组字符串时再展平
+				if strings.HasPrefix(u, "[") {
+					out = append(out, taskPhotoURLs(u)...)
+					continue
+				}
+				out = append(out, u)
+			}
+			return out
+		}
+	}
+	return []string{s}
+}
+
+func marshalYearbookCopy(y *aiYearbookCopy) string {
+	if y == nil {
+		return ""
+	}
+	data, err := json.Marshal(y)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func truncateRunes(s string, max int) string {
+	rs := []rune(strings.TrimSpace(s))
+	if max <= 0 || len(rs) <= max {
+		return string(rs)
+	}
+	return string(rs[:max])
+}
+
+// truncateStoryContent 截断过长的成长故事正文，尽量在句号处收束。
+func truncateStoryContent(s string, maxRunes int) string {
+	rs := []rune(strings.TrimSpace(s))
+	if maxRunes <= 0 || len(rs) <= maxRunes {
+		return string(rs)
+	}
+	cut := rs[:maxRunes]
+	best := -1
+	for i := len(cut) - 1; i >= maxRunes*2/5; i-- {
+		if cut[i] == '。' || cut[i] == '！' || cut[i] == '\n' {
+			best = i
+			break
+		}
+	}
+	if best > 0 {
+		return string(cut[:best+1])
+	}
+	return string(cut) + "…"
+}
+
+func normalizeYearbookCopy(y *aiYearbookCopy) *aiYearbookCopy {
+	if y == nil {
+		return &aiYearbookCopy{}
+	}
+	caps := make([]string, 0, len(y.PhotoCaptions))
+	for _, c := range y.PhotoCaptions {
+		c = truncateRunes(c, 28)
+		if c != "" {
+			caps = append(caps, c)
+		}
+	}
+	return &aiYearbookCopy{
+		Cover:         truncateRunes(y.Cover, 28),
+		Period:        truncateRunes(y.Period, 28),
+		FirstTask:     truncateRunes(y.FirstTask, 32),
+		Stats:         truncateRunes(y.Stats, 28),
+		Photos:        truncateRunes(y.Photos, 28),
+		Close:         truncateRunes(y.Close, 32),
+		PhotoCaptions: caps,
+	}
+}
+
+func buildLocalYearbookCopy(childName, stageName string, tasks []model.Task, photoTaskTitles []string, deltas []AbilityDelta) *aiYearbookCopy {
+	_ = childName
+	y := &aiYearbookCopy{
+		Cover:  "把小小坚持，收进这一页回顾",
+		Period: "目标定下，日子就慢慢发光",
+		Close:  "这一阶段的每一步，都值得被看见",
+	}
+	if stageName != "" {
+		y.Cover = truncateRunes("关于「"+stageName+"」的温暖小结", 28)
+	}
+	if len(tasks) == 0 {
+		y.FirstTask = "下一阶段从第一个小任务开始就好"
+		y.Stats = "空着也没关系，成长从陪伴开始"
+	} else {
+		y.FirstTask = truncateRunes("从「"+tasks[0].Title+"」迈出第一步", 32)
+		y.Stats = "每一次完成，都在悄悄长本事"
+	}
+	if len(photoTaskTitles) > 0 {
+		y.Photos = "这些画面，把成长留住了"
+		// 占位；真正旁白由识图 generatePhotoCaptionsFromImages 覆盖
+		y.PhotoCaptions = make([]string, len(photoTaskTitles))
+		for i := range photoTaskTitles {
+			y.PhotoCaptions[i] = "定格这一刻的小小闪光"
+		}
+	} else {
+		y.Photos = "下次完成任务时，拍一张更有故事"
+	}
+	up := 0
+	for _, d := range deltas {
+		if d.Delta > 0 {
+			up++
+		}
+	}
+	if up > 0 {
+		y.Close = truncateRunes(fmt.Sprintf("有 %d 项能力在向上，继续加油", up), 32)
+	}
+	return y
+}
+
+func buildYearbookOnlyPrompt(
+	childName, cycleName, storyType string,
+	tasks []model.Task,
+	firstTitle string,
+	totalPoints, photoCount int,
+	photoTaskTitles []string,
+	deltas []AbilityDelta,
+) string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("你是儿童成长记录师。请为 %s 的阶段回顾写 6 句短旁白。", childName))
+	parts = append(parts, "要求：每句 12～28 字；口语温暖；不要重复任务数/积分/日期数字；不要 markdown；文案中不要出现「年报」二字，统一用「回顾」或自然口语。")
+	if cycleName != "" {
+		parts = append(parts, fmt.Sprintf("阶段名称：%s", cycleName))
+	}
+	if storyType == "project" {
+		parts = append(parts, "类型：大师挑战回顾")
+	}
+	parts = append(parts, fmt.Sprintf("完成任务数：%d，总积分：%d，照片数：%d", len(tasks), totalPoints, photoCount))
+	if firstTitle != "" {
+		parts = append(parts, fmt.Sprintf("首个任务：%s", firstTitle))
+	}
+	if len(tasks) > 0 {
+		parts = append(parts, "任务摘录：")
+		limit := len(tasks)
+		if limit > 12 {
+			limit = 12
+		}
+		for i := 0; i < limit; i++ {
+			parts = append(parts, fmt.Sprintf("- %s（%d 积分）", tasks[i].Title, tasks[i].Points))
+		}
+	}
+	if len(photoTaskTitles) > 0 {
+		parts = append(parts, fmt.Sprintf("请为以下 %d 张相册照片各写一句短旁白（photo_captions，顺序对应，12～24 字）：", len(photoTaskTitles)))
+		for i, title := range photoTaskTitles {
+			if title == "" {
+				title = "精彩瞬间"
+			}
+			parts = append(parts, fmt.Sprintf("%d. %s", i+1, title))
+		}
+	}
+	if len(deltas) > 0 {
+		var ds []string
+		for _, d := range deltas {
+			if d.Delta > 0 {
+				ds = append(ds, fmt.Sprintf("%s+ %d", d.DimensionName, d.Delta))
+			} else if d.Delta < 0 {
+				ds = append(ds, fmt.Sprintf("%s%d", d.DimensionName, d.Delta))
+			} else {
+				ds = append(ds, d.DimensionName+"持平")
+			}
+		}
+		parts = append(parts, "能力变化："+strings.Join(ds, "，"))
+	}
+	parts = append(parts, `只返回 JSON：{"yearbook":{"cover":"...","period":"...","first_task":"...","stats":"...","photos":"...","close":"...","photo_captions":["..."]}}`)
 	return strings.Join(parts, "\n")
 }
