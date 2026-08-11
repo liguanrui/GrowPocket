@@ -15,6 +15,8 @@ export interface ActionSuggestion {
   api_body?: Record<string, any>;
   requires_parent?: boolean;
   created_at?: string | number; // ISO 时间或时间戳，用于 24h 有效期判断
+  /** 后端持久化的确认结果：success/failed/cancelled；缺省为 pending */
+  status?: 'pending' | 'executing' | 'success' | 'failed' | 'cancelled';
 }
 
 // 动作确认卡片四态机：pending 待确认 / executing 执行中 / success 成功 / failed 失败 / cancelled 已取消

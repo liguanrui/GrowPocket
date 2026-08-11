@@ -9,8 +9,10 @@ import (
 	"growpocket/pkg/util"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type ChatHandler struct {
@@ -67,11 +69,12 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		sessionID = session.ID
 	}
 
-	reply, intent, suggestedActions, err := h.chatService.SendMessage(sessionID, role, req.ChildID, familyID, req.Message, mode)
+	reply, intent, suggestedActions, assistantMsgID, err := h.chatService.SendMessage(sessionID, role, req.ChildID, familyID, req.Message, mode)
 	if err != nil {
 		log.Printf("[Chat] SendMessage 失败 session=%d child=%d family=%d role=%s mode=%s msg=%q err=%v",
 			sessionID, req.ChildID, familyID, role, mode, req.Message, err)
-		util.FailInternal(c, "AI 回复失败: "+err.Error())
+		msg := friendlyChatError(err)
+		util.FailInternal(c, msg)
 		return
 	}
 
@@ -79,6 +82,7 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		"reply":             reply,
 		"intent":            intent,
 		"session_id":        sessionID,
+		"message_id":        assistantMsgID,
 		"suggested_actions": suggestedActions,
 	})
 }
@@ -90,8 +94,10 @@ func (h *ChatHandler) ConfirmMessage(c *gin.Context) {
 	var req struct {
 		MessageID   uint           `json:"message_id"`
 		Action      string         `json:"action" binding:"required"`
+		ActionIndex int            `json:"action_index"` // 同一条消息内第几张卡片，默认 0
 		Params      map[string]any `json:"params"`
 		Result      string         `json:"result"`       // success/failed/cancelled/expired
+		ReplyText   string         `json:"reply_text"`   // 可选：确认后追加的助理话术（落库，刷新可见）
 		APIResponse map[string]any `json:"api_response"` // 前端调 REST API 的响应
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -112,6 +118,28 @@ func (h *ChatHandler) ConfirmMessage(c *gin.Context) {
 			if database.DB.Where("id = ? AND family_id = ?", msg.SessionID, familyID).First(&session).Error == nil {
 				sessionID = session.ID
 				childID = session.ChildID
+
+				// 把确认结果写回 suggested_actions，刷新后卡片不再回到「待确认」
+				if err := h.chatService.MarkSuggestedActionResult(msg.ID, req.ActionIndex, req.Result); err != nil {
+					log.Printf("[Chat] MarkSuggestedActionResult 失败 message=%d err=%v", msg.ID, err)
+				}
+
+				// 落库确认后的助理话术（本地追加消息刷新后也能看见）
+				if req.ReplyText != "" && (req.Result == "success" || req.Result == "cancelled") {
+					follow := &model.ChatMessage{
+						SessionID: sessionID,
+						Role:      "assistant",
+						Content:   req.ReplyText,
+						Intent:    req.Action,
+					}
+					if err := database.DB.Create(follow).Error; err == nil {
+						database.DB.Model(&model.ChatSession{}).Where("id = ?", sessionID).Updates(map[string]interface{}{
+							"last_message":    req.ReplyText,
+							"last_message_at": follow.CreatedAt,
+							"message_count":   gorm.Expr("message_count + 1"),
+						})
+					}
+				}
 			}
 		}
 	}
@@ -273,4 +301,25 @@ func (h *ChatHandler) GetSessionMessages(c *gin.Context) {
 		return
 	}
 	util.OK(c, messages)
+}
+
+// friendlyChatError 把上游 AI 错误转成面向用户的中文提示
+func friendlyChatError(err error) string {
+	if err == nil {
+		return "小萌芽暂时无法回复，请稍后再试。"
+	}
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "insufficient balance") ||
+		strings.Contains(msg, "402") ||
+		strings.Contains(lower, "payment required") {
+		return "AI 服务余额不足，请管理员为 DeepSeek 账户充值后再试。"
+	}
+	if strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline") {
+		return "AI 服务响应超时，请稍后再试。"
+	}
+	if strings.Contains(msg, "暂未配置") || strings.Contains(lower, "api_key") {
+		return "AI 服务暂未配置，请联系管理员。"
+	}
+	return "小萌芽暂时无法回复，请稍后再试。"
 }

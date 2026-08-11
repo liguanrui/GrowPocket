@@ -80,6 +80,8 @@ export function preprocessForSpeech(raw: string): string {
  * 比较两段中文是否「疑似同一内容回声」。
  * 用于：TTS 正在外放 AI 回复时，麦克风不小心录到扬声器 → STT 得到一段和
  * AI 回复高度相似的话 → 要丢弃而不是当成用户新输入，避免死循环。
+ *
+ * 注意：不要把「用户故意引用回复里的任务 ID / 名称」当成回声。
  */
 export function isEchoOfLastReply(userText: string, lastReply: string | undefined, threshold = 0.65): boolean {
   if (!lastReply || !userText) return false;
@@ -88,12 +90,18 @@ export function isEchoOfLastReply(userText: string, lastReply: string | undefine
   const b = lastReply.replace(/[\s，。！？、；：,.!?;:\-_"'()（）【】《》\[\]]/g, '');
   if (!a || !b) return false;
 
-  // 短句子：用户文本完全含在 reply 前 60 字内 → 视为回声
-  if (a.length <= 15) {
-    return b.slice(0, 60).includes(a) || a.includes(b.slice(0, 30));
+  // 纯数字（任务 ID）/ 过短确认词：一律不当回声
+  if (/^\d+$/.test(a) || a.length < 6) return false;
+
+  // 短句：只有「几乎就是回复开头」才算回声（TTS 拾音通常从开头录到）
+  // 禁止用「回复全文任意位置包含用户文本」——会误伤用户从清单里点名的任务
+  if (a.length <= 20) {
+    const head = b.slice(0, Math.max(48, a.length + 8));
+    return head.startsWith(a) || (a.length >= 10 && head.includes(a) && head.indexOf(a) < 8);
   }
 
-  // 长句子：用字符级交集比例
+  // 长句：字符交集比例很高，且长度接近（真回声通常接近整段）
+  if (a.length < b.length * 0.35) return false; // 用户话明显更短：更像在回答，不是回声
   const setB = new Set(b.split(''));
   let hit = 0;
   for (const ch of a) if (setB.has(ch)) hit++;

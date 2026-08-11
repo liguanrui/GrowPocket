@@ -37,6 +37,8 @@ type ActionSuggestion struct {
 	APIMethod      string         `json:"api_method"`                // HTTP 方法
 	APIBody        map[string]any `json:"api_body,omitempty"`        // 请求体
 	RequiresParent bool           `json:"requires_parent"`           // 是否需要家长权限
+	// Status 前端确认后回写：pending/success/failed/cancelled（空视为 pending）
+	Status string `json:"status,omitempty"`
 }
 
 type ChatService struct {
@@ -75,9 +77,9 @@ func NewChatService(aiService *AIService) *ChatService {
 }
 
 // SendMessage 发送消息并获取回复
-// 返回：reply 文字回复、intent 意图、suggestedActions 写操作建议卡片列表
+// 返回：reply、intent、suggestedActions、assistantMessageID、error
 // mode 为对话模式：parent=家长代聊 / child=儿童本人
-func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, familyID uint, userMessage, mode string) (string, string, []ActionSuggestion, error) {
+func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, familyID uint, userMessage, mode string) (string, string, []ActionSuggestion, uint, error) {
 	ctx := context.Background()
 
 	// 规范化 mode：空值时按 userRole 推断（parent→parent, child→child）
@@ -128,7 +130,7 @@ func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, fami
 
 		r, tc, err := s.aiService.ChatWithTools(systemPrompt, history, "", tools)
 		if err != nil {
-			return "", "", nil, err
+			return "", "", nil, 0, err
 		}
 		reply = r
 		toolCalls = tc
@@ -236,7 +238,41 @@ func (s *ChatService) SendMessage(sessionID uint, userRole string, childID, fami
 		}
 	}
 
-	return reply, intent, suggestedActions, nil
+	return reply, intent, suggestedActions, aiMsg.ID, nil
+}
+
+// MarkSuggestedActionResult 将确认卡片结果写回消息的 suggested_actions，刷新后保持终态
+func (s *ChatService) MarkSuggestedActionResult(messageID uint, actionIndex int, result string) error {
+	if messageID == 0 {
+		return nil
+	}
+	switch result {
+	case "success", "failed", "cancelled", "expired":
+	default:
+		return nil
+	}
+
+	var msg model.ChatMessage
+	if err := database.DB.First(&msg, messageID).Error; err != nil {
+		return err
+	}
+	raw := strings.TrimSpace(string(msg.SuggestedActions))
+	if raw == "" {
+		return nil
+	}
+	var actions []ActionSuggestion
+	if err := json.Unmarshal([]byte(raw), &actions); err != nil || len(actions) == 0 {
+		return err
+	}
+	if actionIndex < 0 || actionIndex >= len(actions) {
+		actionIndex = 0
+	}
+	actions[actionIndex].Status = result
+	bs, err := json.Marshal(actions)
+	if err != nil {
+		return err
+	}
+	return database.DB.Model(&msg).Update("suggested_actions", string(bs)).Error
 }
 
 // buildSystemPrompt 构造系统提示词
@@ -316,7 +352,7 @@ func (s *ChatService) getToolDefinitions() []ToolDefinition {
 // intentFromToolName 从本轮调用的工具名反推 intent（用于前端 IP 表情）
 func (s *ChatService) intentFromToolName(toolName string) string {
 	switch toolName {
-	case "submit_task":
+	case "submit_task", "review_task":
 		return "submit_task"
 	case "query_child_balance":
 		return "query_points"

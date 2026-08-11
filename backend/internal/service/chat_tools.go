@@ -798,6 +798,8 @@ func (s *ChatService) registerReadonlyTools() {
 // 下发给前端，用户在前端确认卡片上点确认后由前端直接调 REST API 完成写操作。
 
 // W1. submit_task 提议提交任务（儿童可执行，无需家长权限）
+// 仅允许进行中/已拒绝；若 AI 误选了同名的待验收任务，自动改绑到可提交副本。
+// 家长模式下：任务已待验收时改为提议「审核通过」。
 func (s *ChatService) toolSubmitTask(ctx context.Context, args map[string]any, familyID, childID uint, userRole string) (string, error) {
 	taskID := getIntArg(args, "task_id", 0)
 	if taskID <= 0 {
@@ -807,19 +809,67 @@ func (s *ChatService) toolSubmitTask(ctx context.Context, args map[string]any, f
 	if err != nil {
 		return "", fmt.Errorf("查询任务失败: %w", err)
 	}
-
-	sug := ActionSuggestion{
-		Action:      "submit_task",
-		Params:      map[string]any{"task_id": taskID},
-		Summary:     fmt.Sprintf("任务：%s，提交后将进入家长审核状态", task.Title),
-		ConfirmText: "确认提交",
-		CancelText:  "取消",
-		// 实际路由: PUT /api/tasks/:id/submit (main.go L84)；前端 baseURL 已含 /api，故 endpoint 去掉 /api 前缀
-		APIEndpoint: fmt.Sprintf("/tasks/%d/submit", taskID),
-		APIMethod:   "PUT",
-		APIBody:     map[string]any{},
+	if childID > 0 && task.ChildID != childID {
+		return "", fmt.Errorf("该任务不属于当前选中的孩子")
 	}
-	return marshalResult(sug)
+
+	canSubmit := task.Status == model.TaskStatusInProgress || task.Status == model.TaskStatusRejected
+
+	// AI 常误选同名旧任务（已提交/已完成）：优先改绑到同孩子同名的可提交任务
+	if !canSubmit {
+		var alt model.Task
+		q := database.DB.Where(
+			"family_id = ? AND child_id = ? AND title = ? AND status IN ?",
+			familyID, task.ChildID, task.Title,
+			[]int{model.TaskStatusInProgress, model.TaskStatusRejected},
+		).Order("id DESC")
+		if q.First(&alt).Error == nil {
+			task = &alt
+			taskID = int(alt.ID)
+			canSubmit = true
+		}
+	}
+
+	if canSubmit {
+		sug := ActionSuggestion{
+			Action:      "submit_task",
+			Params:      map[string]any{"task_id": taskID},
+			Summary:     fmt.Sprintf("任务：%s，提交后将进入家长审核状态", task.Title),
+			ConfirmText: "确认提交",
+			CancelText:  "取消",
+			// 实际路由: PUT /api/tasks/:id/submit；前端 baseURL 已含 /api
+			APIEndpoint: fmt.Sprintf("/tasks/%d/submit", taskID),
+			APIMethod:   "PUT",
+			APIBody:     map[string]any{},
+		}
+		return marshalResult(sug)
+	}
+
+	// 已待验收：家长可直接审核通过，儿童则提示等待
+	if task.Status == model.TaskStatusSubmitted {
+		if userRole == "parent" {
+			sug := ActionSuggestion{
+				Action:      "review_task",
+				Params:      map[string]any{"task_id": taskID, "approved": true},
+				Summary:     fmt.Sprintf("任务：%s 已在待验收，确认通过后发放 %d 积分", task.Title, task.Points),
+				ConfirmText: "确认通过",
+				CancelText:  "取消",
+				APIEndpoint: fmt.Sprintf("/tasks/%d/review", taskID),
+				APIMethod:   "PUT",
+				APIBody: map[string]any{
+					"approved": true,
+					"points":   task.Points,
+				},
+			}
+			return marshalResult(sug)
+		}
+		return "", fmt.Errorf("「%s」已提交，正在等待家长审核，无需重复提交", task.Title)
+	}
+
+	if task.Status == model.TaskStatusCompleted {
+		return "", fmt.Errorf("「%s」已完成，无需再提交", task.Title)
+	}
+	return "", fmt.Errorf("该状态的任务无法提交验收")
 }
 
 // W2. redeem_item 提议兑换商品（儿童可执行，无需家长权限）
@@ -1062,13 +1112,13 @@ func (s *ChatService) registerWriteTools() {
 				Type: "function",
 				Function: ToolFunctionDef{
 					Name:        "submit_task",
-					Description: "提议提交一个任务进入家长审核（不直接执行，向用户展示确认卡片）",
+					Description: "提议提交一个进行中/已拒绝的任务进入家长审核。不要对已完成或已在待验收的任务调用；若任务已待验收且用户是家长，系统会自动改为审核通过卡片。",
 					Parameters: map[string]any{
 						"type": "object",
 						"properties": map[string]any{
 							"task_id": map[string]any{
 								"type":        "integer",
-								"description": "任务 ID（必填）",
+								"description": "任务 ID（必填；请优先选择状态为进行中的任务）",
 							},
 						},
 						"required": []string{"task_id"},

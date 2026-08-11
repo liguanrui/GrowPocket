@@ -661,6 +661,18 @@ export function AssistantPage() {
     chatService.getChatHistory(childId).then((res) => {
       setMessages(res.messages);
       setSessionId(res.session_id);
+      // 从历史消息里的 suggested_actions.status 恢复确认卡片终态
+      const fromHistory: Record<string, ActionCardState> = {};
+      for (const m of res.messages || []) {
+        m.suggested_actions?.forEach((sug, idx) => {
+          if (sug.status && sug.status !== 'pending') {
+            fromHistory[`${m.id}-${idx}`] = { status: sug.status };
+          }
+        });
+      }
+      if (Object.keys(fromHistory).length > 0) {
+        setActionStates((prev) => ({ ...fromHistory, ...prev }));
+      }
     }).catch(() => {});
   };
 
@@ -678,15 +690,18 @@ export function AssistantPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async (text?: string) => {
+  const handleSend = async (text?: string, opts?: { fromVoice?: boolean }) => {
     const content = (text ?? input).trim();
     if (!content || !selectedChildId || loading) return;
     setInput('');
     setLoading(true);
 
-    // 发送前做一次"回声检测"：如果刚刚 TTS 在朗读 AI 回复，而这条用户输入
-    // 和那条回复高度相似（≥65%），判定为麦克风录到了扬声器自己的声音 → 丢弃。
-    if (isEchoOfLastReply(content, lastAssistantReplyRef.current)) {
+    // 回声过滤仅针对「语音识别」输入：文字输入 / 快捷入口绝不应被拦
+    // （例如回复清单里出现任务 ID「824」，用户键盘输入 824 会被旧逻辑误判为回声）
+    if (
+      opts?.fromVoice &&
+      isEchoOfLastReply(content, lastAssistantReplyRef.current)
+    ) {
       setLoading(false);
       toast.info('刚才的声音像是回声，已过滤。你可以再跟我说一遍~');
       return;
@@ -704,7 +719,8 @@ export function AssistantPage() {
     try {
       const res = await chatService.sendMessage(content, selectedChildId, sessionId || undefined, mode);
       setSessionId(res.session_id);
-      const aiMsgId = Date.now() + 1;
+      // 必须用后端落库的真实 message_id，否则刷新后确认卡片状态对不上
+      const aiMsgId = res.message_id && res.message_id > 0 ? res.message_id : Date.now() + 1;
       const aiMsg: ChatMessage = {
         id: aiMsgId,
         session_id: res.session_id,
@@ -715,6 +731,18 @@ export function AssistantPage() {
         suggested_actions: res.suggested_actions,
       };
       setMessages((prev) => [...prev, aiMsg]);
+      // 若后端已带 status，同步到本地状态机
+      if (res.suggested_actions?.length) {
+        setActionStates((prev) => {
+          const next = { ...prev };
+          res.suggested_actions!.forEach((sug, idx) => {
+            if (sug.status && sug.status !== 'pending') {
+              next[`${aiMsgId}-${idx}`] = { status: sug.status };
+            }
+          });
+          return next;
+        });
+      }
       // 刷新会话列表（更新 last_message）
       loadSessions(selectedChildId);
 
@@ -737,12 +765,17 @@ export function AssistantPage() {
           setSpeakingMsgId(null);
         }, estimatedSec * 1000);
       }
-    } catch {
+    } catch (e) {
+      const apiMsg = e instanceof Error ? e.message : '';
+      const content =
+        apiMsg && !/^request failed/i.test(apiMsg)
+          ? apiMsg
+          : '小萌芽暂时无法回复，请稍后再试。';
       const errMsg: ChatMessage = {
         id: Date.now() + 1,
         session_id: sessionId,
         role: 'assistant',
-        content: '小萌芽暂时无法回复，请稍后再试。',
+        content,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errMsg]);
@@ -831,7 +864,7 @@ export function AssistantPage() {
     sendAfterStopRef.current = false;
     const text = (stt.transcript || '').trim();
     if (text) {
-      handleSend(text);
+      handleSend(text, { fromVoice: true });
       stt.reset();
     }
   }, [stt.isListening]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -881,6 +914,15 @@ export function AssistantPage() {
       const msgs = await chatService.getSessionMessages(s.id);
       setMessages(msgs);
       setSessionId(s.id);
+      const fromHistory: Record<string, ActionCardState> = {};
+      for (const m of msgs || []) {
+        m.suggested_actions?.forEach((sug, idx) => {
+          if (sug.status && sug.status !== 'pending') {
+            fromHistory[`${m.id}-${idx}`] = { status: sug.status };
+          }
+        });
+      }
+      setActionStates(fromHistory);
       setShowDrawer(false);
     } catch {
       toast.error('加载会话失败');
@@ -943,24 +985,55 @@ export function AssistantPage() {
         data: suggestion.api_body,
       });
       setActionState(key, { status: 'success', errorMessage: undefined });
+      // 同步更新本地消息里的 suggested_actions.status，避免仅靠临时态
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== msg.id || !m.suggested_actions) return m;
+          const nextActions = m.suggested_actions.map((a, i) =>
+            i === idx ? { ...a, status: 'success' as const } : a,
+          );
+          return { ...m, suggested_actions: nextActions };
+        }),
+      );
       // 刷新余额等 zustand 数据（fetchChildren 会拉取最新 balance）
       childStore.fetchChildren().catch(() => {});
-      // 上报确认结果（审计用，失败不影响用户流程）
-      chatService
-        .confirmAction(msg.id, suggestion.action, suggestion.params, 'success', apiResponse)
-        .catch(() => {});
-      // 按 action 类型选择成功提示话术
       const successMsg: Record<string, string> = {
         create_task_template: '已成功创建任务模板',
+        review_task: '任务已审核通过',
+        submit_task: '任务已提交验收',
       };
       const successReply: Record<string, string> = {
         create_task_template: '好的，任务模板已经添加到你的家庭模板库啦，之后可以在「设置-任务模板」里查看或修改~',
+        review_task: '好的，任务已经审核通过，积分也发到孩子账户啦~',
+        submit_task: '好的，已经帮你提交啦，等家长审核哦~',
       };
+      const replyText = successReply[suggestion.action] ?? '好的，已经帮你提交啦，等家长审核哦~';
+      // 上报确认结果并落库卡片状态 + 成功话术（刷新后仍可见）
+      chatService
+        .confirmAction(msg.id, suggestion.action, suggestion.params, 'success', apiResponse, {
+          actionIndex: idx,
+          replyText,
+        })
+        .catch(() => {});
       toast.success(successMsg[suggestion.action] ?? '已成功提交');
-      appendLocalAiMessage(successReply[suggestion.action] ?? '好的，已经帮你提交啦，等家长审核哦~');
+      appendLocalAiMessage(replyText);
     } catch (e) {
       const message = e instanceof Error ? e.message : '操作失败，请稍后再试';
       setActionState(key, { status: 'failed', errorMessage: message });
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== msg.id || !m.suggested_actions) return m;
+          const nextActions = m.suggested_actions.map((a, i) =>
+            i === idx ? { ...a, status: 'failed' as const } : a,
+          );
+          return { ...m, suggested_actions: nextActions };
+        }),
+      );
+      chatService
+        .confirmAction(msg.id, suggestion.action, suggestion.params, 'failed', { error: message }, {
+          actionIndex: idx,
+        })
+        .catch(() => {});
       toast.error(message);
     }
   };
@@ -973,10 +1046,23 @@ export function AssistantPage() {
   ) => {
     const key = `${msg.id}-${idx}`;
     setActionState(key, { status: 'cancelled', errorMessage: undefined });
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== msg.id || !m.suggested_actions) return m;
+        const nextActions = m.suggested_actions.map((a, i) =>
+          i === idx ? { ...a, status: 'cancelled' as const } : a,
+        );
+        return { ...m, suggested_actions: nextActions };
+      }),
+    );
+    const replyText = '好的，已取消，有需要再告诉我~';
     chatService
-      .confirmAction(msg.id, suggestion.action, suggestion.params, 'cancelled')
+      .confirmAction(msg.id, suggestion.action, suggestion.params, 'cancelled', undefined, {
+        actionIndex: idx,
+        replyText,
+      })
       .catch(() => {});
-    appendLocalAiMessage('好的，已取消，有需要再告诉我~');
+    appendLocalAiMessage(replyText);
   };
 
   if (!selectedChildId) {
@@ -1215,11 +1301,16 @@ export function AssistantPage() {
                         msg.suggested_actions.map((suggestion, idx) => {
                           const key = `${msg.id}-${idx}`;
                           const cardState = actionStates[key];
+                          const status =
+                            cardState?.status ??
+                            (suggestion.status && suggestion.status !== 'pending'
+                              ? suggestion.status
+                              : 'pending');
                           return (
                             <ActionConfirmCard
                               key={key}
                               suggestion={suggestion}
-                              status={cardState?.status ?? 'pending'}
+                              status={status}
                               errorMessage={cardState?.errorMessage}
                               allowParentActions={mode === 'parent'}
                               onConfirm={() => handleConfirmAction(msg, suggestion, idx)}

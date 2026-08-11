@@ -31,6 +31,8 @@ export interface SendMessageResponse {
   reply: string;
   intent: string;
   session_id: number;
+  /** 本轮 AI 回复在库中的真实 message id（确认卡片必须用此 id，刷新后才能对上） */
+  message_id?: number;
   // 后端 Function Calling 产出的动作建议（空时为 []）
   suggested_actions?: ActionSuggestion[];
 }
@@ -105,6 +107,7 @@ export async function confirmAction(
   params: Record<string, unknown>,
   result: string,
   apiResponse?: unknown,
+  options?: { actionIndex?: number; replyText?: string },
 ): Promise<void> {
   return request<void>({
     method: 'POST',
@@ -112,8 +115,10 @@ export async function confirmAction(
     data: {
       message_id: messageId,
       action,
+      action_index: options?.actionIndex ?? 0,
       params,
       result,
+      reply_text: options?.replyText,
       api_response: apiResponse,
     },
   });
